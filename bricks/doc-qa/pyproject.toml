@@ -1,0 +1,40 @@
+[project]
+name = "doc-qa"
+version = "0.1.0"
+description = "Local retrieval-augmented Q&A over your own documents, with a switchable llama.cpp / OpenVINO backend."
+requires-python = ">=3.10"
+dependencies = [
+    "pantherlake-ai-core",
+    "numpy>=1.26",
+    "pypdf>=4.0",
+    "llama-cpp-python>=0.3.0",
+    "huggingface_hub>=0.24",
+]
+
+[project.optional-dependencies]
+openvino = [
+    "openvino>=2024.4",
+    "openvino-genai>=2024.4",
+]
+
+[project.scripts]
+doc-qa = "doc_qa.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/doc_qa"]
+
+[tool.uv.sources]
+pantherlake-ai-core = { workspace = true }
+# llama-cpp-python has no PyPI wheels; pull the project's own prebuilt CPU
+# wheel index instead of falling back to a from-source build (needs cmake +
+# a C++ toolchain, and can take many minutes even when it works).
+llama-cpp-python = { index = "llama-cpp-python-cpu" }
+
+[[tool.uv.index]]
+name = "llama-cpp-python-cpu"
+url = "https://abetlen.github.io/llama-cpp-python/whl/cpu"
+explicit = true

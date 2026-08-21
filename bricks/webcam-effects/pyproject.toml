@@ -1,0 +1,29 @@
+[project]
+name = "webcam-effects"
+version = "0.1.0"
+description = "Real-time webcam background blur/replacement via on-device person segmentation, with a switchable ONNX Runtime / OpenVINO backend."
+requires-python = ">=3.10"
+dependencies = [
+    "pantherlake-ai-core",
+    "numpy>=1.26",
+    "onnxruntime>=1.18",
+    "huggingface_hub>=0.24",
+]
+
+[project.optional-dependencies]
+openvino = [
+    "openvino>=2024.4",
+]
+
+[project.scripts]
+webcam-effects = "webcam_effects.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/webcam_effects"]
+
+[tool.uv.sources]
+pantherlake-ai-core = { workspace = true }

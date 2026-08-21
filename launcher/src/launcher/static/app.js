@@ -1,0 +1,1710 @@
+const CATEGORY_ORDER = ["Speech", "Vision", "Text", "Productivity", "Audio"];
+
+const el = (id) => document.getElementById(id);
+
+async function fetchJSON(url, options) {
+  const res = await fetch(url, options);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(body.error || `${url} failed (${res.status})`);
+  }
+  return body;
+}
+
+function renderCards(demos) {
+  const root = el("categories");
+  root.innerHTML = "";
+  const template = el("card-template");
+
+  const byCategory = new Map();
+  for (const demo of demos) {
+    if (!byCategory.has(demo.category)) byCategory.set(demo.category, []);
+    byCategory.get(demo.category).push(demo);
+  }
+
+  const orderedCategories = [
+    ...CATEGORY_ORDER.filter((c) => byCategory.has(c)),
+    ...[...byCategory.keys()].filter((c) => !CATEGORY_ORDER.includes(c)),
+  ];
+
+  for (const category of orderedCategories) {
+    const block = document.createElement("section");
+    block.className = "category-block";
+
+    const heading = document.createElement("h2");
+    heading.className = "category-heading";
+    heading.textContent = category;
+    block.appendChild(heading);
+
+    const grid = document.createElement("div");
+    grid.className = "card-grid";
+
+    for (const demo of byCategory.get(category)) {
+      const node = template.content.cloneNode(true);
+      const card = node.querySelector(".card");
+      node.querySelector(".category-tag").textContent = demo.category;
+
+      const pill = node.querySelector(".status-pill");
+      pill.textContent = demo.status === "available" ? "Available" : "Planned";
+      pill.classList.add(demo.status === "available" ? "available" : "planned");
+
+      node.querySelector(".card-name").textContent = demo.name;
+      node.querySelector(".card-tagline").textContent = demo.tagline;
+      node.querySelector(".card-description").textContent = demo.description;
+
+      const badges = node.querySelector(".engine-badges");
+      for (const engine of demo.engines) {
+        const span = document.createElement("span");
+        span.className = "engine-badge";
+        span.textContent = engine;
+        badges.appendChild(span);
+      }
+
+      const btn = node.querySelector(".launch-btn");
+      if (demo.status === "available") {
+        btn.addEventListener("click", () => openDemo(demo));
+      } else {
+        btn.textContent = "Coming soon";
+        btn.disabled = true;
+        card.addEventListener("click", () => openPlaceholder(demo));
+      }
+
+      grid.appendChild(node);
+    }
+
+    block.appendChild(grid);
+    root.appendChild(block);
+  }
+}
+
+function openPlaceholder(demo) {
+  el("placeholder-text").textContent = `${demo.name}: ${demo.description}`;
+  el("placeholder-overlay").classList.remove("hidden");
+}
+
+function openDemo(demo) {
+  if (demo.id === "live-translation") {
+    openLiveTranslation();
+  } else if (demo.id === "doc-qa") {
+    openDocQA();
+  } else if (demo.id === "object-detection") {
+    openObjectDetection();
+  } else if (demo.id === "screen-ocr") {
+    openScreenOcr();
+  } else if (demo.id === "meeting-notes") {
+    openMeetingNotes();
+  } else if (demo.id === "webcam-effects") {
+    openWebcamEffects();
+  } else if (demo.id === "voice-clone-studio") {
+    openVoiceCloneStudio();
+  } else if (demo.id === "voice-assistant") {
+    openVoiceAssistant();
+  } else if (demo.id === "expense-extract") {
+    openExpenseExtract();
+  }
+}
+
+// --- Live translation demo ---
+
+let ws = null;
+let running = false;
+
+async function openLiveTranslation() {
+  el("modal-overlay").classList.remove("hidden");
+  await populateLiveTranslationDevices();
+  connectWebSocket();
+}
+
+async function populateLiveTranslationDevices() {
+  const data = await fetchJSON("/api/live-translation/devices");
+
+  const audioSelect = el("ctl-audio-device");
+  audioSelect.innerHTML = "";
+  const defaultOpt = document.createElement("option");
+  defaultOpt.value = "";
+  defaultOpt.textContent = "Default device";
+  audioSelect.appendChild(defaultOpt);
+
+  const sourceSelect = el("ctl-source");
+  const fillAudioDevices = () => {
+    const names = sourceSelect.value === "mic" ? data.microphones : data.speakers;
+    audioSelect.innerHTML = "";
+    audioSelect.appendChild(defaultOpt.cloneNode(true));
+    for (const name of names) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      audioSelect.appendChild(opt);
+    }
+  };
+  sourceSelect.onchange = fillAudioDevices;
+  fillAudioDevices();
+
+  const engineSelect = el("ctl-engine");
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  openvinoOption.textContent = hasOpenvino
+    ? `OpenVINO (${data.openvino_devices.join(", ")})`
+    : "OpenVINO (install this brick's `openvino` extra to enable)";
+
+  const computeSelect = el("ctl-compute-device");
+  const fillComputeDevices = () => {
+    computeSelect.innerHTML = "";
+    const options = engineSelect.value === "openvino"
+      ? ["AUTO", ...data.openvino_devices]
+      : ["auto", "cpu", "cuda"];
+    for (const value of options) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value;
+      computeSelect.appendChild(opt);
+    }
+    el("ctl-model").value = engineSelect.value === "openvino" ? "base" : "small";
+  };
+  engineSelect.onchange = fillComputeDevices;
+  fillComputeDevices();
+}
+
+function connectWebSocket() {
+  if (ws) return;
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${protocol}://${location.host}/ws/live-translation`);
+  ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type === "result") {
+      appendTranscriptLine(message);
+    } else if (message.type === "error") {
+      setRunStatus(`Error: ${message.message}`, "error");
+      setRunning(false);
+    } else if (message.type === "stopped") {
+      setRunning(false);
+      if (!el("run-status").classList.contains("error")) {
+        setRunStatus("Idle");
+      }
+    }
+  };
+  ws.onclose = () => { ws = null; };
+}
+
+function appendTranscriptLine(result) {
+  const container = el("transcript");
+  const placeholder = container.querySelector(".transcript-placeholder");
+  if (placeholder) placeholder.remove();
+
+  const line = document.createElement("p");
+  line.className = "transcript-line";
+  const time = new Date().toLocaleTimeString();
+  line.innerHTML = `<span class="transcript-time">${time}</span><span class="transcript-lang">(${result.detected_language})</span>${escapeHtml(result.text)}`;
+  container.appendChild(line);
+  container.scrollTop = container.scrollHeight;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function setRunStatus(text, kind) {
+  const status = el("run-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function setRunning(isRunning) {
+  running = isRunning;
+  el("ctl-start").disabled = isRunning;
+  el("ctl-stop").disabled = !isRunning;
+  for (const id of ["ctl-source", "ctl-audio-device", "ctl-engine", "ctl-compute-device", "ctl-model"]) {
+    el(id).disabled = isRunning;
+  }
+  if (isRunning) setRunStatus("Listening...", "live");
+}
+
+async function startLiveTranslation() {
+  setRunStatus("Starting...");
+  try {
+    await fetchJSON("/api/live-translation/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: el("ctl-source").value,
+        audio_device: el("ctl-audio-device").value || null,
+        engine: el("ctl-engine").value,
+        model_size: el("ctl-model").value,
+        compute_device: el("ctl-compute-device").value,
+      }),
+    });
+    setRunning(true);
+  } catch (err) {
+    setRunStatus(`Error: ${err.message}`, "error");
+  }
+}
+
+async function stopLiveTranslation() {
+  el("ctl-stop").disabled = true;
+  setRunStatus("Stopping...");
+  try {
+    await fetchJSON("/api/live-translation/stop", { method: "POST" });
+  } catch (err) {
+    setRunStatus(`Error: ${err.message}`, "error");
+  }
+  setRunning(false);
+}
+
+function closeLiveTranslation() {
+  el("modal-overlay").classList.add("hidden");
+  if (running) stopLiveTranslation();
+}
+
+// --- Document Q&A demo ---
+
+let docQaIndexed = false;
+
+async function openDocQA() {
+  el("docqa-modal-overlay").classList.remove("hidden");
+  await populateDocQaDevices();
+}
+
+async function populateDocQaDevices() {
+  const data = await fetchJSON("/api/doc-qa/devices");
+
+  const engineSelect = el("docqa-engine");
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  openvinoOption.textContent = hasOpenvino
+    ? `OpenVINO (${data.openvino_devices.join(", ")})`
+    : "OpenVINO (install this brick's `openvino` extra to enable)";
+
+  const computeSelect = el("docqa-compute-device");
+  const fillComputeDevices = () => {
+    computeSelect.innerHTML = "";
+    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
+    for (const value of options) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value;
+      computeSelect.appendChild(opt);
+    }
+  };
+  engineSelect.onchange = fillComputeDevices;
+  fillComputeDevices();
+}
+
+function setDocQaIngestStatus(text, kind) {
+  const status = el("docqa-ingest-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function setDocQaBusy(busy) {
+  el("docqa-ingest").disabled = busy;
+  el("docqa-ask").disabled = busy || !docQaIndexed;
+  el("docqa-question").disabled = busy || !docQaIndexed;
+  for (const id of ["docqa-folder", "docqa-engine", "docqa-compute-device", "docqa-reindex"]) {
+    el(id).disabled = busy;
+  }
+}
+
+async function runDocQaIngest() {
+  const folder = el("docqa-folder").value.trim();
+  if (!folder) {
+    setDocQaIngestStatus("Enter a folder path first.", "error");
+    return;
+  }
+
+  docQaIndexed = false;
+  setDocQaBusy(true);
+  setDocQaIngestStatus("Indexing... (first run downloads models)");
+
+  try {
+    const result = await fetchJSON("/api/doc-qa/ingest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder,
+        engine: el("docqa-engine").value,
+        compute_device: el("docqa-compute-device").value,
+        reindex: el("docqa-reindex").checked,
+      }),
+    });
+    docQaIndexed = true;
+    setDocQaIngestStatus(`Indexed ${result.chunks} chunk(s) from ${result.folder}`, "live");
+  } catch (err) {
+    setDocQaIngestStatus(`Error: ${err.message}`, "error");
+  } finally {
+    setDocQaBusy(false);
+  }
+}
+
+async function runDocQaAsk() {
+  const question = el("docqa-question").value.trim();
+  if (!question) return;
+
+  appendDocQaQuestion(question);
+  el("docqa-question").value = "";
+  setDocQaBusy(true);
+
+  try {
+    const answer = await fetchJSON("/api/doc-qa/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question }),
+    });
+    appendDocQaAnswer(answer);
+  } catch (err) {
+    appendDocQaAnswer({ text: `Error: ${err.message}`, sources: [] });
+  } finally {
+    setDocQaBusy(false);
+  }
+}
+
+function appendDocQaQuestion(question) {
+  const container = el("docqa-transcript");
+  const placeholder = container.querySelector(".transcript-placeholder");
+  if (placeholder) placeholder.remove();
+
+  const line = document.createElement("p");
+  line.className = "transcript-question";
+  line.textContent = `Q: ${question}`;
+  container.appendChild(line);
+  container.scrollTop = container.scrollHeight;
+}
+
+function appendDocQaAnswer(answer) {
+  const container = el("docqa-transcript");
+
+  const answerLine = document.createElement("p");
+  answerLine.className = "transcript-answer";
+  answerLine.textContent = answer.text;
+  container.appendChild(answerLine);
+
+  if (answer.sources && answer.sources.length) {
+    const sourcesLine = document.createElement("p");
+    sourcesLine.className = "transcript-sources";
+    sourcesLine.textContent = "Sources: " + answer.sources
+      .map((s) => `${s.source} [${s.score.toFixed(2)}]`)
+      .join(", ");
+    container.appendChild(sourcesLine);
+  }
+
+  container.scrollTop = container.scrollHeight;
+}
+
+function closeDocQA() {
+  el("docqa-modal-overlay").classList.add("hidden");
+}
+
+// --- Hardware telemetry ---
+
+const DEMO_NAMES_BY_ID = {
+  "live-translation": "Live Speech Translation",
+  "doc-qa": "Local Document Q&A",
+  "object-detection": "Object Detection Overlay",
+  "screen-ocr": "Screen / Image Text Extraction",
+  "meeting-notes": "Live Meeting Notes",
+  "webcam-effects": "Webcam Background Effects",
+  "voice-clone-studio": "Voice Clone Studio",
+  "voice-assistant": "Local Voice Assistant",
+  "expense-extract": "Expense Report Extractor",
+};
+
+function matchGaugeKind(device) {
+  const d = (device || "").toUpperCase();
+  if (d === "CPU") return "cpu";
+  if (d.startsWith("GPU")) return "gpu";
+  if (d === "NPU") return "npu";
+  return null; // e.g. "AUTO" or "cuda" -- device OpenVINO/faster-whisper picks internally, not pinned to one gauge
+}
+
+function renderTelemetry(data) {
+  // data.active is a list, not a dict keyed by demo id: a demo like
+  // expense-extract can have two entries active at once (one per stage,
+  // pinned to two different devices), so two different gauges can each
+  // carry their own label from the very same demo simultaneously.
+  const activeByKind = {};
+  for (const info of data.active || []) {
+    const kind = matchGaugeKind(info.device);
+    if (!kind) continue;
+    const baseName = DEMO_NAMES_BY_ID[info.demo_id] || info.demo_id;
+    activeByKind[kind] = info.stage_label ? `${baseName} (${info.stage_label})` : baseName;
+  }
+
+  const gauges = {
+    cpu: { value: data.cpu_percent, name: null },
+    gpu: { value: data.gpu_percent, name: data.gpu_name },
+    npu: { value: data.npu_percent, name: data.npu_name },
+  };
+
+  for (const kind of ["cpu", "gpu", "npu"]) {
+    // querySelectorAll, not querySelector: the same three gauges appear
+    // once in the header and once more per demo modal's footer (cloned
+    // from #telemetry-footer-template in initTelemetryFooters), and every
+    // copy needs to stay in sync on each poll.
+    const gaugeInstances = document.querySelectorAll(`.telemetry-gauge[data-device="${kind}"]`);
+    if (!gaugeInstances.length) continue;
+    const { value, name } = gauges[kind];
+    const activeLabel = activeByKind[kind];
+
+    for (const gauge of gaugeInstances) {
+      const valueEl = gauge.querySelector(".telemetry-gauge-value");
+      const fillEl = gauge.querySelector(".telemetry-bar-fill");
+      const noteEl = gauge.querySelector(".telemetry-gauge-note");
+
+      if (value === null || value === undefined) {
+        valueEl.textContent = "N/A";
+        fillEl.style.width = "0%";
+        gauge.classList.add("unavailable");
+      } else {
+        valueEl.textContent = `${Math.round(value)}%`;
+        fillEl.style.width = `${Math.min(value, 100)}%`;
+        gauge.classList.remove("unavailable");
+      }
+
+      if (activeLabel) {
+        noteEl.textContent = activeLabel;
+        gauge.classList.add("active-gauge");
+      } else {
+        noteEl.textContent = name || "";
+        gauge.classList.remove("active-gauge");
+      }
+    }
+  }
+}
+
+async function pollTelemetry() {
+  try {
+    renderTelemetry(await fetchJSON("/api/telemetry"));
+  } catch {
+    // Best-effort panel -- ignore a transient failure and try again next tick.
+  }
+}
+
+function initTelemetryFooters() {
+  const template = el("telemetry-footer-template");
+  for (const modal of document.querySelectorAll(".demo-modal")) {
+    modal.appendChild(template.content.cloneNode(true));
+  }
+}
+
+function initTelemetry() {
+  initTelemetryFooters();
+  pollTelemetry();
+  setInterval(pollTelemetry, 2000);
+}
+
+// --- Object detection demo ---
+
+let objdetRunning = false;
+let objdetDetectionsTimer = null;
+
+async function openObjectDetection() {
+  el("objdet-modal-overlay").classList.remove("hidden");
+  await populateObjectDetectionDevices();
+}
+
+async function populateObjectDetectionDevices() {
+  const data = await fetchJSON("/api/object-detection/devices");
+
+  const sourceSelect = el("objdet-source");
+  const sourceDeviceSelect = el("objdet-source-device");
+  const fillSourceDevices = () => {
+    sourceDeviceSelect.innerHTML = "";
+    if (sourceSelect.value === "webcam") {
+      if (!data.cameras.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "No camera found";
+        sourceDeviceSelect.appendChild(opt);
+      }
+      for (const index of data.cameras) {
+        const opt = document.createElement("option");
+        opt.value = index;
+        opt.textContent = `Camera ${index}`;
+        sourceDeviceSelect.appendChild(opt);
+      }
+    } else {
+      for (const screen of data.screens) {
+        const opt = document.createElement("option");
+        opt.value = screen.index;
+        opt.textContent = `Screen ${screen.index} (${screen.width}x${screen.height})`;
+        sourceDeviceSelect.appendChild(opt);
+      }
+    }
+  };
+  sourceSelect.onchange = fillSourceDevices;
+  fillSourceDevices();
+
+  const engineSelect = el("objdet-engine");
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  openvinoOption.textContent = hasOpenvino
+    ? `OpenVINO (YOLO11n, ${data.openvino_devices.join(", ")})`
+    : "OpenVINO (install this brick's `openvino` extra to enable)";
+
+  const computeSelect = el("objdet-compute-device");
+  const fillComputeDevices = () => {
+    computeSelect.innerHTML = "";
+    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
+    for (const value of options) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value;
+      computeSelect.appendChild(opt);
+    }
+  };
+  engineSelect.onchange = fillComputeDevices;
+  fillComputeDevices();
+}
+
+function setObjdetStatus(text, kind) {
+  const status = el("objdet-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function setObjdetRunning(isRunning) {
+  objdetRunning = isRunning;
+  el("objdet-start").disabled = isRunning;
+  el("objdet-stop").disabled = !isRunning;
+  for (const id of ["objdet-source", "objdet-source-device", "objdet-engine", "objdet-compute-device"]) {
+    el(id).disabled = isRunning;
+  }
+
+  const img = el("objdet-video");
+  if (isRunning) {
+    setObjdetStatus("Running...", "live");
+    img.src = `/api/object-detection/stream?t=${Date.now()}`;
+    img.classList.add("visible");
+    objdetDetectionsTimer = setInterval(pollObjectDetections, 700);
+  } else {
+    setObjdetStatus("Idle");
+    img.removeAttribute("src");
+    img.classList.remove("visible");
+    el("objdet-detections").innerHTML = '<p class="transcript-placeholder">Detected objects will be listed here.</p>';
+    if (objdetDetectionsTimer) {
+      clearInterval(objdetDetectionsTimer);
+      objdetDetectionsTimer = null;
+    }
+  }
+}
+
+async function pollObjectDetections() {
+  try {
+    const data = await fetchJSON("/api/object-detection/detections");
+    if (data.error) {
+      setObjdetStatus(`Error: ${data.error}`, "error");
+      setObjdetRunning(false);
+      return;
+    }
+    renderObjectDetections(data.detections || []);
+  } catch {
+    // Best-effort -- a transient failure here shouldn't interrupt the video stream.
+  }
+}
+
+function renderObjectDetections(detections) {
+  const container = el("objdet-detections");
+  if (!detections.length) {
+    container.innerHTML = '<p class="transcript-placeholder">Nothing detected right now.</p>';
+    return;
+  }
+  const sorted = [...detections].sort((a, b) => b.confidence - a.confidence);
+  container.innerHTML = sorted
+    .map(
+      (d) =>
+        `<div class="objdet-detection-row"><span class="objdet-detection-label">${escapeHtml(d.label)}</span><span class="objdet-detection-score">${Math.round(d.confidence * 100)}%</span></div>`
+    )
+    .join("");
+}
+
+async function startObjectDetection() {
+  setObjdetStatus("Starting...");
+  const source = el("objdet-source").value;
+  const sourceDeviceValue = el("objdet-source-device").value;
+  try {
+    await fetchJSON("/api/object-detection/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source,
+        camera_index: source === "webcam" ? Number(sourceDeviceValue || 0) : 0,
+        screen_index: source === "screen" ? Number(sourceDeviceValue || 1) : 1,
+        engine: el("objdet-engine").value,
+        compute_device: el("objdet-compute-device").value,
+      }),
+    });
+    setObjdetRunning(true);
+  } catch (err) {
+    setObjdetStatus(`Error: ${err.message}`, "error");
+  }
+}
+
+async function stopObjectDetection() {
+  el("objdet-stop").disabled = true;
+  setObjdetStatus("Stopping...");
+  try {
+    await fetchJSON("/api/object-detection/stop", { method: "POST" });
+  } catch (err) {
+    setObjdetStatus(`Error: ${err.message}`, "error");
+  }
+  setObjdetRunning(false);
+}
+
+function closeObjectDetection() {
+  el("objdet-modal-overlay").classList.add("hidden");
+  if (objdetRunning) stopObjectDetection();
+}
+
+// --- Screen / image text extraction demo ---
+
+async function openScreenOcr() {
+  el("ocr-modal-overlay").classList.remove("hidden");
+  await populateOcrDevices();
+}
+
+async function populateOcrDevices() {
+  const data = await fetchJSON("/api/screen-ocr/devices");
+
+  const sourceSelect = el("ocr-source");
+  const sourceDeviceSelect = el("ocr-source-device");
+  const sourceDeviceField = el("ocr-source-device-field");
+  const uploadField = el("ocr-upload-field");
+
+  const fillSourceDevices = () => {
+    const isUpload = sourceSelect.value === "upload";
+    sourceDeviceField.hidden = isUpload;
+    uploadField.hidden = !isUpload;
+    if (isUpload) return;
+
+    sourceDeviceSelect.innerHTML = "";
+    if (sourceSelect.value === "webcam") {
+      if (!data.cameras.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "No camera found";
+        sourceDeviceSelect.appendChild(opt);
+      }
+      for (const index of data.cameras) {
+        const opt = document.createElement("option");
+        opt.value = index;
+        opt.textContent = `Camera ${index}`;
+        sourceDeviceSelect.appendChild(opt);
+      }
+    } else {
+      for (const screen of data.screens) {
+        const opt = document.createElement("option");
+        opt.value = screen.index;
+        opt.textContent = `Screen ${screen.index} (${screen.width}x${screen.height})`;
+        sourceDeviceSelect.appendChild(opt);
+      }
+    }
+  };
+  sourceSelect.onchange = fillSourceDevices;
+  fillSourceDevices();
+
+  const engineSelect = el("ocr-engine");
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  openvinoOption.textContent = hasOpenvino
+    ? `OpenVINO (vision-language model, ${data.openvino_devices.join(", ")})`
+    : "OpenVINO (install this brick's `openvino` extra to enable)";
+
+  const computeSelect = el("ocr-compute-device");
+  const translateCheckbox = el("ocr-translate");
+  const fillComputeDevices = () => {
+    computeSelect.innerHTML = "";
+    const isOpenvino = engineSelect.value === "openvino";
+    const options = isOpenvino ? ["AUTO", ...data.openvino_devices] : ["cpu"];
+    for (const value of options) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value;
+      computeSelect.appendChild(opt);
+    }
+    translateCheckbox.disabled = !isOpenvino;
+    if (!isOpenvino) translateCheckbox.checked = false;
+  };
+  engineSelect.onchange = fillComputeDevices;
+  fillComputeDevices();
+}
+
+function setOcrStatus(text, kind) {
+  const status = el("ocr-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function renderOcrResult(data) {
+  const container = el("ocr-result");
+  container.innerHTML = "";
+
+  const label = document.createElement("p");
+  label.className = "ocr-result-label";
+  label.textContent = data.translated_text !== null ? "Translation (English)" : "Extracted text";
+  container.appendChild(label);
+
+  const textBlock = document.createElement("p");
+  textBlock.className = "ocr-text-block";
+  const shownText = data.translated_text !== null ? data.translated_text : data.text;
+  textBlock.textContent = shownText || "(no text detected)";
+  container.appendChild(textBlock);
+
+  if (data.regions && data.regions.length) {
+    const regionsLabel = document.createElement("p");
+    regionsLabel.className = "ocr-result-label";
+    regionsLabel.textContent = "Detected regions";
+    container.appendChild(regionsLabel);
+
+    for (const region of data.regions) {
+      const row = document.createElement("div");
+      row.className = "ocr-region-row";
+      row.innerHTML = `<span class="ocr-region-text">${escapeHtml(region.text)}</span><span class="ocr-region-score">${Math.round(region.confidence * 100)}%</span>`;
+      container.appendChild(row);
+    }
+  }
+}
+
+async function runScreenOcrExtract() {
+  const source = el("ocr-source").value;
+  const engine = el("ocr-engine").value;
+  const computeDevice = el("ocr-compute-device").value;
+  const translate = el("ocr-translate").checked;
+
+  el("ocr-extract").disabled = true;
+  setOcrStatus(source === "upload" ? "Uploading and extracting..." : "Capturing and extracting...");
+
+  try {
+    let data;
+    if (source === "upload") {
+      const fileInput = el("ocr-upload");
+      if (!fileInput.files.length) {
+        setOcrStatus("Choose an image file first.", "error");
+        el("ocr-extract").disabled = false;
+        return;
+      }
+      const form = new FormData();
+      form.append("file", fileInput.files[0]);
+      form.append("engine", engine);
+      form.append("compute_device", computeDevice);
+      form.append("translate", translate);
+      data = await fetchJSON("/api/screen-ocr/extract-upload", { method: "POST", body: form });
+    } else {
+      const sourceDeviceValue = el("ocr-source-device").value;
+      data = await fetchJSON("/api/screen-ocr/extract", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source,
+          camera_index: source === "webcam" ? Number(sourceDeviceValue || 0) : 0,
+          screen_index: source === "screen" ? Number(sourceDeviceValue || 1) : 1,
+          engine,
+          compute_device: computeDevice,
+          translate,
+        }),
+      });
+    }
+    renderOcrResult(data);
+    setOcrStatus("Done", "live");
+  } catch (err) {
+    setOcrStatus(`Error: ${err.message}`, "error");
+  } finally {
+    el("ocr-extract").disabled = false;
+  }
+}
+
+function closeScreenOcr() {
+  el("ocr-modal-overlay").classList.add("hidden");
+}
+
+// --- Live meeting notes demo ---
+// A stream (live transcript, same WebSocket pattern as live-translation)
+// plus a request/response layered on top (Generate notes, same pattern as
+// doc-qa's Ask) -- this demo genuinely needs both.
+
+let mtgWs = null;
+let mtgRunning = false;
+
+async function openMeetingNotes() {
+  el("mtg-modal-overlay").classList.remove("hidden");
+  await populateMeetingNotesDevices();
+  connectMeetingNotesWebSocket();
+}
+
+async function populateMeetingNotesDevices() {
+  const data = await fetchJSON("/api/meeting-notes/devices");
+
+  const audioSelect = el("mtg-audio-device");
+  const defaultOpt = document.createElement("option");
+  defaultOpt.value = "";
+  defaultOpt.textContent = "Default device";
+
+  const sourceSelect = el("mtg-source");
+  const fillAudioDevices = () => {
+    const names = sourceSelect.value === "mic" ? data.microphones : data.speakers;
+    audioSelect.innerHTML = "";
+    audioSelect.appendChild(defaultOpt.cloneNode(true));
+    for (const name of names) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      audioSelect.appendChild(opt);
+    }
+  };
+  sourceSelect.onchange = fillAudioDevices;
+  fillAudioDevices();
+
+  const engineSelect = el("mtg-engine");
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  openvinoOption.textContent = hasOpenvino
+    ? `OpenVINO (Whisper + LLM, ${data.openvino_devices.join(", ")})`
+    : "OpenVINO (install this brick's `openvino` extra to enable)";
+
+  const computeSelect = el("mtg-compute-device");
+  const fillComputeDevices = () => {
+    computeSelect.innerHTML = "";
+    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["auto", "cpu", "cuda"];
+    for (const value of options) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value;
+      computeSelect.appendChild(opt);
+    }
+  };
+  engineSelect.onchange = fillComputeDevices;
+  fillComputeDevices();
+}
+
+function connectMeetingNotesWebSocket() {
+  if (mtgWs) return;
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+  mtgWs = new WebSocket(`${protocol}://${location.host}/ws/meeting-notes`);
+  mtgWs.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type === "line") {
+      appendMeetingTranscriptLine(message);
+    } else if (message.type === "error") {
+      setMtgStatus(`Error: ${message.message}`, "error");
+      setMtgRunning(false);
+    } else if (message.type === "stopped") {
+      setMtgRunning(false);
+      if (!el("mtg-status").classList.contains("error")) {
+        setMtgStatus("Idle");
+      }
+    }
+  };
+  mtgWs.onclose = () => { mtgWs = null; };
+}
+
+function appendMeetingTranscriptLine(line) {
+  const container = el("mtg-transcript");
+  const placeholder = container.querySelector(".transcript-placeholder");
+  if (placeholder) placeholder.remove();
+
+  const p = document.createElement("p");
+  p.className = "transcript-line";
+  p.innerHTML = `<span class="transcript-time">${line.timestamp}</span><span class="transcript-lang">(${line.detected_language})</span>${escapeHtml(line.text)}`;
+  container.appendChild(p);
+  container.scrollTop = container.scrollHeight;
+}
+
+function setMtgStatus(text, kind) {
+  const status = el("mtg-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function setMtgRunning(isRunning) {
+  mtgRunning = isRunning;
+  el("mtg-start").disabled = isRunning;
+  el("mtg-stop").disabled = !isRunning;
+  for (const id of ["mtg-source", "mtg-audio-device", "mtg-engine", "mtg-compute-device"]) {
+    el(id).disabled = isRunning;
+  }
+  if (isRunning) setMtgStatus("Listening...", "live");
+}
+
+async function startMeetingNotes() {
+  setMtgStatus("Starting...");
+  try {
+    await fetchJSON("/api/meeting-notes/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: el("mtg-source").value,
+        audio_device: el("mtg-audio-device").value || null,
+        engine: el("mtg-engine").value,
+        compute_device: el("mtg-compute-device").value,
+      }),
+    });
+    setMtgRunning(true);
+  } catch (err) {
+    setMtgStatus(`Error: ${err.message}`, "error");
+  }
+}
+
+async function stopMeetingNotes() {
+  el("mtg-stop").disabled = true;
+  setMtgStatus("Stopping...");
+  try {
+    await fetchJSON("/api/meeting-notes/stop", { method: "POST" });
+  } catch (err) {
+    setMtgStatus(`Error: ${err.message}`, "error");
+  }
+  setMtgRunning(false);
+}
+
+function setMtgNotesStatus(text, kind) {
+  const status = el("mtg-notes-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function renderMeetingNotes(text) {
+  const container = el("mtg-notes");
+  container.innerHTML = "";
+  const block = document.createElement("p");
+  block.className = "ocr-text-block";
+  block.textContent = text;
+  container.appendChild(block);
+}
+
+async function generateMeetingNotes() {
+  el("mtg-generate").disabled = true;
+  setMtgNotesStatus("Generating...");
+  try {
+    const data = await fetchJSON("/api/meeting-notes/generate", { method: "POST" });
+    renderMeetingNotes(data.text);
+    setMtgNotesStatus(`Based on ${data.transcript_line_count} transcript line(s)`, "live");
+  } catch (err) {
+    setMtgNotesStatus(`Error: ${err.message}`, "error");
+  } finally {
+    el("mtg-generate").disabled = false;
+  }
+}
+
+function closeMeetingNotes() {
+  el("mtg-modal-overlay").classList.add("hidden");
+  if (mtgRunning) stopMeetingNotes();
+}
+
+// --- Webcam background effects demo ---
+
+let webcamRunning = false;
+let webcamStatsTimer = null;
+
+async function openWebcamEffects() {
+  el("webcam-modal-overlay").classList.remove("hidden");
+  await populateWebcamDevices();
+}
+
+async function populateWebcamDevices() {
+  const data = await fetchJSON("/api/webcam-effects/devices");
+
+  const cameraSelect = el("webcam-camera");
+  cameraSelect.innerHTML = "";
+  if (!data.cameras.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "No camera found";
+    cameraSelect.appendChild(opt);
+  }
+  for (const index of data.cameras) {
+    const opt = document.createElement("option");
+    opt.value = index;
+    opt.textContent = `Camera ${index}`;
+    cameraSelect.appendChild(opt);
+  }
+
+  const engineSelect = el("webcam-engine");
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  openvinoOption.textContent = hasOpenvino
+    ? `OpenVINO (${data.openvino_devices.join(", ")})`
+    : "OpenVINO (install this brick's `openvino` extra to enable)";
+
+  const computeSelect = el("webcam-compute-device");
+  const fillComputeDevices = () => {
+    computeSelect.innerHTML = "";
+    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
+    for (const value of options) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value;
+      computeSelect.appendChild(opt);
+    }
+  };
+  engineSelect.onchange = fillComputeDevices;
+  fillComputeDevices();
+
+  const effectSelect = el("webcam-effect");
+  const colorField = el("webcam-color-field");
+  effectSelect.onchange = () => {
+    colorField.hidden = effectSelect.value !== "replace";
+    if (webcamRunning) sendWebcamEffect();
+  };
+}
+
+async function sendWebcamEffect() {
+  try {
+    await fetchJSON("/api/webcam-effects/effect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        effect: el("webcam-effect").value,
+        color: el("webcam-color").value,
+      }),
+    });
+  } catch {
+    // Best-effort -- a failed live effect switch just leaves the previous look on screen.
+  }
+}
+
+function setWebcamStatus(text, kind) {
+  const status = el("webcam-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function setWebcamRunning(isRunning) {
+  webcamRunning = isRunning;
+  el("webcam-start").disabled = isRunning;
+  el("webcam-stop").disabled = !isRunning;
+  for (const id of ["webcam-camera", "webcam-engine", "webcam-compute-device"]) {
+    el(id).disabled = isRunning;
+  }
+
+  const img = el("webcam-video");
+  if (isRunning) {
+    setWebcamStatus("Running...", "live");
+    img.src = `/api/webcam-effects/stream?t=${Date.now()}`;
+    img.classList.add("visible");
+    webcamStatsTimer = setInterval(pollWebcamStats, 700);
+  } else {
+    setWebcamStatus("Idle");
+    img.removeAttribute("src");
+    img.classList.remove("visible");
+    el("webcam-stats").innerHTML = '<p class="transcript-placeholder">Person-coverage will be shown here once running.</p>';
+    if (webcamStatsTimer) {
+      clearInterval(webcamStatsTimer);
+      webcamStatsTimer = null;
+    }
+  }
+}
+
+async function pollWebcamStats() {
+  try {
+    const data = await fetchJSON("/api/webcam-effects/stats");
+    if (data.error) {
+      setWebcamStatus(`Error: ${data.error}`, "error");
+      setWebcamRunning(false);
+      return;
+    }
+    el("webcam-stats").innerHTML =
+      `<div class="objdet-detection-row"><span class="objdet-detection-label">Person coverage</span><span class="objdet-detection-score">${Math.round(data.person_coverage * 100)}%</span></div>`;
+  } catch {
+    // Best-effort -- a transient failure here shouldn't interrupt the video stream.
+  }
+}
+
+async function startWebcamEffects() {
+  setWebcamStatus("Starting...");
+  try {
+    await fetchJSON("/api/webcam-effects/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        camera_index: Number(el("webcam-camera").value || 0),
+        engine: el("webcam-engine").value,
+        compute_device: el("webcam-compute-device").value,
+        effect: el("webcam-effect").value,
+        color: el("webcam-color").value,
+      }),
+    });
+    setWebcamRunning(true);
+  } catch (err) {
+    setWebcamStatus(`Error: ${err.message}`, "error");
+  }
+}
+
+async function stopWebcamEffects() {
+  el("webcam-stop").disabled = true;
+  setWebcamStatus("Stopping...");
+  try {
+    await fetchJSON("/api/webcam-effects/stop", { method: "POST" });
+  } catch (err) {
+    setWebcamStatus(`Error: ${err.message}`, "error");
+  }
+  setWebcamRunning(false);
+}
+
+function closeWebcamEffects() {
+  el("webcam-modal-overlay").classList.add("hidden");
+  if (webcamRunning) stopWebcamEffects();
+}
+
+// --- Expense Report Extractor demo ---
+
+let expxWs = null;
+let expxRunning = false;
+
+async function openExpenseExtract() {
+  el("expx-modal-overlay").classList.remove("hidden");
+  await populateExpenseExtractDevices();
+  connectExpenseExtractWebSocket();
+}
+
+async function populateExpenseExtractDevices() {
+  const data = await fetchJSON("/api/expense-extract/devices");
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+
+  for (const engineId of ["expx-ocr-engine", "expx-llm-engine"]) {
+    const engineSelect = el(engineId);
+    const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+    openvinoOption.disabled = !hasOpenvino;
+    openvinoOption.textContent = hasOpenvino
+      ? `OpenVINO (${data.openvino_devices.join(", ")})`
+      : "OpenVINO (install this brick's `openvino` extra to enable)";
+  }
+
+  const wireComputeDevices = (engineSelectId, deviceSelectId) => {
+    const engineSelect = el(engineSelectId);
+    const deviceSelect = el(deviceSelectId);
+    const fill = () => {
+      deviceSelect.innerHTML = "";
+      const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
+      for (const value of options) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = value;
+        deviceSelect.appendChild(opt);
+      }
+    };
+    engineSelect.onchange = fill;
+    fill();
+  };
+  wireComputeDevices("expx-ocr-engine", "expx-ocr-device");
+  wireComputeDevices("expx-llm-engine", "expx-llm-device");
+
+  // Nudge the demo toward its actual point: OCR on the GPU, LLM structuring
+  // on the NPU, running at once -- if this machine has both. Deliberately
+  // GPU-for-OCR / NPU-for-LLM, not the other way around: screen-ocr's
+  // OpenVINO engine is a large (7B) vision-language model, and testing
+  // found its NPU compile reliably fails on this hardware ("Can't convert
+  // 76 Bit to Byte" in OpenVINO's vpux-compiler) -- GPU is the OCR device
+  // that's actually verified working. doc-qa's LLM, much smaller, compiles
+  // and runs fine on NPU. See expense-extract's README for the finding.
+  if (hasOpenvino && data.openvino_devices.includes("GPU")) {
+    el("expx-ocr-engine").value = "openvino";
+    el("expx-ocr-engine").dispatchEvent(new Event("change"));
+    el("expx-ocr-device").value = "GPU";
+  }
+  if (hasOpenvino && data.openvino_devices.includes("NPU")) {
+    el("expx-llm-engine").value = "openvino";
+    el("expx-llm-engine").dispatchEvent(new Event("change"));
+    el("expx-llm-device").value = "NPU";
+  }
+}
+
+function connectExpenseExtractWebSocket() {
+  if (expxWs) return;
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+  expxWs = new WebSocket(`${protocol}://${location.host}/ws/expense-extract`);
+  expxWs.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type === "ocr_progress") {
+      setExpxStatus(`OCR ${message.index}/${message.total}: ${message.file}`, "live");
+    } else if (message.type === "structured") {
+      appendExpenseLine(message.line);
+    } else if (message.type === "done") {
+      setExpxStatus(`Done -- ${message.structured}/${message.count} structured, total $${message.total.toFixed(2)}`, "live");
+      setExpxRunning(false);
+    } else if (message.type === "error") {
+      setExpxStatus(`Error: ${message.message}`, "error");
+      setExpxRunning(false);
+    } else if (message.type === "stopped") {
+      setExpxRunning(false);
+      if (!el("expx-status").classList.contains("error")) {
+        setExpxStatus("Idle");
+      }
+    }
+  };
+  expxWs.onclose = () => { expxWs = null; };
+}
+
+function appendExpenseLine(line) {
+  const container = el("expx-transcript");
+  const placeholder = container.querySelector(".transcript-placeholder");
+  if (placeholder) placeholder.remove();
+
+  const row = document.createElement("p");
+  row.className = "transcript-answer";
+  if (line.error) {
+    row.textContent = `${line.source_file}: skipped (${line.error})`;
+  } else {
+    const amount = line.amount !== null && line.amount !== undefined ? `$${line.amount.toFixed(2)}` : "?";
+    row.textContent = `${line.source_file}: ${line.vendor || "?"} -- ${line.date || "?"} -- ${amount} -- ${line.category}`;
+  }
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+}
+
+function setExpxStatus(text, kind) {
+  const status = el("expx-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function setExpxRunning(isRunning) {
+  expxRunning = isRunning;
+  el("expx-start").disabled = isRunning;
+  el("expx-stop").disabled = !isRunning;
+  for (const id of ["expx-folder", "expx-ocr-engine", "expx-ocr-device", "expx-llm-engine", "expx-llm-device"]) {
+    el(id).disabled = isRunning;
+  }
+}
+
+async function startExpenseExtract() {
+  const folder = el("expx-folder").value.trim();
+  if (!folder) {
+    setExpxStatus("Enter a folder path first.", "error");
+    return;
+  }
+
+  el("expx-transcript").innerHTML = '<p class="transcript-placeholder">Results will appear here as each receipt is structured.</p>';
+  setExpxStatus("Starting...");
+  try {
+    await fetchJSON("/api/expense-extract/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        folder,
+        ocr_engine: el("expx-ocr-engine").value,
+        ocr_compute_device: el("expx-ocr-device").value,
+        llm_engine: el("expx-llm-engine").value,
+        llm_compute_device: el("expx-llm-device").value,
+      }),
+    });
+    setExpxRunning(true);
+  } catch (err) {
+    setExpxStatus(`Error: ${err.message}`, "error");
+  }
+}
+
+async function stopExpenseExtract() {
+  el("expx-stop").disabled = true;
+  setExpxStatus("Stopping...");
+  try {
+    await fetchJSON("/api/expense-extract/stop", { method: "POST" });
+  } catch (err) {
+    setExpxStatus(`Error: ${err.message}`, "error");
+  }
+  setExpxRunning(false);
+}
+
+function closeExpenseExtract() {
+  el("expx-modal-overlay").classList.add("hidden");
+  if (expxRunning) stopExpenseExtract();
+}
+
+// --- Local Voice Assistant demo ---
+
+let vaWs = null;
+let vaRunning = false;
+
+async function openVoiceAssistant() {
+  el("va-modal-overlay").classList.remove("hidden");
+  await populateVoiceAssistantDevices();
+  connectVoiceAssistantWebSocket();
+}
+
+async function populateVoiceAssistantDevices() {
+  const data = await fetchJSON("/api/voice-assistant/devices");
+
+  const audioSelect = el("va-audio-device");
+  audioSelect.innerHTML = "";
+  const defaultOpt = document.createElement("option");
+  defaultOpt.value = "";
+  defaultOpt.textContent = "Default microphone";
+  audioSelect.appendChild(defaultOpt);
+  for (const name of data.microphones) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    audioSelect.appendChild(opt);
+  }
+
+  const wakeSelect = el("va-wake-word");
+  wakeSelect.innerHTML = "";
+  for (const word of data.wake_words) {
+    const opt = document.createElement("option");
+    opt.value = word;
+    opt.textContent = word.replace(/_/g, " ");
+    wakeSelect.appendChild(opt);
+  }
+
+  const engineSelect = el("va-engine");
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  openvinoOption.textContent = hasOpenvino
+    ? `OpenVINO (${data.openvino_devices.join(", ")})`
+    : "OpenVINO (install this brick's `openvino` extra to enable)";
+
+  const computeSelect = el("va-compute-device");
+  const fillComputeDevices = () => {
+    computeSelect.innerHTML = "";
+    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["auto", "cpu"];
+    for (const value of options) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value;
+      computeSelect.appendChild(opt);
+    }
+  };
+  engineSelect.onchange = fillComputeDevices;
+  fillComputeDevices();
+}
+
+function connectVoiceAssistantWebSocket() {
+  if (vaWs) return;
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+  vaWs = new WebSocket(`${protocol}://${location.host}/ws/voice-assistant`);
+  vaWs.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type === "wake") {
+      appendVaNote("Wake word heard -- listening for your question...");
+    } else if (message.type === "heard") {
+      appendVaLine("transcript-question", `You: ${message.text}`);
+    } else if (message.type === "reply") {
+      appendVaLine("transcript-answer", `Assistant: ${message.text}`);
+    } else if (message.type === "error") {
+      setVaStatus(`Error: ${message.message}`, "error");
+      setVaRunning(false);
+    } else if (message.type === "stopped") {
+      setVaRunning(false);
+      if (!el("va-status").classList.contains("error")) {
+        setVaStatus("Idle");
+      }
+    }
+  };
+  vaWs.onclose = () => { vaWs = null; };
+}
+
+function appendVaLine(className, text) {
+  const container = el("va-transcript");
+  const placeholder = container.querySelector(".transcript-placeholder");
+  if (placeholder) placeholder.remove();
+
+  const line = document.createElement("p");
+  line.className = className;
+  line.textContent = text;
+  container.appendChild(line);
+  container.scrollTop = container.scrollHeight;
+}
+
+function appendVaNote(text) {
+  const container = el("va-transcript");
+  const placeholder = container.querySelector(".transcript-placeholder");
+  if (placeholder) placeholder.remove();
+
+  const line = document.createElement("p");
+  line.className = "transcript-sources";
+  line.textContent = text;
+  container.appendChild(line);
+  container.scrollTop = container.scrollHeight;
+}
+
+function setVaStatus(text, kind) {
+  const status = el("va-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function setVaRunning(isRunning) {
+  vaRunning = isRunning;
+  el("va-start").disabled = isRunning;
+  el("va-stop").disabled = !isRunning;
+  for (const id of ["va-audio-device", "va-wake-word", "va-engine", "va-compute-device", "va-speak"]) {
+    el(id).disabled = isRunning;
+  }
+  if (isRunning) setVaStatus("Listening...", "live");
+}
+
+async function startVoiceAssistant() {
+  setVaStatus("Starting...");
+  try {
+    await fetchJSON("/api/voice-assistant/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        audio_device: el("va-audio-device").value || null,
+        engine: el("va-engine").value,
+        compute_device: el("va-compute-device").value,
+        wake_word: el("va-wake-word").value,
+        speak_replies: el("va-speak").checked,
+      }),
+    });
+    setVaRunning(true);
+  } catch (err) {
+    setVaStatus(`Error: ${err.message}`, "error");
+  }
+}
+
+async function stopVoiceAssistant() {
+  el("va-stop").disabled = true;
+  setVaStatus("Stopping...");
+  try {
+    await fetchJSON("/api/voice-assistant/stop", { method: "POST" });
+  } catch (err) {
+    setVaStatus(`Error: ${err.message}`, "error");
+  }
+  setVaRunning(false);
+}
+
+function closeVoiceAssistant() {
+  el("va-modal-overlay").classList.add("hidden");
+  if (vaRunning) stopVoiceAssistant();
+}
+
+// --- Voice Clone Studio demo ---
+
+async function openVoiceCloneStudio() {
+  el("voice-modal-overlay").classList.remove("hidden");
+  await populateVoiceDevices();
+  const status = await fetchJSON("/api/voice-clone-studio/status");
+  setVoiceEnrolled(status.enrolled);
+}
+
+async function populateVoiceDevices() {
+  const data = await fetchJSON("/api/voice-clone-studio/devices");
+
+  const sourceSelect = el("voice-source");
+  const recordField = el("voice-record-field");
+  const uploadField = el("voice-upload-field");
+  const fillSource = () => {
+    const isUpload = sourceSelect.value === "upload";
+    recordField.hidden = isUpload;
+    uploadField.hidden = !isUpload;
+  };
+  sourceSelect.onchange = fillSource;
+  fillSource();
+
+  const engineSelect = el("voice-engine");
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  openvinoOption.textContent = hasOpenvino
+    ? `OpenVINO (${data.openvino_devices.join(", ")})`
+    : "OpenVINO (install this brick's `openvino` extra to enable)";
+
+  const computeSelect = el("voice-compute-device");
+  const fillComputeDevices = () => {
+    computeSelect.innerHTML = "";
+    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["CPU"];
+    for (const value of options) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value;
+      computeSelect.appendChild(opt);
+    }
+  };
+  engineSelect.onchange = fillComputeDevices;
+  fillComputeDevices();
+
+  if (!data.microphones || !data.microphones.length) {
+    const recordOption = sourceSelect.querySelector('option[value="record"]');
+    recordOption.disabled = true;
+    recordOption.textContent = "Record from microphone (none found)";
+    sourceSelect.value = "upload";
+    fillSource();
+  }
+}
+
+function setVoiceEnrollStatus(text, kind) {
+  const status = el("voice-enroll-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function setVoiceEnrolled(enrolled) {
+  el("voice-text").disabled = !enrolled;
+  el("voice-style").disabled = !enrolled;
+  el("voice-tau").disabled = !enrolled;
+  el("voice-synthesize").disabled = !enrolled;
+  if (enrolled) setVoiceEnrollStatus("Voice enrolled -- ready to speak", "live");
+}
+
+async function runVoiceEnroll() {
+  const source = el("voice-source").value;
+  const engine = el("voice-engine").value;
+  const computeDevice = el("voice-compute-device").value;
+
+  el("voice-enroll").disabled = true;
+  setVoiceEnrollStatus(source === "record" ? "Recording..." : "Uploading and enrolling...");
+
+  try {
+    if (source === "upload") {
+      const fileInput = el("voice-upload");
+      if (!fileInput.files.length) {
+        setVoiceEnrollStatus("Choose an audio file first.", "error");
+        el("voice-enroll").disabled = false;
+        return;
+      }
+      const form = new FormData();
+      form.append("file", fileInput.files[0]);
+      form.append("engine", engine);
+      form.append("compute_device", computeDevice);
+      await fetchJSON("/api/voice-clone-studio/enroll-upload", { method: "POST", body: form });
+    } else {
+      const seconds = Number(el("voice-record-seconds").value) || 10;
+      await fetchJSON("/api/voice-clone-studio/enroll-record", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seconds, engine, compute_device: computeDevice }),
+      });
+    }
+    setVoiceEnrolled(true);
+  } catch (err) {
+    setVoiceEnrollStatus(`Error: ${err.message}`, "error");
+  } finally {
+    el("voice-enroll").disabled = false;
+  }
+}
+
+function setVoiceSynthesizeStatus(text, kind) {
+  const status = el("voice-synthesize-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+async function runVoiceSynthesize() {
+  const text = el("voice-text").value.trim();
+  if (!text) {
+    setVoiceSynthesizeStatus("Type something to say first.", "error");
+    return;
+  }
+
+  el("voice-synthesize").disabled = true;
+  setVoiceSynthesizeStatus("Synthesizing...");
+
+  try {
+    const res = await fetch("/api/voice-clone-studio/synthesize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, style: el("voice-style").value, tau: Number(el("voice-tau").value) }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `synthesize failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const player = el("voice-player");
+    player.src = URL.createObjectURL(blob);
+    player.hidden = false;
+    player.play();
+    setVoiceSynthesizeStatus("Done", "live");
+  } catch (err) {
+    setVoiceSynthesizeStatus(`Error: ${err.message}`, "error");
+  } finally {
+    el("voice-synthesize").disabled = false;
+  }
+}
+
+function closeVoiceCloneStudio() {
+  el("voice-modal-overlay").classList.add("hidden");
+}
+
+// --- Init ---
+
+async function loadDeviceSummary() {
+  try {
+    const data = await fetchJSON("/api/live-translation/devices");
+    const ov = data.openvino_devices.length ? data.openvino_devices.join(", ") : "not installed";
+    el("device-summary").textContent = `Inference devices: ${ov}\nMicrophones: ${data.microphones.length} · Outputs: ${data.speakers.length}`;
+  } catch {
+    el("device-summary").textContent = "";
+  }
+}
+
+async function loadVersion() {
+  try {
+    const data = await fetchJSON("/api/version");
+    el("app-version").textContent = `v${data.version}`;
+  } catch {
+    // Best-effort -- an empty footer label beats breaking page load over it.
+  }
+}
+
+async function init() {
+  const demos = await fetchJSON("/api/demos");
+  renderCards(demos);
+  loadDeviceSummary();
+  loadVersion();
+  initTelemetry();
+
+  el("modal-close").addEventListener("click", closeLiveTranslation);
+  el("ctl-start").addEventListener("click", startLiveTranslation);
+  el("ctl-stop").addEventListener("click", stopLiveTranslation);
+  document.querySelector(".placeholder-close").addEventListener("click", () => {
+    el("placeholder-overlay").classList.add("hidden");
+  });
+
+  el("docqa-modal-close").addEventListener("click", closeDocQA);
+  el("docqa-ingest").addEventListener("click", runDocQaIngest);
+  el("docqa-ask").addEventListener("click", runDocQaAsk);
+  el("docqa-question").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") runDocQaAsk();
+  });
+
+  el("objdet-modal-close").addEventListener("click", closeObjectDetection);
+  el("objdet-start").addEventListener("click", startObjectDetection);
+  el("objdet-stop").addEventListener("click", stopObjectDetection);
+
+  el("ocr-modal-close").addEventListener("click", closeScreenOcr);
+  el("ocr-extract").addEventListener("click", runScreenOcrExtract);
+
+  el("mtg-modal-close").addEventListener("click", closeMeetingNotes);
+  el("mtg-start").addEventListener("click", startMeetingNotes);
+  el("mtg-stop").addEventListener("click", stopMeetingNotes);
+  el("mtg-generate").addEventListener("click", generateMeetingNotes);
+
+  el("webcam-modal-close").addEventListener("click", closeWebcamEffects);
+  el("webcam-start").addEventListener("click", startWebcamEffects);
+  el("webcam-stop").addEventListener("click", stopWebcamEffects);
+  el("webcam-color").addEventListener("change", () => {
+    if (webcamRunning) sendWebcamEffect();
+  });
+
+  el("voice-modal-close").addEventListener("click", closeVoiceCloneStudio);
+  el("voice-enroll").addEventListener("click", runVoiceEnroll);
+  el("voice-synthesize").addEventListener("click", runVoiceSynthesize);
+
+  el("va-modal-close").addEventListener("click", closeVoiceAssistant);
+  el("va-start").addEventListener("click", startVoiceAssistant);
+  el("va-stop").addEventListener("click", stopVoiceAssistant);
+
+  el("expx-modal-close").addEventListener("click", closeExpenseExtract);
+  el("expx-start").addEventListener("click", startExpenseExtract);
+  el("expx-stop").addEventListener("click", stopExpenseExtract);
+}
+
+init();

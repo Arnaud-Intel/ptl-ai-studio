@@ -1,0 +1,842 @@
+"""FastAPI app: serves the Panther Lake AI Studio UI and drives the
+live-translation demo.
+
+Run with `uv run panther-lake-launcher` from the workspace root.
+"""
+from __future__ import annotations
+
+import asyncio
+import time
+import webbrowser
+from contextlib import asynccontextmanager
+from dataclasses import asdict
+from pathlib import Path
+
+import uvicorn
+from fastapi import FastAPI, Form, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pantherlake_ai_core import audio, video
+from pantherlake_ai_core.engine import Engine, list_openvino_devices
+from pydantic import BaseModel
+
+from . import activity, registry
+from .doc_qa_runner import DocQARunner
+from .live_translation_runner import LiveTranslationRunner
+from .meeting_notes_runner import MeetingNotesRunner
+from .object_detection_runner import ObjectDetectionRunner
+from .screen_ocr_runner import ScreenOcrRunner
+from .telemetry_poller import TelemetryPoller
+from .expense_extract_runner import ExpenseExtractRunner
+from .voice_assistant_runner import VoiceAssistantRunner
+from .voice_clone_studio_runner import VoiceCloneStudioRunner
+from .webcam_effects_runner import WebcamEffectsRunner
+
+STATIC_DIR = Path(__file__).parent / "static"
+VERSION_FILE = Path(__file__).resolve().parents[3] / "VERSION"
+
+
+def get_version() -> str:
+    try:
+        return VERSION_FILE.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return "unknown"
+
+_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"model_size": "small", "compute_device": "auto"},
+    Engine.OPENVINO: {"model_size": "base", "compute_device": "AUTO"},
+}
+
+_DOC_QA_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"compute_device": "cpu"},
+    Engine.OPENVINO: {"compute_device": "AUTO"},
+}
+
+_OBJECT_DETECTION_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"compute_device": "cpu"},
+    Engine.OPENVINO: {"compute_device": "AUTO"},
+}
+
+_SCREEN_OCR_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"compute_device": "cpu"},
+    Engine.OPENVINO: {"compute_device": "AUTO"},
+}
+
+_MEETING_NOTES_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"whisper_model": "small", "compute_device": "auto"},
+    Engine.OPENVINO: {"whisper_model": "base", "compute_device": "AUTO"},
+}
+
+_WEBCAM_EFFECTS_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"compute_device": "cpu"},
+    Engine.OPENVINO: {"compute_device": "AUTO"},
+}
+
+_VOICE_CLONE_STUDIO_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"compute_device": "CPU"},
+    Engine.OPENVINO: {"compute_device": "AUTO"},
+}
+
+_VOICE_ASSISTANT_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"whisper_model": "small", "compute_device": "auto"},
+    Engine.OPENVINO: {"whisper_model": "base", "compute_device": "AUTO"},
+}
+
+_EXPENSE_EXTRACT_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"compute_device": "cpu"},
+    Engine.OPENVINO: {"compute_device": "AUTO"},
+}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.live_translation_queue = asyncio.Queue()
+    app.state.meeting_notes_queue = asyncio.Queue()
+    app.state.voice_assistant_queue = asyncio.Queue()
+    app.state.expense_extract_queue = asyncio.Queue()
+    telemetry_poller.start()
+    yield
+    telemetry_poller.stop()
+
+
+app = FastAPI(title="Panther Lake AI Studio", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+runner = LiveTranslationRunner()
+doc_qa_runner = DocQARunner()
+object_detection_runner = ObjectDetectionRunner()
+screen_ocr_runner = ScreenOcrRunner()
+meeting_notes_runner = MeetingNotesRunner()
+webcam_effects_runner = WebcamEffectsRunner()
+voice_clone_studio_runner = VoiceCloneStudioRunner()
+voice_assistant_runner = VoiceAssistantRunner()
+expense_extract_runner = ExpenseExtractRunner()
+telemetry_poller = TelemetryPoller()
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/api/demos")
+def list_demos() -> JSONResponse:
+    return JSONResponse([asdict(d) for d in registry.REGISTRY])
+
+
+@app.get("/api/version")
+def api_version() -> JSONResponse:
+    return JSONResponse({"version": get_version()})
+
+
+@app.get("/api/telemetry")
+def telemetry_snapshot() -> JSONResponse:
+    """CPU/GPU/NPU utilization (from the background poller's cache -- see
+    telemetry_poller.py for why this isn't queried fresh per request),
+    plus which demo (if any) is currently driving each device."""
+    payload = telemetry_poller.snapshot()
+    payload["active"] = activity.snapshot()
+    return JSONResponse(payload)
+
+
+@app.get("/api/live-translation/devices")
+def live_translation_devices() -> JSONResponse:
+    return JSONResponse(
+        {
+            "microphones": audio.list_microphones(),
+            "speakers": audio.list_speakers(),
+            "openvino_devices": list_openvino_devices(),
+        }
+    )
+
+
+class StartRequest(BaseModel):
+    source: str = "mic"
+    audio_device: str | None = None
+    engine: str = "portable"
+    model_size: str | None = None
+    compute_device: str | None = None
+
+
+@app.post("/api/live-translation/start")
+async def start_live_translation(req: StartRequest) -> JSONResponse:
+    if runner.running:
+        return JSONResponse({"error": "live-translation is already running"}, status_code=409)
+
+    try:
+        engine = Engine(req.engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
+
+    defaults = _ENGINE_DEFAULTS[engine]
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = app.state.live_translation_queue
+
+    try:
+        runner.start(
+            loop=loop,
+            queue=queue,
+            source=req.source,
+            audio_device=req.audio_device,
+            engine=engine,
+            model_size=req.model_size or defaults["model_size"],
+            compute_device=req.compute_device or defaults["compute_device"],
+        )
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+
+    return JSONResponse({"status": "started"})
+
+
+@app.post("/api/live-translation/stop")
+async def stop_live_translation() -> JSONResponse:
+    runner.stop()
+    return JSONResponse({"status": "stopped"})
+
+
+@app.websocket("/ws/live-translation")
+async def ws_live_translation(websocket: WebSocket) -> None:
+    # Single shared queue: fine for this launcher's one-operator-one-tab
+    # use case, but note a second concurrently connected tab would only
+    # get every other message rather than a full duplicate stream.
+    await websocket.accept()
+    queue: asyncio.Queue = app.state.live_translation_queue
+    try:
+        while True:
+            message = await queue.get()
+            await websocket.send_json(message)
+    except WebSocketDisconnect:
+        pass
+
+
+@app.get("/api/doc-qa/devices")
+def doc_qa_devices() -> JSONResponse:
+    return JSONResponse({"openvino_devices": list_openvino_devices()})
+
+
+class DocQAIngestRequest(BaseModel):
+    folder: str
+    engine: str = "portable"
+    compute_device: str | None = None
+    reindex: bool = False
+
+
+@app.post("/api/doc-qa/ingest")
+async def doc_qa_ingest(req: DocQAIngestRequest) -> JSONResponse:
+    try:
+        engine = Engine(req.engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
+
+    device = req.compute_device or _DOC_QA_ENGINE_DEFAULTS[engine]["compute_device"]
+
+    try:
+        count, folder = await run_in_threadpool(
+            doc_qa_runner.ingest,
+            folder=req.folder,
+            engine=req.engine,
+            device=device,
+            reindex=req.reindex,
+        )
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse({"chunks": count, "folder": folder})
+
+
+class DocQAAskRequest(BaseModel):
+    question: str
+    top_k: int = 4
+
+
+@app.post("/api/doc-qa/ask")
+async def doc_qa_ask(req: DocQAAskRequest) -> JSONResponse:
+    try:
+        answer = await run_in_threadpool(doc_qa_runner.ask, question=req.question, top_k=req.top_k)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse(
+        {
+            "text": answer.text,
+            "sources": [
+                {"source": r.chunk.source, "chunk_index": r.chunk.chunk_index, "score": r.score}
+                for r in answer.sources
+            ],
+        }
+    )
+
+
+@app.get("/api/object-detection/devices")
+def object_detection_devices() -> JSONResponse:
+    return JSONResponse(
+        {
+            "cameras": video.list_cameras(),
+            "screens": video.list_screens(),
+            "openvino_devices": list_openvino_devices(),
+        }
+    )
+
+
+class ObjectDetectionStartRequest(BaseModel):
+    source: str = "screen"
+    camera_index: int = 0
+    screen_index: int = 1
+    engine: str = "portable"
+    compute_device: str | None = None
+
+
+@app.post("/api/object-detection/start")
+async def start_object_detection(req: ObjectDetectionStartRequest) -> JSONResponse:
+    if object_detection_runner.running:
+        return JSONResponse({"error": "object-detection is already running"}, status_code=409)
+
+    try:
+        engine = Engine(req.engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
+
+    compute_device = req.compute_device or _OBJECT_DETECTION_ENGINE_DEFAULTS[engine]["compute_device"]
+
+    try:
+        object_detection_runner.start(
+            source=req.source,
+            camera_index=req.camera_index,
+            screen_index=req.screen_index,
+            engine=engine,
+            compute_device=compute_device,
+        )
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+
+    return JSONResponse({"status": "started"})
+
+
+@app.post("/api/object-detection/stop")
+async def stop_object_detection() -> JSONResponse:
+    object_detection_runner.stop()
+    return JSONResponse({"status": "stopped"})
+
+
+@app.get("/api/object-detection/detections")
+def object_detection_detections() -> JSONResponse:
+    return JSONResponse({"detections": object_detection_runner.latest_detections(), "error": object_detection_runner.error})
+
+
+@app.get("/api/object-detection/stream")
+def object_detection_stream() -> StreamingResponse:
+    def generate():
+        last_sent = None
+        # Poll the runner's single "latest frame" buffer rather than a
+        # queue: for video, only the newest frame matters, so there's
+        # nothing to gain from buffering ones the client hasn't seen yet.
+        while object_detection_runner.running:
+            jpeg = object_detection_runner.latest_jpeg()
+            if jpeg is not None and jpeg is not last_sent:
+                yield (
+                    b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                )
+                last_sent = jpeg
+            time.sleep(0.05)
+
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.get("/api/screen-ocr/devices")
+def screen_ocr_devices() -> JSONResponse:
+    return JSONResponse(
+        {
+            "cameras": video.list_cameras(),
+            "screens": video.list_screens(),
+            "openvino_devices": list_openvino_devices(),
+        }
+    )
+
+
+def _serialize_extraction(result) -> dict:
+    return {
+        "text": result.text,
+        "translated_text": result.translated_text,
+        "regions": [
+            {"text": r.text, "confidence": r.confidence, "box": list(r.box)} for r in result.regions
+        ],
+    }
+
+
+class ScreenOcrExtractRequest(BaseModel):
+    source: str = "screen"  # "screen" | "webcam"
+    screen_index: int = 1
+    camera_index: int = 0
+    engine: str = "portable"
+    compute_device: str | None = None
+    translate: bool = False
+
+
+@app.post("/api/screen-ocr/extract")
+async def screen_ocr_extract(req: ScreenOcrExtractRequest) -> JSONResponse:
+    try:
+        engine = Engine(req.engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
+
+    compute_device = req.compute_device or _SCREEN_OCR_ENGINE_DEFAULTS[engine]["compute_device"]
+
+    def work():
+        if req.source == "webcam":
+            image = video.capture_camera_frame(req.camera_index)
+        else:
+            image = video.capture_screen_frame(req.screen_index)
+        return screen_ocr_runner.extract(
+            image=image, engine=req.engine, device=compute_device, translate=req.translate
+        )
+
+    try:
+        result = await run_in_threadpool(work)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse(_serialize_extraction(result))
+
+
+@app.post("/api/screen-ocr/extract-upload")
+async def screen_ocr_extract_upload(
+    file: UploadFile,
+    engine: str = Form("portable"),
+    compute_device: str | None = Form(None),
+    translate: bool = Form(False),
+) -> JSONResponse:
+    try:
+        engine_enum = Engine(engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{engine}'"}, status_code=400)
+
+    resolved_device = compute_device or _SCREEN_OCR_ENGINE_DEFAULTS[engine_enum]["compute_device"]
+    file_bytes = await file.read()
+
+    def work():
+        import cv2
+        import numpy as np
+
+        array = np.frombuffer(file_bytes, dtype=np.uint8)
+        image = cv2.imdecode(array, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError("Could not decode the uploaded file as an image.")
+        return screen_ocr_runner.extract(image=image, engine=engine, device=resolved_device, translate=translate)
+
+    try:
+        result = await run_in_threadpool(work)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse(_serialize_extraction(result))
+
+
+@app.get("/api/meeting-notes/devices")
+def meeting_notes_devices() -> JSONResponse:
+    return JSONResponse(
+        {
+            "microphones": audio.list_microphones(),
+            "speakers": audio.list_speakers(),
+            "openvino_devices": list_openvino_devices(),
+        }
+    )
+
+
+class MeetingNotesStartRequest(BaseModel):
+    source: str = "system"
+    audio_device: str | None = None
+    engine: str = "portable"
+    compute_device: str | None = None
+    whisper_model: str | None = None
+
+
+@app.post("/api/meeting-notes/start")
+async def start_meeting_notes(req: MeetingNotesStartRequest) -> JSONResponse:
+    if meeting_notes_runner.running:
+        return JSONResponse({"error": "meeting-notes is already running"}, status_code=409)
+
+    try:
+        engine = Engine(req.engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
+
+    defaults = _MEETING_NOTES_ENGINE_DEFAULTS[engine]
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = app.state.meeting_notes_queue
+
+    try:
+        meeting_notes_runner.start(
+            loop=loop,
+            queue=queue,
+            source=req.source,
+            audio_device=req.audio_device,
+            engine=engine,
+            compute_device=req.compute_device or defaults["compute_device"],
+            whisper_model_size=req.whisper_model or defaults["whisper_model"],
+        )
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+
+    return JSONResponse({"status": "started"})
+
+
+@app.post("/api/meeting-notes/stop")
+async def stop_meeting_notes() -> JSONResponse:
+    meeting_notes_runner.stop()
+    return JSONResponse({"status": "stopped"})
+
+
+@app.websocket("/ws/meeting-notes")
+async def ws_meeting_notes(websocket: WebSocket) -> None:
+    await websocket.accept()
+    queue: asyncio.Queue = app.state.meeting_notes_queue
+    try:
+        while True:
+            message = await queue.get()
+            await websocket.send_json(message)
+    except WebSocketDisconnect:
+        pass
+
+
+@app.post("/api/meeting-notes/generate")
+async def generate_meeting_notes() -> JSONResponse:
+    try:
+        notes = await run_in_threadpool(meeting_notes_runner.generate_notes)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse({"text": notes.text, "transcript_line_count": notes.transcript_line_count})
+
+
+@app.get("/api/webcam-effects/devices")
+def webcam_effects_devices() -> JSONResponse:
+    return JSONResponse(
+        {
+            "cameras": video.list_cameras(),
+            "openvino_devices": list_openvino_devices(),
+        }
+    )
+
+
+def _hex_to_bgr(hex_color: str) -> tuple[int, int, int]:
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+    return (b, g, r)
+
+
+class WebcamEffectsStartRequest(BaseModel):
+    camera_index: int = 0
+    engine: str = "portable"
+    compute_device: str | None = None
+    effect: str = "blur"
+    color: str = "#0068B5"  # Intel blue, as an "#RRGGBB" hex string (what an <input type="color"> gives)
+
+
+@app.post("/api/webcam-effects/start")
+async def start_webcam_effects(req: WebcamEffectsStartRequest) -> JSONResponse:
+    if webcam_effects_runner.running:
+        return JSONResponse({"error": "webcam-effects is already running"}, status_code=409)
+
+    try:
+        engine = Engine(req.engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
+
+    compute_device = req.compute_device or _WEBCAM_EFFECTS_ENGINE_DEFAULTS[engine]["compute_device"]
+
+    try:
+        webcam_effects_runner.start(
+            camera_index=req.camera_index,
+            engine=engine,
+            compute_device=compute_device,
+            effect=req.effect,
+            color=_hex_to_bgr(req.color),
+        )
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+
+    return JSONResponse({"status": "started"})
+
+
+@app.post("/api/webcam-effects/stop")
+async def stop_webcam_effects() -> JSONResponse:
+    webcam_effects_runner.stop()
+    return JSONResponse({"status": "stopped"})
+
+
+class WebcamEffectsEffectRequest(BaseModel):
+    effect: str
+    color: str | None = None
+
+
+@app.post("/api/webcam-effects/effect")
+async def set_webcam_effect(req: WebcamEffectsEffectRequest) -> JSONResponse:
+    # Changes the blend live -- the capture/segmentation loop keeps running
+    # untouched, only the per-frame effect render (done in the runner's
+    # on_frame callback) picks this up on the next frame.
+    webcam_effects_runner.set_effect(req.effect, _hex_to_bgr(req.color) if req.color else None)
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/webcam-effects/stats")
+def webcam_effects_stats() -> JSONResponse:
+    return JSONResponse({**webcam_effects_runner.latest_stats(), "error": webcam_effects_runner.error})
+
+
+@app.get("/api/webcam-effects/stream")
+def webcam_effects_stream() -> StreamingResponse:
+    def generate():
+        last_sent = None
+        while webcam_effects_runner.running:
+            jpeg = webcam_effects_runner.latest_jpeg()
+            if jpeg is not None and jpeg is not last_sent:
+                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                last_sent = jpeg
+            time.sleep(0.05)
+
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.get("/api/voice-clone-studio/devices")
+def voice_clone_studio_devices() -> JSONResponse:
+    return JSONResponse({"microphones": audio.list_microphones(), "openvino_devices": list_openvino_devices()})
+
+
+class VoiceCloneStudioEnrollRecordRequest(BaseModel):
+    seconds: float = 10.0
+    engine: str = "portable"
+    compute_device: str | None = None
+
+
+@app.post("/api/voice-clone-studio/enroll-record")
+async def voice_clone_studio_enroll_record(req: VoiceCloneStudioEnrollRecordRequest) -> JSONResponse:
+    try:
+        engine = Engine(req.engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
+
+    compute_device = req.compute_device or _VOICE_CLONE_STUDIO_ENGINE_DEFAULTS[engine]["compute_device"]
+
+    def work():
+        reference_path = voice_clone_studio_runner.record_reference(req.seconds)
+        voice_clone_studio_runner.enroll(reference_path=reference_path, engine=req.engine, device=compute_device)
+
+    try:
+        await run_in_threadpool(work)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse({"status": "enrolled"})
+
+
+@app.post("/api/voice-clone-studio/enroll-upload")
+async def voice_clone_studio_enroll_upload(
+    file: UploadFile,
+    engine: str = Form("portable"),
+    compute_device: str | None = Form(None),
+) -> JSONResponse:
+    try:
+        engine_enum = Engine(engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{engine}'"}, status_code=400)
+
+    resolved_device = compute_device or _VOICE_CLONE_STUDIO_ENGINE_DEFAULTS[engine_enum]["compute_device"]
+    file_bytes = await file.read()
+    suffix = Path(file.filename or "reference.wav").suffix or ".wav"
+
+    def work():
+        import os
+        import tempfile
+
+        fd, path = tempfile.mkstemp(suffix=suffix)
+        try:
+            os.write(fd, file_bytes)
+            os.close(fd)
+            voice_clone_studio_runner.enroll(reference_path=path, engine=engine, device=resolved_device)
+        finally:
+            os.unlink(path)
+
+    try:
+        await run_in_threadpool(work)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse({"status": "enrolled"})
+
+
+@app.get("/api/voice-clone-studio/status")
+def voice_clone_studio_status() -> JSONResponse:
+    return JSONResponse({"enrolled": voice_clone_studio_runner.enrolled})
+
+
+class VoiceCloneStudioSynthesizeRequest(BaseModel):
+    text: str
+    style: str = "default"
+    tau: float = 0.3
+
+
+@app.post("/api/voice-clone-studio/synthesize")
+async def voice_clone_studio_synthesize(req: VoiceCloneStudioSynthesizeRequest) -> Response:
+    def work():
+        import io
+
+        import soundfile as sf
+
+        audio_out, sample_rate = voice_clone_studio_runner.synthesize(text=req.text, style=req.style, tau=req.tau)
+        buffer = io.BytesIO()
+        sf.write(buffer, audio_out, sample_rate, format="WAV")
+        return buffer.getvalue()
+
+    try:
+        wav_bytes = await run_in_threadpool(work)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return Response(content=wav_bytes, media_type="audio/wav")
+
+
+@app.get("/api/voice-assistant/devices")
+def voice_assistant_devices() -> JSONResponse:
+    from voice_assistant.wake_word import AVAILABLE_WAKE_WORDS
+
+    return JSONResponse(
+        {
+            "microphones": audio.list_microphones(),
+            "openvino_devices": list_openvino_devices(),
+            "wake_words": AVAILABLE_WAKE_WORDS,
+        }
+    )
+
+
+class VoiceAssistantStartRequest(BaseModel):
+    audio_device: str | None = None
+    engine: str = "portable"
+    whisper_model: str | None = None
+    compute_device: str | None = None
+    wake_word: str = "hey_jarvis"
+    wake_threshold: float = 0.5
+    speak_replies: bool = True
+
+
+@app.post("/api/voice-assistant/start")
+async def start_voice_assistant(req: VoiceAssistantStartRequest) -> JSONResponse:
+    if voice_assistant_runner.running:
+        return JSONResponse({"error": "voice-assistant is already running"}, status_code=409)
+
+    try:
+        engine = Engine(req.engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
+
+    defaults = _VOICE_ASSISTANT_ENGINE_DEFAULTS[engine]
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = app.state.voice_assistant_queue
+
+    try:
+        voice_assistant_runner.start(
+            loop=loop,
+            queue=queue,
+            audio_device=req.audio_device,
+            engine=engine,
+            whisper_model_size=req.whisper_model or defaults["whisper_model"],
+            compute_device=req.compute_device or defaults["compute_device"],
+            wake_word=req.wake_word,
+            wake_threshold=req.wake_threshold,
+            speak_replies=req.speak_replies,
+        )
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+
+    return JSONResponse({"status": "started"})
+
+
+@app.post("/api/voice-assistant/stop")
+async def stop_voice_assistant() -> JSONResponse:
+    voice_assistant_runner.stop()
+    return JSONResponse({"status": "stopped"})
+
+
+@app.websocket("/ws/voice-assistant")
+async def ws_voice_assistant(websocket: WebSocket) -> None:
+    await websocket.accept()
+    queue: asyncio.Queue = app.state.voice_assistant_queue
+    try:
+        while True:
+            message = await queue.get()
+            await websocket.send_json(message)
+    except WebSocketDisconnect:
+        pass
+
+
+@app.get("/api/expense-extract/devices")
+def expense_extract_devices() -> JSONResponse:
+    return JSONResponse({"openvino_devices": list_openvino_devices()})
+
+
+class ExpenseExtractStartRequest(BaseModel):
+    folder: str
+    ocr_engine: str = "portable"
+    ocr_compute_device: str | None = None
+    llm_engine: str = "portable"
+    llm_compute_device: str | None = None
+
+
+@app.post("/api/expense-extract/start")
+async def start_expense_extract(req: ExpenseExtractStartRequest) -> JSONResponse:
+    if expense_extract_runner.running:
+        return JSONResponse({"error": "expense-extract is already running"}, status_code=409)
+
+    try:
+        ocr_engine = Engine(req.ocr_engine)
+        llm_engine = Engine(req.llm_engine)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    ocr_device = req.ocr_compute_device or _EXPENSE_EXTRACT_ENGINE_DEFAULTS[ocr_engine]["compute_device"]
+    llm_device = req.llm_compute_device or _EXPENSE_EXTRACT_ENGINE_DEFAULTS[llm_engine]["compute_device"]
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = app.state.expense_extract_queue
+
+    try:
+        expense_extract_runner.start(
+            loop=loop,
+            queue=queue,
+            folder=req.folder,
+            ocr_engine=ocr_engine,
+            ocr_device=ocr_device,
+            llm_engine=llm_engine,
+            llm_device=llm_device,
+        )
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+
+    return JSONResponse({"status": "started"})
+
+
+@app.post("/api/expense-extract/stop")
+async def stop_expense_extract() -> JSONResponse:
+    expense_extract_runner.stop()
+    return JSONResponse({"status": "stopped"})
+
+
+@app.websocket("/ws/expense-extract")
+async def ws_expense_extract(websocket: WebSocket) -> None:
+    await websocket.accept()
+    queue: asyncio.Queue = app.state.expense_extract_queue
+    try:
+        while True:
+            message = await queue.get()
+            await websocket.send_json(message)
+    except WebSocketDisconnect:
+        pass
+
+
+def main() -> None:
+    url = "http://127.0.0.1:8765"
+    webbrowser.open(url)
+    uvicorn.run(app, host="127.0.0.1", port=8765)
+
+
+if __name__ == "__main__":
+    main()

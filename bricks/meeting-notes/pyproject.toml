@@ -1,0 +1,32 @@
+[project]
+name = "meeting-notes"
+version = "0.1.0"
+description = "Live meeting transcription with local LLM-generated running notes and action items -- built by composing the live-translation and doc-qa bricks, not re-wrapping Whisper/an LLM a third time."
+requires-python = ">=3.10"
+dependencies = [
+    "pantherlake-ai-core",
+    "live-translation",
+    "doc-qa",
+]
+
+[project.optional-dependencies]
+# Mirrors the openvino extras of the two bricks this one composes.
+openvino = [
+    "live-translation[openvino]",
+    "doc-qa[openvino]",
+]
+
+[project.scripts]
+meeting-notes = "meeting_notes.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/meeting_notes"]
+
+[tool.uv.sources]
+pantherlake-ai-core = { workspace = true }
+live-translation = { workspace = true }
+doc-qa = { workspace = true }

@@ -1,0 +1,46 @@
+name: Bump version on main
+
+# Runs after every push to main -- in practice, after every PR merge, since
+# that's how commits land on a protected main branch. Bumps the PATCH
+# component of the root VERSION file (the launcher's /api/version route
+# reads it, and the footer displays it), commits that bump back, and tags
+# the commit vX.Y.Z.
+#
+# The `github.actor != 'github-actions[bot]'` guard exists so this
+# workflow's own bump commit can't re-trigger itself into an infinite
+# loop, in case a repo's settings ever change GitHub's default (pushes
+# made with the built-in GITHUB_TOKEN don't normally re-trigger `on: push`
+# workflows) -- belt and suspenders, not a workaround for an observed bug.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          current="$(cat VERSION)"
+          IFS='.' read -r major minor patch <<< "$current"
+          new="$major.$minor.$((patch + 1))"
+          echo "$new" > VERSION
+          echo "new_version=$new" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }} [skip ci]"
+          git tag "v${{ steps.bump.outputs.new_version }}"
+          git push origin HEAD:main
+          git push origin "v${{ steps.bump.outputs.new_version }}"

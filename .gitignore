@@ -1,0 +1,25 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# OpenVINO compiled-model caches (per brick, created next to the process cwd)
+ov_cache/
+asr_cache/
+
+# Saved transcripts / demo output
+*.transcript.txt
+
+# voice-clone-studio's se_extractor VAD temp output (defaults to ./processed
+# when a caller doesn't pass target_dir)
+processed/
+
+# Stray HF-cache redirects some scripts create when run from the repo root
+.cache/
+
+*.log
+.vscode/
+.idea/

@@ -1,0 +1,46 @@
+[project]
+name = "voice-clone-studio"
+version = "0.1.0"
+description = "Zero-shot voice cloning: enroll a short voice sample, then synthesize any text in that voice, with a switchable PyTorch / OpenVINO backend."
+requires-python = ">=3.10"
+dependencies = [
+    "pantherlake-ai-core",
+    "numpy>=1.26",
+    "torch>=2.2",
+    "torchaudio>=2.2",
+    "librosa>=0.10",
+    "pydub>=0.25",
+    "soundfile>=0.12",
+    "anyascii>=0.3",
+    "inflect>=7.0",
+    "eng-to-ipa>=0.0.2",
+    "wavmark>=0.0.3",
+    "huggingface_hub>=0.24",
+]
+
+[project.optional-dependencies]
+openvino = [
+    "openvino>=2024.4",
+]
+
+[project.scripts]
+voice-clone-studio = "voice_clone_studio.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/voice_clone_studio"]
+
+[tool.uv.sources]
+pantherlake-ai-core = { workspace = true }
+# CPU-only wheels straight from PyTorch's own index, same reasoning as
+# doc-qa's llama-cpp-python-cpu: skip a multi-GB CUDA build we'd never use.
+torch = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

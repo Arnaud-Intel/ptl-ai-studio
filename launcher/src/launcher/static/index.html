@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Panther Lake AI Studio</title>
+  <meta name="description" content="A local AI Studio: on-device speech, vision, and language demos running entirely on this machine's CPU, iGPU, and NPU." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22><rect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%23000%22/><path d=%22M17.5 4 8 18h6.5L14 28l9.5-14H17z%22 fill=%22%230068B5%22/></svg>" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <h1 class="brand-logo-wrap">
+          <img class="brand-logo" src="/static/panther_lake_ai_studio_darkbg.png" alt="Panther Lake AI Studio" />
+        </h1>
+      </div>
+      <div id="device-summary" class="device-summary" aria-live="polite"></div>
+    </div>
+    <div class="hardware-strip" id="hardware-strip">
+      <span class="hw-label">Running on</span>
+      <span class="hw-badge">Dell</span>
+      <span class="hw-badge">Intel&reg; Core&trade; Ultra 3</span>
+      <span class="hw-badge">Panther Lake NPU</span>
+    </div>
+
+    <div class="telemetry-strip" id="telemetry-strip" aria-live="polite">
+      <div class="telemetry-gauge" data-device="cpu">
+        <div class="telemetry-gauge-head">
+          <span class="telemetry-gauge-label">CPU</span>
+          <span class="telemetry-gauge-value">--</span>
+        </div>
+        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
+        <span class="telemetry-gauge-note"></span>
+      </div>
+      <div class="telemetry-gauge" data-device="gpu">
+        <div class="telemetry-gauge-head">
+          <span class="telemetry-gauge-label">GPU</span>
+          <span class="telemetry-gauge-value">--</span>
+        </div>
+        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
+        <span class="telemetry-gauge-note"></span>
+      </div>
+      <div class="telemetry-gauge" data-device="npu">
+        <div class="telemetry-gauge-head">
+          <span class="telemetry-gauge-label">NPU</span>
+          <span class="telemetry-gauge-value">--</span>
+        </div>
+        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
+        <span class="telemetry-gauge-note"></span>
+      </div>
+    </div>
+  </header>
+
+  <main id="categories" class="categories"></main>
+
+  <template id="telemetry-footer-template">
+    <div class="modal-footer telemetry-footer" aria-live="polite">
+      <div class="telemetry-gauge" data-device="cpu">
+        <div class="telemetry-gauge-head">
+          <span class="telemetry-gauge-label">CPU</span>
+          <span class="telemetry-gauge-value">--</span>
+        </div>
+        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
+        <span class="telemetry-gauge-note"></span>
+      </div>
+      <div class="telemetry-gauge" data-device="gpu">
+        <div class="telemetry-gauge-head">
+          <span class="telemetry-gauge-label">GPU</span>
+          <span class="telemetry-gauge-value">--</span>
+        </div>
+        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
+        <span class="telemetry-gauge-note"></span>
+      </div>
+      <div class="telemetry-gauge" data-device="npu">
+        <div class="telemetry-gauge-head">
+          <span class="telemetry-gauge-label">NPU</span>
+          <span class="telemetry-gauge-value">--</span>
+        </div>
+        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
+        <span class="telemetry-gauge-note"></span>
+      </div>
+    </div>
+  </template>
+
+  <template id="card-template">
+    <article class="card">
+      <div class="card-top">
+        <span class="category-tag"></span>
+        <span class="status-pill"></span>
+      </div>
+      <h3 class="card-name"></h3>
+      <p class="card-tagline"></p>
+      <p class="card-description"></p>
+      <div class="engine-badges"></div>
+      <button class="launch-btn" type="button">Launch</button>
+    </article>
+  </template>
+
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal demo-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-header">
+        <h2 id="modal-title">Live Speech Translation</h2>
+        <button id="modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field">
+            <span>Audio source</span>
+            <select id="ctl-source">
+              <option value="mic">Microphone</option>
+              <option value="system">System audio (loopback)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Audio device</span>
+            <select id="ctl-audio-device"></select>
+          </label>
+
+          <label class="field">
+            <span>Engine</span>
+            <select id="ctl-engine">
+              <option value="portable">Portable (faster-whisper, CPU/CUDA)</option>
+              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Compute device</span>
+            <select id="ctl-compute-device"></select>
+          </label>
+
+          <label class="field">
+            <span>Model size</span>
+            <select id="ctl-model">
+              <option value="tiny">tiny</option>
+              <option value="base">base</option>
+              <option value="small">small</option>
+              <option value="medium">medium</option>
+              <option value="large-v3">large-v3</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="run-row">
+          <button id="ctl-start" class="primary-btn" type="button">Start</button>
+          <button id="ctl-stop" class="secondary-btn" type="button" disabled>Stop</button>
+          <span id="run-status" class="run-status">Idle</span>
+        </div>
+
+        <div id="transcript" class="transcript" aria-live="polite">
+          <p class="transcript-placeholder">Translated speech will appear here once you press Start.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="docqa-modal-overlay" class="modal-overlay hidden">
+    <div class="modal demo-modal" role="dialog" aria-modal="true" aria-labelledby="docqa-modal-title">
+      <div class="modal-header">
+        <h2 id="docqa-modal-title">Local Document Q&amp;A</h2>
+        <button id="docqa-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field docqa-folder-field">
+            <span>Folder to index (local path, on this machine)</span>
+            <input id="docqa-folder" type="text" placeholder="C:\Users\you\Documents\notes" />
+          </label>
+
+          <label class="field">
+            <span>Engine</span>
+            <select id="docqa-engine">
+              <option value="portable">Portable (llama.cpp, CPU)</option>
+              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Compute device</span>
+            <select id="docqa-compute-device"></select>
+          </label>
+        </div>
+
+        <div class="run-row">
+          <button id="docqa-ingest" class="primary-btn" type="button">Ingest folder</button>
+          <label class="reindex-field"><input id="docqa-reindex" type="checkbox" /> Rebuild index</label>
+          <span id="docqa-ingest-status" class="run-status">Not indexed</span>
+        </div>
+
+        <div id="docqa-transcript" class="transcript" aria-live="polite">
+          <p class="transcript-placeholder">Ingest a folder of .txt/.md/.pdf files, then ask a question below.</p>
+        </div>
+
+        <div class="ask-row">
+          <input id="docqa-question" type="text" placeholder="Ask a question about the indexed documents..." disabled />
+          <button id="docqa-ask" class="primary-btn" type="button" disabled>Ask</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="objdet-modal-overlay" class="modal-overlay hidden">
+    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="objdet-modal-title">
+      <div class="modal-header">
+        <h2 id="objdet-modal-title">Object Detection Overlay</h2>
+        <button id="objdet-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field">
+            <span>Video source</span>
+            <select id="objdet-source">
+              <option value="screen">Screen capture</option>
+              <option value="webcam">Webcam</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Source device</span>
+            <select id="objdet-source-device"></select>
+          </label>
+
+          <label class="field">
+            <span>Engine</span>
+            <select id="objdet-engine">
+              <option value="portable">Portable (DETR, ONNX Runtime, CPU)</option>
+              <option value="openvino">OpenVINO (YOLO11n, Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Compute device</span>
+            <select id="objdet-compute-device"></select>
+          </label>
+        </div>
+
+        <div class="run-row">
+          <button id="objdet-start" class="primary-btn" type="button">Start</button>
+          <button id="objdet-stop" class="secondary-btn" type="button" disabled>Stop</button>
+          <span id="objdet-status" class="run-status">Idle</span>
+        </div>
+
+        <div class="objdet-layout">
+          <div class="objdet-video-frame">
+            <img id="objdet-video" alt="Live annotated video feed" />
+            <p id="objdet-video-placeholder" class="transcript-placeholder">Press Start to see the annotated feed here.</p>
+          </div>
+          <div id="objdet-detections" class="objdet-detections" aria-live="polite">
+            <p class="transcript-placeholder">Detected objects will be listed here.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="ocr-modal-overlay" class="modal-overlay hidden">
+    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="ocr-modal-title">
+      <div class="modal-header">
+        <h2 id="ocr-modal-title">Screen / Image Text Extraction</h2>
+        <button id="ocr-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field">
+            <span>Source</span>
+            <select id="ocr-source">
+              <option value="screen">Screen capture</option>
+              <option value="webcam">Webcam</option>
+              <option value="upload">Upload a photo</option>
+            </select>
+          </label>
+
+          <label class="field" id="ocr-source-device-field">
+            <span>Source device</span>
+            <select id="ocr-source-device"></select>
+          </label>
+
+          <label class="field" id="ocr-upload-field" hidden>
+            <span>Image file</span>
+            <input id="ocr-upload" type="file" accept="image/*" />
+          </label>
+
+          <label class="field">
+            <span>Engine</span>
+            <select id="ocr-engine">
+              <option value="portable">Portable (RapidOCR, ONNX Runtime, CPU)</option>
+              <option value="openvino">OpenVINO (vision-language model, Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Compute device</span>
+            <select id="ocr-compute-device"></select>
+          </label>
+        </div>
+
+        <div class="run-row">
+          <button id="ocr-extract" class="primary-btn" type="button">Extract text</button>
+          <label class="reindex-field">
+            <input id="ocr-translate" type="checkbox" disabled /> Translate to English (openvino only)
+          </label>
+          <span id="ocr-status" class="run-status">Idle</span>
+        </div>
+
+        <div id="ocr-result" class="transcript" aria-live="polite">
+          <p class="transcript-placeholder">Extracted text will appear here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="mtg-modal-overlay" class="modal-overlay hidden">
+    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="mtg-modal-title">
+      <div class="modal-header">
+        <h2 id="mtg-modal-title">Live Meeting Notes</h2>
+        <button id="mtg-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field">
+            <span>Audio source</span>
+            <select id="mtg-source">
+              <option value="system">System audio (the call/video)</option>
+              <option value="mic">Microphone</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Audio device</span>
+            <select id="mtg-audio-device"></select>
+          </label>
+
+          <label class="field">
+            <span>Engine</span>
+            <select id="mtg-engine">
+              <option value="portable">Portable (faster-whisper + llama.cpp, CPU)</option>
+              <option value="openvino">OpenVINO (Whisper + LLM, Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Compute device</span>
+            <select id="mtg-compute-device"></select>
+          </label>
+        </div>
+
+        <div class="run-row">
+          <button id="mtg-start" class="primary-btn" type="button">Start</button>
+          <button id="mtg-stop" class="secondary-btn" type="button" disabled>Stop</button>
+          <span id="mtg-status" class="run-status">Idle</span>
+        </div>
+
+        <div id="mtg-transcript" class="transcript" aria-live="polite">
+          <p class="transcript-placeholder">The live transcript will appear here once you press Start.</p>
+        </div>
+
+        <div class="run-row">
+          <button id="mtg-generate" class="primary-btn" type="button">Generate notes</button>
+          <span id="mtg-notes-status" class="run-status"></span>
+        </div>
+
+        <div id="mtg-notes" class="transcript" aria-live="polite">
+          <p class="transcript-placeholder">Running notes and action items will appear here -- generate them any time after some of the meeting has been transcribed.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="webcam-modal-overlay" class="modal-overlay hidden">
+    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="webcam-modal-title">
+      <div class="modal-header">
+        <h2 id="webcam-modal-title">Webcam Background Effects</h2>
+        <button id="webcam-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field">
+            <span>Camera</span>
+            <select id="webcam-camera"></select>
+          </label>
+
+          <label class="field">
+            <span>Engine</span>
+            <select id="webcam-engine">
+              <option value="portable">Portable (ONNX Runtime, CPU)</option>
+              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Compute device</span>
+            <select id="webcam-compute-device"></select>
+          </label>
+
+          <label class="field">
+            <span>Effect</span>
+            <select id="webcam-effect">
+              <option value="blur">Blur background</option>
+              <option value="replace">Replace background</option>
+            </select>
+          </label>
+
+          <label class="field" id="webcam-color-field" hidden>
+            <span>Background color</span>
+            <input id="webcam-color" type="color" value="#0068B5" />
+          </label>
+        </div>
+
+        <div class="run-row">
+          <button id="webcam-start" class="primary-btn" type="button">Start</button>
+          <button id="webcam-stop" class="secondary-btn" type="button" disabled>Stop</button>
+          <span id="webcam-status" class="run-status">Idle</span>
+        </div>
+
+        <div class="objdet-layout">
+          <div class="objdet-video-frame">
+            <img id="webcam-video" alt="Live webcam feed with background effect applied" />
+            <p id="webcam-video-placeholder" class="transcript-placeholder">Press Start to see your webcam here, with the effect applied.</p>
+          </div>
+          <div id="webcam-stats" class="objdet-detections" aria-live="polite">
+            <p class="transcript-placeholder">Person-coverage will be shown here once running.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="va-modal-overlay" class="modal-overlay hidden">
+    <div class="modal demo-modal" role="dialog" aria-modal="true" aria-labelledby="va-modal-title">
+      <div class="modal-header">
+        <h2 id="va-modal-title">Local Voice Assistant</h2>
+        <button id="va-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field">
+            <span>Microphone</span>
+            <select id="va-audio-device"></select>
+          </label>
+
+          <label class="field">
+            <span>Wake word</span>
+            <select id="va-wake-word"></select>
+          </label>
+
+          <label class="field">
+            <span>Engine</span>
+            <select id="va-engine">
+              <option value="portable">Portable (CPU)</option>
+              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Compute device</span>
+            <select id="va-compute-device"></select>
+          </label>
+
+        </div>
+
+        <div class="run-row">
+          <button id="va-start" class="primary-btn" type="button">Start listening</button>
+          <button id="va-stop" class="secondary-btn" type="button" disabled>Stop</button>
+          <label class="reindex-field"><input id="va-speak" type="checkbox" checked /> Speak replies out loud</label>
+          <span id="va-status" class="run-status">Idle</span>
+        </div>
+
+        <div id="va-transcript" class="transcript" aria-live="polite">
+          <p class="transcript-placeholder">Press Start, then say the wake word to begin.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="voice-modal-overlay" class="modal-overlay hidden">
+    <div class="modal demo-modal" role="dialog" aria-modal="true" aria-labelledby="voice-modal-title">
+      <div class="modal-header">
+        <h2 id="voice-modal-title">Voice Clone Studio</h2>
+        <button id="voice-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field">
+            <span>Reference voice</span>
+            <select id="voice-source">
+              <option value="record">Record from microphone</option>
+              <option value="upload">Upload an audio file</option>
+            </select>
+          </label>
+
+          <label class="field" id="voice-record-field">
+            <span>Recording length (seconds)</span>
+            <input id="voice-record-seconds" type="number" min="5" max="30" step="1" value="10" />
+          </label>
+
+          <label class="field" id="voice-upload-field" hidden>
+            <span>Reference clip</span>
+            <input id="voice-upload" type="file" accept="audio/*" />
+          </label>
+
+          <label class="field">
+            <span>Engine</span>
+            <select id="voice-engine">
+              <option value="portable">Portable (PyTorch, CPU)</option>
+              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Compute device</span>
+            <select id="voice-compute-device"></select>
+          </label>
+        </div>
+
+        <div class="run-row">
+          <button id="voice-enroll" class="primary-btn" type="button">Enroll voice</button>
+          <span id="voice-enroll-status" class="run-status">No voice enrolled</span>
+        </div>
+
+        <div class="controls">
+          <label class="field voice-text-field">
+            <span>Text to speak in the cloned voice</span>
+            <textarea id="voice-text" rows="3" placeholder="Type anything -- it will be spoken in the voice you just enrolled." disabled></textarea>
+          </label>
+
+          <label class="field">
+            <span>Style</span>
+            <select id="voice-style" disabled>
+              <option value="default">default</option>
+              <option value="whispering">whispering</option>
+              <option value="shouting">shouting</option>
+              <option value="excited">excited</option>
+              <option value="cheerful">cheerful</option>
+              <option value="terrified">terrified</option>
+              <option value="angry">angry</option>
+              <option value="sad">sad</option>
+              <option value="friendly">friendly</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Tone strength (tau)</span>
+            <input id="voice-tau" type="range" min="0.05" max="1" step="0.05" value="0.3" disabled />
+          </label>
+        </div>
+
+        <div class="run-row">
+          <button id="voice-synthesize" class="primary-btn" type="button" disabled>Speak</button>
+          <span id="voice-synthesize-status" class="run-status">Idle</span>
+        </div>
+
+        <audio id="voice-player" controls hidden></audio>
+      </div>
+    </div>
+  </div>
+
+  <div id="expx-modal-overlay" class="modal-overlay hidden">
+    <div class="modal demo-modal" role="dialog" aria-modal="true" aria-labelledby="expx-modal-title">
+      <div class="modal-header">
+        <h2 id="expx-modal-title">Expense Report Extractor</h2>
+        <button id="expx-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field docqa-folder-field">
+            <span>Folder of receipt photos (local path, on this machine)</span>
+            <input id="expx-folder" type="text" placeholder="C:\Users\you\Documents\receipts" />
+          </label>
+
+          <label class="field">
+            <span>OCR engine</span>
+            <select id="expx-ocr-engine">
+              <option value="portable">Portable (RapidOCR, CPU)</option>
+              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>OCR device</span>
+            <select id="expx-ocr-device"></select>
+          </label>
+
+          <label class="field">
+            <span>LLM engine</span>
+            <select id="expx-llm-engine">
+              <option value="portable">Portable (llama.cpp, CPU)</option>
+              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>LLM device</span>
+            <select id="expx-llm-device"></select>
+          </label>
+        </div>
+
+        <p class="card-description" style="margin-bottom: 14px;">
+          The OCR and LLM stages run concurrently on separate threads, each pinned to the device
+          you pick above -- e.g. set OCR to GPU and the LLM to NPU to watch both gauges light up
+          at once instead of one after the other.
+        </p>
+
+        <div class="run-row">
+          <button id="expx-start" class="primary-btn" type="button">Start</button>
+          <button id="expx-stop" class="secondary-btn" type="button" disabled>Stop</button>
+          <span id="expx-status" class="run-status">Idle</span>
+        </div>
+
+        <div id="expx-transcript" class="transcript" aria-live="polite">
+          <p class="transcript-placeholder">Results will appear here as each receipt is structured.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="placeholder-overlay" class="modal-overlay hidden">
+    <div class="modal modal-small" role="dialog" aria-modal="true">
+      <div class="modal-header">
+        <h2>Coming soon</h2>
+        <button class="icon-btn placeholder-close" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="placeholder-text"></p>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="site-footer-inner">
+      <div class="site-footer-group">
+        <img class="footer-logo footer-logo-wordmark" src="/static/intel-logo.png" alt="Intel" />
+        <img class="footer-logo footer-logo-wordmark" src="/static/dell-logo.png" alt="Dell" />
+      </div>
+      <span id="app-version" class="footer-version"></span>
+      <div class="site-footer-group">
+        <img class="footer-logo footer-logo-badge" src="/static/intel-core-ultra.png" alt="Intel Core Ultra" />
+        <img class="footer-logo footer-logo-badge" src="/static/intel-arc.png" alt="Intel Arc Graphics" />
+      </div>
+    </div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

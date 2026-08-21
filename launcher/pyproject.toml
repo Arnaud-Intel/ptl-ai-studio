@@ -1,0 +1,57 @@
+[project]
+name = "panther-lake-launcher"
+version = "0.1.0"
+description = "Panther Lake AI Studio: local web UI for discovering and running the Panther Lake local AI demo bricks."
+requires-python = ">=3.11"
+dependencies = [
+    "pantherlake-ai-core",
+    "live-translation",
+    "doc-qa",
+    "object-detection",
+    "screen-ocr",
+    "meeting-notes",
+    "webcam-effects",
+    "voice-clone-studio",
+    "voice-assistant",
+    "expense-extract",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+# Mirrors each brick's own `openvino` extra so `uv sync --extra openvino`
+# at the workspace root pulls OpenVINO support in through the launcher too.
+openvino = [
+    "live-translation[openvino]",
+    "doc-qa[openvino]",
+    "object-detection[openvino]",
+    "screen-ocr[openvino]",
+    "meeting-notes[openvino]",
+    "webcam-effects[openvino]",
+    "voice-clone-studio[openvino]",
+    "voice-assistant[openvino]",
+    "expense-extract[openvino]",
+]
+
+[project.scripts]
+panther-lake-launcher = "launcher.app:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/launcher"]
+
+[tool.uv.sources]
+pantherlake-ai-core = { workspace = true }
+live-translation = { workspace = true }
+doc-qa = { workspace = true }
+object-detection = { workspace = true }
+screen-ocr = { workspace = true }
+meeting-notes = { workspace = true }
+webcam-effects = { workspace = true }
+voice-clone-studio = { workspace = true }
+voice-assistant = { workspace = true }
+expense-extract = { workspace = true }
