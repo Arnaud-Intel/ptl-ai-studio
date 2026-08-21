@@ -32,8 +32,8 @@ a terminal; `Ctrl+C` stops it.
   every demo card the UI shows, `status: "available" | "planned"`.
 - `GET /api/version` — reads the workspace-root `VERSION` file and returns
   `{"version": "X.Y.Z"}`; the page footer fetches this once at load and
-  shows it as `vX.Y.Z`. See the root README's **Versioning** section for
-  how that file gets bumped.
+  shows it as `vX.Y.Z`. See [CONTRIBUTING.md](../CONTRIBUTING.md#versioning)
+  for how that file gets bumped.
 - For the **available** `live-translation` demo:
   - `GET /api/live-translation/devices` — real microphones, output devices,
     and OpenVINO devices (`CPU`/`GPU`/`NPU`) detected on this machine, used
