@@ -1,10 +1,14 @@
-# Panther Lake AI Studio
+<p align="center">
+  <img src="docs/panther-lake-ai-studio-banner.png" alt="Panther Lake AI Studio" width="720" />
+</p>
 
-[![Version](https://img.shields.io/github/v/tag/Arnaud-Intel/ptl-ai-studio?label=version&color=0068B5)](https://github.com/Arnaud-Intel/ptl-ai-studio/tags)
-[![Python](https://img.shields.io/badge/python-3.10%2B-0068B5)](pyproject.toml)
-[![OpenVINO](https://img.shields.io/badge/runtime-OpenVINO-8A2BE2)](https://docs.openvino.ai/)
-[![Cloud calls](https://img.shields.io/badge/cloud%20calls-zero-4ade80)](#)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078D6)](#)
+<p align="center">
+  <a href="https://github.com/Arnaud-Intel/ptl-ai-studio/tags"><img src="https://img.shields.io/github/v/tag/Arnaud-Intel/ptl-ai-studio?label=version&color=0068B5" alt="Version" /></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.10%2B-0068B5" alt="Python" /></a>
+  <a href="https://docs.openvino.ai/"><img src="https://img.shields.io/badge/runtime-OpenVINO-8A2BE2" alt="OpenVINO" /></a>
+  <img src="https://img.shields.io/badge/cloud%20calls-zero-4ade80" alt="Cloud calls: zero" />
+  <img src="https://img.shields.io/badge/platform-Windows-0078D6" alt="Platform: Windows" />
+</p>
 
 **A local AI Studio for Intel Panther Lake -- nine on-device AI demos,
 one launcher, zero cloud calls.**
