@@ -69,6 +69,12 @@ local_demo/
         pipeline.py               <- two threads, one queue: OCR and LLM structuring run on two devices at once, not in turn
         parsing.py                 <- tolerant JSON extraction from the LLM's reply
         cli.py
+    smart-recall/              <- screen history search (continuous-concurrent-pipeline template)
+      pyproject.toml
+      src/smart_recall/
+        pipeline.py               <- same two-device-at-once shape as expense-extract, driven by a timer instead of a file list
+        change_detection.py        <- skip indexing a screen that hasn't visibly changed
+        cli.py
     <next-brick>/
       pyproject.toml
       src/<next_brick>/

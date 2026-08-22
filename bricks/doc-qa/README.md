@@ -80,6 +80,11 @@ uv run doc-qa ./my-notes --reindex
    retrieval is a single matrix-vector cosine-similarity multiply. No
    vector database -- this is small-scale (a folder of notes, not a
    corpus), so a numpy array is simpler and has zero extra dependencies.
+   `VectorStore.build()` replaces the whole index in one shot, matching
+   this brick's own folder-ingest shape; `.add()` instead appends to
+   whatever's already there, for a consumer doing incremental/streaming
+   ingestion -- [`smart-recall`](../smart-recall/README.md) is why it
+   exists, indexing screen captures continuously rather than all at once.
 3. **Retrieve & answer** ([`pipeline.py`](src/doc_qa/pipeline.py)) — the
    question is embedded the same way, the top-k most similar chunks are
    retrieved, and a local chat model answers from those excerpts only (the

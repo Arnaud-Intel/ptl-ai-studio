@@ -625,6 +625,82 @@
     </div>
   </div>
 
+  <div id="recall-modal-overlay" class="modal-overlay hidden">
+    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="recall-modal-title">
+      <div class="modal-header">
+        <h2 id="recall-modal-title">Local Screen Memory</h2>
+        <button id="recall-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field">
+            <span>Screen</span>
+            <select id="recall-screen"></select>
+          </label>
+
+          <label class="field">
+            <span>Capture interval (seconds)</span>
+            <input id="recall-interval" type="number" min="2" max="60" step="1" value="5" />
+          </label>
+
+          <label class="field">
+            <span>OCR engine</span>
+            <select id="recall-ocr-engine">
+              <option value="portable">Portable (RapidOCR, CPU)</option>
+              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>OCR device</span>
+            <select id="recall-ocr-device"></select>
+          </label>
+
+          <label class="field">
+            <span>Embed engine</span>
+            <select id="recall-embed-engine">
+              <option value="portable">Portable (llama.cpp, CPU)</option>
+              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Embed device</span>
+            <select id="recall-embed-device"></select>
+          </label>
+        </div>
+
+        <p class="card-description" style="margin-bottom: 14px;">
+          OCR and indexing run concurrently on separate threads, each pinned to the device you
+          pick above. The embedding engine is locked in the first time you record -- mixing
+          engines would make search results meaningless, since they'd come from different vector
+          spaces -- use Reset to switch.
+        </p>
+
+        <div class="run-row">
+          <button id="recall-start" class="primary-btn" type="button">Start recording</button>
+          <button id="recall-stop" class="secondary-btn" type="button" disabled>Stop</button>
+          <button id="recall-reset" class="secondary-btn" type="button">Reset index</button>
+          <span id="recall-status" class="run-status">Idle</span>
+        </div>
+
+        <div id="recall-capture-feed" class="transcript" aria-live="polite">
+          <p class="transcript-placeholder">Capture events will appear here while recording.</p>
+        </div>
+
+        <div class="ask-row">
+          <input id="recall-question" type="text" placeholder="What are you looking for? e.g. 'that pricing page'" />
+          <button id="recall-search" class="primary-btn" type="button">Search</button>
+        </div>
+
+        <div id="recall-results" aria-live="polite">
+          <p class="transcript-placeholder">Search results, with a screenshot thumbnail, will appear here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="placeholder-overlay" class="modal-overlay hidden">
     <div class="modal modal-small" role="dialog" aria-modal="true">
       <div class="modal-header">

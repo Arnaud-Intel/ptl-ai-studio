@@ -101,6 +101,8 @@ function openDemo(demo) {
     openVoiceAssistant();
   } else if (demo.id === "expense-extract") {
     openExpenseExtract();
+  } else if (demo.id === "smart-recall") {
+    openRecall();
   }
 }
 
@@ -411,6 +413,7 @@ const DEMO_NAMES_BY_ID = {
   "voice-clone-studio": "Voice Clone Studio",
   "voice-assistant": "Local Voice Assistant",
   "expense-extract": "Expense Report Extractor",
+  "smart-recall": "Local Screen Memory",
 };
 
 function matchGaugeKind(device) {
@@ -1322,6 +1325,241 @@ function closeExpenseExtract() {
   if (expxRunning) stopExpenseExtract();
 }
 
+// --- Local Screen Memory demo ---
+
+let recallWs = null;
+let recallRunning = false;
+
+async function openRecall() {
+  el("recall-modal-overlay").classList.remove("hidden");
+  await populateRecallDevices();
+  await refreshRecallStatus();
+  connectRecallWebSocket();
+}
+
+async function populateRecallDevices() {
+  const data = await fetchJSON("/api/smart-recall/devices");
+
+  const screenSelect = el("recall-screen");
+  screenSelect.innerHTML = "";
+  for (const screen of data.screens) {
+    const opt = document.createElement("option");
+    opt.value = screen.index;
+    opt.textContent = `Screen ${screen.index} (${screen.width}x${screen.height})`;
+    screenSelect.appendChild(opt);
+  }
+
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  for (const engineId of ["recall-ocr-engine", "recall-embed-engine"]) {
+    const openvinoOption = el(engineId).querySelector('option[value="openvino"]');
+    openvinoOption.disabled = !hasOpenvino;
+    openvinoOption.textContent = hasOpenvino
+      ? `OpenVINO (${data.openvino_devices.join(", ")})`
+      : "OpenVINO (install this brick's `openvino` extra to enable)";
+  }
+
+  const wireComputeDevices = (engineSelectId, deviceSelectId) => {
+    const engineSelect = el(engineSelectId);
+    const deviceSelect = el(deviceSelectId);
+    const fill = () => {
+      deviceSelect.innerHTML = "";
+      const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
+      for (const value of options) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = value;
+        deviceSelect.appendChild(opt);
+      }
+    };
+    engineSelect.onchange = fill;
+    fill();
+  };
+  wireComputeDevices("recall-ocr-engine", "recall-ocr-device");
+  wireComputeDevices("recall-embed-engine", "recall-embed-device");
+}
+
+async function refreshRecallStatus() {
+  const status = await fetchJSON("/api/smart-recall/status");
+  const embedEngineSelect = el("recall-embed-engine");
+
+  // Reopening the modal (or a page reload) shouldn't lose track of a
+  // recording that's still going server-side -- the background thread
+  // outlives any one browser tab, so the UI has to ask rather than assume.
+  setRecallRunning(status.running);
+
+  if (status.embed_engine) {
+    // The index already has a fixed embedding engine -- lock the selector
+    // to it instead of letting the user pick something that would just
+    // get rejected (or worse, silently produce meaningless results).
+    embedEngineSelect.value = status.embed_engine;
+    embedEngineSelect.dispatchEvent(new Event("change"));
+    embedEngineSelect.disabled = true;
+  } else {
+    embedEngineSelect.disabled = status.running;
+  }
+
+  if (!status.running) {
+    setRecallStatus(status.indexed_count > 0 ? `Idle -- ${status.indexed_count} screen(s) indexed` : "Idle");
+  }
+}
+
+function connectRecallWebSocket() {
+  if (recallWs) return;
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+  recallWs = new WebSocket(`${protocol}://${location.host}/ws/smart-recall`);
+  recallWs.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+    if (message.type === "indexed") {
+      appendRecallEvent(`[${message.timestamp}] indexed: ${message.chunk.text.slice(0, 100)}`, "transcript-answer");
+    } else if (message.type === "skipped") {
+      appendRecallEvent(`(skipped -- ${message.reason})`, "transcript-sources");
+    } else if (message.type === "error") {
+      setRecallStatus(`Error: ${message.message}`, "error");
+      setRecallRunning(false);
+    } else if (message.type === "stopped") {
+      setRecallRunning(false);
+      if (!el("recall-status").classList.contains("error")) {
+        refreshRecallStatus();
+      }
+    }
+  };
+  recallWs.onclose = () => {
+    recallWs = null;
+    // Reconnect while the modal's still open -- recording is a background
+    // thread that outlives any one WebSocket, so a dropped connection
+    // (idle timeout, a network blip) shouldn't silently stop the capture
+    // feed from updating while the operator is still watching it.
+    if (!el("recall-modal-overlay").classList.contains("hidden")) {
+      setTimeout(connectRecallWebSocket, 1000);
+    }
+  };
+}
+
+function appendRecallEvent(text, className) {
+  const container = el("recall-capture-feed");
+  const placeholder = container.querySelector(".transcript-placeholder");
+  if (placeholder) placeholder.remove();
+
+  const line = document.createElement("p");
+  line.className = className;
+  line.textContent = text;
+  container.appendChild(line);
+  container.scrollTop = container.scrollHeight;
+}
+
+function setRecallStatus(text, kind) {
+  const status = el("recall-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function setRecallRunning(isRunning) {
+  recallRunning = isRunning;
+  el("recall-start").disabled = isRunning;
+  el("recall-stop").disabled = !isRunning;
+  el("recall-reset").disabled = isRunning;
+  for (const id of ["recall-screen", "recall-interval", "recall-ocr-engine", "recall-ocr-device", "recall-embed-device"]) {
+    el(id).disabled = isRunning;
+  }
+  if (isRunning) setRecallStatus("Recording...", "live");
+}
+
+async function startRecall() {
+  setRecallStatus("Starting...");
+  try {
+    await fetchJSON("/api/smart-recall/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        screen_index: Number(el("recall-screen").value),
+        interval_seconds: Number(el("recall-interval").value) || 5,
+        ocr_engine: el("recall-ocr-engine").value,
+        ocr_compute_device: el("recall-ocr-device").value,
+        embed_engine: el("recall-embed-engine").value,
+        embed_compute_device: el("recall-embed-device").value,
+      }),
+    });
+    setRecallRunning(true);
+  } catch (err) {
+    setRecallStatus(`Error: ${err.message}`, "error");
+  }
+}
+
+async function stopRecall() {
+  el("recall-stop").disabled = true;
+  setRecallStatus("Stopping...");
+  try {
+    await fetchJSON("/api/smart-recall/stop", { method: "POST" });
+  } catch (err) {
+    setRecallStatus(`Error: ${err.message}`, "error");
+  }
+  setRecallRunning(false);
+}
+
+async function resetRecall() {
+  if (!confirm("Delete every indexed screen capture and screenshot? This can't be undone.")) return;
+  try {
+    await fetchJSON("/api/smart-recall/reset", { method: "POST" });
+    el("recall-embed-engine").disabled = false;
+    el("recall-capture-feed").innerHTML = '<p class="transcript-placeholder">Capture events will appear here while recording.</p>';
+    el("recall-results").innerHTML = '<p class="transcript-placeholder">Search results, with a screenshot thumbnail, will appear here.</p>';
+    await refreshRecallStatus();
+  } catch (err) {
+    setRecallStatus(`Error: ${err.message}`, "error");
+  }
+}
+
+function renderRecallResults(results) {
+  const container = el("recall-results");
+  container.innerHTML = "";
+
+  if (!results.length) {
+    container.innerHTML = '<p class="transcript-placeholder">No matches yet.</p>';
+    return;
+  }
+
+  for (const r of results) {
+    const row = document.createElement("div");
+    row.className = "recall-result";
+    row.innerHTML = `
+      <img class="recall-result-thumb" src="${r.screenshot_url}" alt="Screenshot from ${escapeHtml(r.source)}" />
+      <div class="recall-result-body">
+        <div class="recall-result-meta">
+          <span>${escapeHtml(r.source)}</span>
+          <span class="recall-result-score">${r.score.toFixed(2)}</span>
+        </div>
+        <p class="recall-result-text">${escapeHtml(r.text.slice(0, 220))}</p>
+      </div>
+    `;
+    container.appendChild(row);
+  }
+}
+
+async function runRecallSearch() {
+  const question = el("recall-question").value.trim();
+  if (!question) return;
+
+  el("recall-search").disabled = true;
+  try {
+    const data = await fetchJSON("/api/smart-recall/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, top_k: 5 }),
+    });
+    renderRecallResults(data.results);
+  } catch (err) {
+    el("recall-results").innerHTML = `<p class="transcript-placeholder">Error: ${escapeHtml(err.message)}</p>`;
+  } finally {
+    el("recall-search").disabled = false;
+  }
+}
+
+function closeRecall() {
+  el("recall-modal-overlay").classList.add("hidden");
+  if (recallRunning) stopRecall();
+}
+
 // --- Local Voice Assistant demo ---
 
 let vaWs = null;
@@ -1705,6 +1943,15 @@ async function init() {
   el("expx-modal-close").addEventListener("click", closeExpenseExtract);
   el("expx-start").addEventListener("click", startExpenseExtract);
   el("expx-stop").addEventListener("click", stopExpenseExtract);
+
+  el("recall-modal-close").addEventListener("click", closeRecall);
+  el("recall-start").addEventListener("click", startRecall);
+  el("recall-stop").addEventListener("click", stopRecall);
+  el("recall-reset").addEventListener("click", resetRecall);
+  el("recall-search").addEventListener("click", runRecallSearch);
+  el("recall-question").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") runRecallSearch();
+  });
 }
 
 init();

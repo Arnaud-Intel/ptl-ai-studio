@@ -18,6 +18,7 @@ members = [
     "panther-lake-launcher",
     "pantherlake-ai-core",
     "screen-ocr",
+    "smart-recall",
     "voice-assistant",
     "voice-clone-studio",
     "webcam-effects",
@@ -1555,6 +1556,7 @@ dependencies = [
     { name = "pantherlake-ai-core" },
     { name = "python-multipart" },
     { name = "screen-ocr" },
+    { name = "smart-recall" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "voice-assistant" },
     { name = "voice-clone-studio" },
@@ -1569,6 +1571,7 @@ openvino = [
     { name = "meeting-notes", extra = ["openvino"] },
     { name = "object-detection", extra = ["openvino"] },
     { name = "screen-ocr", extra = ["openvino"] },
+    { name = "smart-recall", extra = ["openvino"] },
     { name = "voice-assistant", extra = ["openvino"] },
     { name = "voice-clone-studio", extra = ["openvino"] },
     { name = "webcam-effects", extra = ["openvino"] },
@@ -1591,6 +1594,8 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "screen-ocr", editable = "bricks/screen-ocr" },
     { name = "screen-ocr", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/screen-ocr" },
+    { name = "smart-recall", editable = "bricks/smart-recall" },
+    { name = "smart-recall", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/smart-recall" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "voice-assistant", editable = "bricks/voice-assistant" },
     { name = "voice-assistant", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/voice-assistant" },
@@ -2364,6 +2369,37 @@ sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
 ]
+
+[[package]]
+name = "smart-recall"
+version = "0.1.0"
+source = { editable = "bricks/smart-recall" }
+dependencies = [
+    { name = "doc-qa" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "opencv-python" },
+    { name = "pantherlake-ai-core" },
+    { name = "screen-ocr" },
+]
+
+[package.optional-dependencies]
+openvino = [
+    { name = "doc-qa", extra = ["openvino"] },
+    { name = "screen-ocr", extra = ["openvino"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "doc-qa", editable = "bricks/doc-qa" },
+    { name = "doc-qa", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/doc-qa" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "opencv-python", specifier = ">=4.9" },
+    { name = "pantherlake-ai-core", editable = "core" },
+    { name = "screen-ocr", editable = "bricks/screen-ocr" },
+    { name = "screen-ocr", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/screen-ocr" },
+]
+provides-extras = ["openvino"]
 
 [[package]]
 name = "soundcard"

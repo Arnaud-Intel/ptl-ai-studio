@@ -1,0 +1,33 @@
+[project]
+name = "smart-recall"
+version = "0.1.0"
+description = "Semantic search over your own screen history -- periodic OCR + embedding, fully local, with OCR and embedding running on two independently chosen devices."
+requires-python = ">=3.10"
+dependencies = [
+    "pantherlake-ai-core",
+    "screen-ocr",
+    "doc-qa",
+    "numpy>=1.26",
+    "opencv-python>=4.9",
+]
+
+[project.optional-dependencies]
+openvino = [
+    "screen-ocr[openvino]",
+    "doc-qa[openvino]",
+]
+
+[project.scripts]
+smart-recall = "smart_recall.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/smart_recall"]
+
+[tool.uv.sources]
+pantherlake-ai-core = { workspace = true }
+screen-ocr = { workspace = true }
+doc-qa = { workspace = true }

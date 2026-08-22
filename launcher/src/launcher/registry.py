@@ -177,10 +177,12 @@ REGISTRY: list[Demo] = [
             "it (the doc-qa brick's embedding pipeline) so you can ask for "
             "'that pricing page from yesterday' and get it back instantly -- "
             "the Windows Recall idea, minus sending your screen history "
-            "anywhere."
+            "anywhere. OCR and indexing run concurrently on two "
+            "independently chosen devices, the same way expense-extract's "
+            "two stages do."
         ),
         engines=["portable", "openvino"],
-        status="planned",
+        status="available",
     ),
     Demo(
         id="noise-suppression",

@@ -32,12 +32,25 @@ class VectorStore:
     def size(self) -> int:
         return len(self.chunks)
 
-    def build(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
-        self.chunks = chunks
+    @staticmethod
+    def _normalize(vectors: list[list[float]]) -> np.ndarray:
         matrix = np.asarray(vectors, dtype=np.float32)
         norms = np.linalg.norm(matrix, axis=1, keepdims=True)
         norms[norms == 0] = 1.0
-        self._vectors = matrix / norms
+        return matrix / norms
+
+    def build(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
+        self.chunks = chunks
+        self._vectors = self._normalize(vectors)
+
+    def add(self, chunks: list[Chunk], vectors: list[list[float]]) -> None:
+        """Appends to the existing index instead of replacing it -- for
+        incremental/streaming ingestion (e.g. smart-recall indexing screen
+        captures continuously) as opposed to build()'s one-shot full
+        rebuild."""
+        normalized = self._normalize(vectors)
+        self._vectors = normalized if self._vectors is None else np.concatenate([self._vectors, normalized], axis=0)
+        self.chunks.extend(chunks)
 
     def search(self, query_vector: list[float], top_k: int = 4) -> list[RetrievedChunk]:
         if self._vectors is None or not self.chunks:

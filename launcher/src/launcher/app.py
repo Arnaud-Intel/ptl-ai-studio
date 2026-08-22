@@ -29,6 +29,7 @@ from .object_detection_runner import ObjectDetectionRunner
 from .screen_ocr_runner import ScreenOcrRunner
 from .telemetry_poller import TelemetryPoller
 from .expense_extract_runner import ExpenseExtractRunner
+from .smart_recall_runner import SmartRecallRunner
 from .voice_assistant_runner import VoiceAssistantRunner
 from .voice_clone_studio_runner import VoiceCloneStudioRunner
 from .webcam_effects_runner import WebcamEffectsRunner
@@ -88,6 +89,11 @@ _EXPENSE_EXTRACT_ENGINE_DEFAULTS = {
     Engine.OPENVINO: {"compute_device": "AUTO"},
 }
 
+_SMART_RECALL_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"compute_device": "cpu"},
+    Engine.OPENVINO: {"compute_device": "AUTO"},
+}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -95,6 +101,7 @@ async def lifespan(app: FastAPI):
     app.state.meeting_notes_queue = asyncio.Queue()
     app.state.voice_assistant_queue = asyncio.Queue()
     app.state.expense_extract_queue = asyncio.Queue()
+    app.state.smart_recall_queue = asyncio.Queue()
     telemetry_poller.start()
     yield
     telemetry_poller.stop()
@@ -112,6 +119,7 @@ webcam_effects_runner = WebcamEffectsRunner()
 voice_clone_studio_runner = VoiceCloneStudioRunner()
 voice_assistant_runner = VoiceAssistantRunner()
 expense_extract_runner = ExpenseExtractRunner()
+smart_recall_runner = SmartRecallRunner()
 telemetry_poller = TelemetryPoller()
 
 
@@ -830,6 +838,131 @@ async def ws_expense_extract(websocket: WebSocket) -> None:
             await websocket.send_json(message)
     except WebSocketDisconnect:
         pass
+
+
+@app.get("/api/smart-recall/devices")
+def smart_recall_devices() -> JSONResponse:
+    return JSONResponse({"screens": video.list_screens(), "openvino_devices": list_openvino_devices()})
+
+
+@app.get("/api/smart-recall/status")
+def smart_recall_status() -> JSONResponse:
+    from smart_recall.pipeline import index_status
+
+    return JSONResponse({"running": smart_recall_runner.running, **index_status()})
+
+
+class SmartRecallStartRequest(BaseModel):
+    screen_index: int = 1
+    interval_seconds: float = 5.0
+    ocr_engine: str = "portable"
+    ocr_compute_device: str | None = None
+    embed_engine: str = "portable"
+    embed_compute_device: str | None = None
+
+
+@app.post("/api/smart-recall/start")
+async def start_smart_recall(req: SmartRecallStartRequest) -> JSONResponse:
+    if smart_recall_runner.running:
+        return JSONResponse({"error": "smart-recall is already running"}, status_code=409)
+
+    try:
+        ocr_engine = Engine(req.ocr_engine)
+        embed_engine = Engine(req.embed_engine)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    ocr_device = req.ocr_compute_device or _SMART_RECALL_ENGINE_DEFAULTS[ocr_engine]["compute_device"]
+    embed_device = req.embed_compute_device or _SMART_RECALL_ENGINE_DEFAULTS[embed_engine]["compute_device"]
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = app.state.smart_recall_queue
+
+    try:
+        smart_recall_runner.start(
+            loop=loop,
+            queue=queue,
+            screen_index=req.screen_index,
+            interval_seconds=req.interval_seconds,
+            ocr_engine=ocr_engine,
+            ocr_device=ocr_device,
+            embed_engine=embed_engine,
+            embed_device=embed_device,
+        )
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+
+    return JSONResponse({"status": "started"})
+
+
+@app.post("/api/smart-recall/stop")
+async def stop_smart_recall() -> JSONResponse:
+    smart_recall_runner.stop()
+    return JSONResponse({"status": "stopped"})
+
+
+@app.post("/api/smart-recall/reset")
+async def reset_smart_recall() -> JSONResponse:
+    try:
+        await run_in_threadpool(smart_recall_runner.reset)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+    return JSONResponse({"status": "reset"})
+
+
+@app.websocket("/ws/smart-recall")
+async def ws_smart_recall(websocket: WebSocket) -> None:
+    await websocket.accept()
+    queue: asyncio.Queue = app.state.smart_recall_queue
+    try:
+        while True:
+            message = await queue.get()
+            await websocket.send_json(message)
+    except WebSocketDisconnect:
+        pass
+
+
+class SmartRecallSearchRequest(BaseModel):
+    question: str
+    top_k: int = 5
+    compute_device: str = "AUTO"
+
+
+@app.post("/api/smart-recall/search")
+async def search_smart_recall(req: SmartRecallSearchRequest) -> JSONResponse:
+    try:
+        results = await run_in_threadpool(
+            smart_recall_runner.search, question=req.question, top_k=req.top_k, device=req.compute_device
+        )
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse(
+        {
+            "results": [
+                {
+                    "text": r.chunk.text,
+                    "source": r.chunk.source,
+                    "score": r.score,
+                    "screenshot_url": f"/api/smart-recall/screenshot/{r.chunk.source}",
+                }
+                for r in results
+            ]
+        }
+    )
+
+
+@app.get("/api/smart-recall/screenshot/{filename}")
+def smart_recall_screenshot(filename: str) -> FileResponse:
+    from smart_recall.pipeline import SCREENSHOTS_DIR
+
+    # Strip any path components -- filenames come from chunk.source, which
+    # this brick only ever generates itself, but a route parameter is
+    # still untrusted input on principle.
+    safe_name = Path(filename).name
+    path = SCREENSHOTS_DIR / safe_name
+    if not path.is_file():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    return FileResponse(path, media_type="image/jpeg")
 
 
 def main() -> None:

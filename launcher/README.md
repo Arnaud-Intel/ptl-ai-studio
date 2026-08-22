@@ -170,6 +170,30 @@ a terminal; `Ctrl+C` stops it.
   - `WS /ws/expense-extract` — streams `ocr_progress` (which file is
     being read), `structured` (one receipt's finished expense line), and
     `done` (final counts and total) as they happen.
+- For the **available** `smart-recall` demo:
+  - `GET /api/smart-recall/devices` — screens and OpenVINO devices
+    detected, for the control panel's dropdowns (again two independent
+    compute-device pickers, OCR and embedding).
+  - `GET /api/smart-recall/status` — whether recording is currently
+    running, how many captures are indexed, and which embedding engine
+    the index is locked to (`null` if nothing's been recorded yet) --
+    the modal reads this on open so reopening it (or a page reload)
+    reflects a recording that's still going on the background thread,
+    rather than assuming it stopped just because the browser tab did.
+  - `POST /api/smart-recall/start` / `/stop` / `/reset` — starts/stops
+    `smart_recall.pipeline.run(...)` on a background thread (same
+    dual-stage-active shape as `expense_extract_runner.py`); `/reset`
+    wipes the index and saved screenshots (refused with `409` while
+    recording is running).
+  - `WS /ws/smart-recall` — streams `indexed` (one capture's OCR text +
+    timestamp) and `skipped` (why -- no change, or no readable text) as
+    they happen. The page reconnects this socket automatically if it
+    drops while the modal's still open, since recording is a background
+    thread that outlives any one connection.
+  - `POST /api/smart-recall/search` — request/response, `run_in_threadpool`
+    like `doc-qa`'s `/ask`; returns each match's text, score, and a
+    `screenshot_url` pointing at `GET /api/smart-recall/screenshot/{filename}`,
+    which serves the saved JPEG straight off disk.
 - **Planned** demos render as disabled "Coming soon" cards with their
   description, so clicking one doesn't error — it's just not wired up yet.
 - `GET /api/telemetry` — CPU/GPU/NPU utilization plus which demo (if any) is

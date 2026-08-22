@@ -53,18 +53,19 @@ inference runtime, not a guess.
 | **Screen / Image Text Extraction** | Pull text out of a screenshot or photo, with optional on-device translation | CPU / GPU |
 | **Local Document Q&A** | Chat with your own files -- retrieval-augmented, nothing indexed in the cloud | CPU / NPU / GPU |
 | **Expense Report Extractor** | Photograph a folder of receipts, get a structured CSV -- OCR and the LLM run *concurrently* on two different chips | GPU **+** NPU, at once |
+| **Local Screen Memory** | Continuously indexes your own screen so you can semantically search it later -- OCR and embedding run *concurrently*, the same way | GPU **+** NPU, at once |
 
 *Every "Runs on" cell is real, tested hardware routing -- not a spec
-sheet claim. `expense-extract` in particular is the showcase: OCR reads
-receipt N+1 on the GPU while the LLM is still structuring receipt N on
-the NPU, both gauges lit at the same time, proof captured live from the
-telemetry API during testing.*
+sheet claim. `expense-extract` and `smart-recall` are the showcase: each
+runs OCR on one chip while a second model (an LLM, or an embedder) works
+on a *different* chip on the previous item, at the same time -- both
+gauges lit simultaneously, proof captured live from the telemetry API
+during testing, not claimed from a spec sheet.*
 
 Also on the roadmap and already visible as "Coming soon" cards in the
 launcher: a local voice assistant for inbox triage, a commit/code-review
-assistant, semantic recall over your own screen history, and live noise
-suppression -- the suite is built to keep growing without touching what
-already ships.
+assistant, and live noise suppression -- the suite is built to keep
+growing without touching what already ships.
 
 ## Why this is worth a look
 
@@ -100,6 +101,7 @@ uv run live-translate --source system --engine openvino --compute-device NPU
 uv run voice-assistant --engine openvino --compute-device NPU
 uv run voice-clone-studio --record 15 --text "Hello from my own cloned voice."
 uv run expense-extract ./receipts --ocr-engine openvino --ocr-device GPU --llm-engine openvino --llm-device NPU
+uv run smart-recall record --ocr-engine openvino --ocr-device GPU --embed-engine openvino --embed-device NPU
 ```
 
 See each brick's own README for its full set of options.

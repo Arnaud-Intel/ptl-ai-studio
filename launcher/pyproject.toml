@@ -14,6 +14,7 @@ dependencies = [
     "voice-clone-studio",
     "voice-assistant",
     "expense-extract",
+    "smart-recall",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
@@ -32,6 +33,7 @@ openvino = [
     "voice-clone-studio[openvino]",
     "voice-assistant[openvino]",
     "expense-extract[openvino]",
+    "smart-recall[openvino]",
 ]
 
 [project.scripts]
@@ -55,3 +57,4 @@ webcam-effects = { workspace = true }
 voice-clone-studio = { workspace = true }
 voice-assistant = { workspace = true }
 expense-extract = { workspace = true }
+smart-recall = { workspace = true }
