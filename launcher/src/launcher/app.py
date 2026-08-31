@@ -18,11 +18,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pantherlake_ai_core import audio, video
-from pantherlake_ai_core.engine import Engine, list_openvino_devices
+from pantherlake_ai_core.engine import Engine, list_gpu_devices, list_openvino_devices
 from pydantic import BaseModel
 
 from . import activity, registry
+from .code_review_assist_runner import CodeReviewAssistRunner
 from .doc_qa_runner import DocQARunner
+from .html_creator_runner import HtmlCreatorRunner
 from .live_translation_runner import LiveTranslationRunner
 from .meeting_notes_runner import MeetingNotesRunner
 from .object_detection_runner import ObjectDetectionRunner
@@ -94,6 +96,19 @@ _SMART_RECALL_ENGINE_DEFAULTS = {
     Engine.OPENVINO: {"compute_device": "AUTO"},
 }
 
+_CODE_REVIEW_ASSIST_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"compute_device": "cpu"},
+    # GPU.1 is this dev machine's Arc B60 card id, not a portable default the
+    # way "AUTO" is for every other brick -- the coding model this brick
+    # defaults to is picked to run well on that specific card.
+    Engine.OPENVINO: {"compute_device": "GPU.1"},
+}
+
+_HTML_CREATOR_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"compute_device": "cpu"},
+    Engine.OPENVINO: {"compute_device": "GPU.1"},
+}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -120,6 +135,8 @@ voice_clone_studio_runner = VoiceCloneStudioRunner()
 voice_assistant_runner = VoiceAssistantRunner()
 expense_extract_runner = ExpenseExtractRunner()
 smart_recall_runner = SmartRecallRunner()
+code_review_assist_runner = CodeReviewAssistRunner()
+html_creator_runner = HtmlCreatorRunner()
 telemetry_poller = TelemetryPoller()
 
 
@@ -146,6 +163,15 @@ def telemetry_snapshot() -> JSONResponse:
     payload = telemetry_poller.snapshot()
     payload["active"] = activity.snapshot()
     return JSONResponse(payload)
+
+
+@app.get("/api/system/gpu-devices")
+def system_gpu_devices() -> JSONResponse:
+    """Every OpenVINO-visible GPU on this machine, with a friendly name --
+    machine-level (not per-brick), so the frontend fetches it once and uses
+    it to label every brick's compute-device dropdown and to build one
+    telemetry gauge per physical GPU."""
+    return JSONResponse([{"id": gd.id, "full_name": gd.full_name} for gd in list_gpu_devices()])
 
 
 @app.get("/api/live-translation/devices")
@@ -963,6 +989,97 @@ def smart_recall_screenshot(filename: str) -> FileResponse:
     if not path.is_file():
         return JSONResponse({"error": "not found"}, status_code=404)
     return FileResponse(path, media_type="image/jpeg")
+
+
+@app.get("/api/code-review-assist/devices")
+def code_review_assist_devices() -> JSONResponse:
+    return JSONResponse({"openvino_devices": list_openvino_devices()})
+
+
+class CodeReviewRequest(BaseModel):
+    source: str = "worktree"  # "worktree" | "diff_text"
+    folder: str | None = None
+    against: str = "HEAD"
+    diff_text: str | None = None
+    engine: str = "portable"
+    compute_device: str | None = None
+
+
+@app.post("/api/code-review-assist/review")
+async def code_review_assist_review(req: CodeReviewRequest) -> JSONResponse:
+    try:
+        engine = Engine(req.engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
+
+    device = req.compute_device or _CODE_REVIEW_ASSIST_ENGINE_DEFAULTS[engine]["compute_device"]
+
+    try:
+        result = await run_in_threadpool(
+            code_review_assist_runner.review,
+            engine=req.engine,
+            device=device,
+            folder=req.folder if req.source == "worktree" else None,
+            against=req.against,
+            diff_text=req.diff_text if req.source == "diff_text" else None,
+        )
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse(
+        {
+            "commit_message": result.commit_message,
+            "review_notes": result.review_notes,
+            "diff_char_count": result.diff_char_count,
+            "diff_truncated": result.diff_truncated,
+        }
+    )
+
+
+@app.get("/api/html-creator/devices")
+def html_creator_devices() -> JSONResponse:
+    return JSONResponse({"openvino_devices": list_openvino_devices()})
+
+
+class HtmlCreatorRequest(BaseModel):
+    mode: str = "landing_page"  # "landing_page" | "document"
+    prompt: str | None = None
+    folder: str | None = None
+    engine: str = "portable"
+    compute_device: str | None = None
+
+
+@app.post("/api/html-creator/generate")
+async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
+    try:
+        engine = Engine(req.engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
+
+    device = req.compute_device or _HTML_CREATOR_ENGINE_DEFAULTS[engine]["compute_device"]
+
+    try:
+        result = await run_in_threadpool(
+            html_creator_runner.generate,
+            engine=req.engine,
+            device=device,
+            mode=req.mode,
+            prompt=req.prompt,
+            folder=req.folder,
+        )
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    return JSONResponse(
+        {
+            "html": result.html,
+            "mode": result.mode,
+            "source_char_count": result.source_char_count,
+            "source_truncated": result.source_truncated,
+            "fence_stripped": result.fence_stripped,
+            "html_truncated": result.html_truncated,
+        }
+    )
 
 
 def main() -> None:

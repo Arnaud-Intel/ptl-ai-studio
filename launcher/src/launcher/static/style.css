@@ -106,8 +106,12 @@ body {
   max-width: 1180px;
   margin: 14px auto 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
+}
+
+.telemetry-gpu-gauges {
+  display: contents;
 }
 
 .telemetry-gauge {
@@ -367,7 +371,7 @@ body {
   border-top: 1px solid var(--border);
   padding: 14px 20px;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -771,4 +775,13 @@ body {
 @media (max-width: 520px) {
   .site-footer-inner { justify-content: center; }
   .site-footer-group { justify-content: center; }
+}
+
+.htmlc-preview-frame {
+  width: 100%;
+  height: 500px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  /* generated pages assume a normal white canvas regardless of the launcher's dark theme */
+  background: #fff;
 }

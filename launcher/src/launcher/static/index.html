@@ -34,14 +34,7 @@
         <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
         <span class="telemetry-gauge-note"></span>
       </div>
-      <div class="telemetry-gauge" data-device="gpu">
-        <div class="telemetry-gauge-head">
-          <span class="telemetry-gauge-label">GPU</span>
-          <span class="telemetry-gauge-value">--</span>
-        </div>
-        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
-        <span class="telemetry-gauge-note"></span>
-      </div>
+      <div class="telemetry-gpu-gauges" data-device="gpu-group"></div>
       <div class="telemetry-gauge" data-device="npu">
         <div class="telemetry-gauge-head">
           <span class="telemetry-gauge-label">NPU</span>
@@ -65,14 +58,7 @@
         <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
         <span class="telemetry-gauge-note"></span>
       </div>
-      <div class="telemetry-gauge" data-device="gpu">
-        <div class="telemetry-gauge-head">
-          <span class="telemetry-gauge-label">GPU</span>
-          <span class="telemetry-gauge-value">--</span>
-        </div>
-        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
-        <span class="telemetry-gauge-note"></span>
-      </div>
+      <div class="telemetry-gpu-gauges" data-device="gpu-group"></div>
       <div class="telemetry-gauge" data-device="npu">
         <div class="telemetry-gauge-head">
           <span class="telemetry-gauge-label">NPU</span>
@@ -81,6 +67,17 @@
         <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
         <span class="telemetry-gauge-note"></span>
       </div>
+    </div>
+  </template>
+
+  <template id="telemetry-gpu-gauge-template">
+    <div class="telemetry-gauge" data-gpu-id="">
+      <div class="telemetry-gauge-head">
+        <span class="telemetry-gauge-label">GPU</span>
+        <span class="telemetry-gauge-value">--</span>
+      </div>
+      <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
+      <span class="telemetry-gauge-note"></span>
     </div>
   </template>
 
@@ -696,6 +693,118 @@
 
         <div id="recall-results" aria-live="polite">
           <p class="transcript-placeholder">Search results, with a screenshot thumbnail, will appear here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="cra-modal-overlay" class="modal-overlay hidden">
+    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="cra-modal-title">
+      <div class="modal-header">
+        <h2 id="cra-modal-title">Commit & Code Review Assistant</h2>
+        <button id="cra-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field">
+            <span>Diff source</span>
+            <select id="cra-source">
+              <option value="worktree">Working-tree folder (git diff)</option>
+              <option value="diff_text">Paste a diff</option>
+            </select>
+          </label>
+
+          <label class="field docqa-folder-field" id="cra-folder-field">
+            <span>Git repo folder (local path, on this machine)</span>
+            <input id="cra-folder" type="text" placeholder="C:\Users\you\Documents\myproject" />
+          </label>
+
+          <label class="field" id="cra-against-field">
+            <span>Diff against (git ref)</span>
+            <input id="cra-against" type="text" value="HEAD" />
+          </label>
+
+          <label class="field" id="cra-diff-text-field" hidden>
+            <span>Diff text</span>
+            <textarea id="cra-diff-text" rows="6" placeholder="Paste the output of 'git diff' here"></textarea>
+          </label>
+
+          <label class="field">
+            <span>Engine</span>
+            <select id="cra-engine">
+              <option value="portable">Portable (llama.cpp, CPU)</option>
+              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Compute device</span>
+            <select id="cra-compute-device"></select>
+          </label>
+        </div>
+
+        <div class="run-row">
+          <button id="cra-review" class="primary-btn" type="button">Review</button>
+          <span id="cra-status" class="run-status">Idle</span>
+        </div>
+
+        <div id="cra-result" class="transcript" aria-live="polite">
+          <p class="transcript-placeholder">Commit message and review notes will appear here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="htmlc-modal-overlay" class="modal-overlay hidden">
+    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="htmlc-modal-title">
+      <div class="modal-header">
+        <h2 id="htmlc-modal-title">HTML Creator</h2>
+        <button id="htmlc-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field">
+            <span>Mode</span>
+            <select id="htmlc-mode">
+              <option value="landing_page">Landing page (from a prompt)</option>
+              <option value="document">Document summary (from a folder)</option>
+            </select>
+          </label>
+
+          <label class="field" id="htmlc-prompt-field">
+            <span>Describe the page</span>
+            <textarea id="htmlc-prompt" rows="3" placeholder="e.g. a landing page for a small coffee shop, warm and cozy vibe"></textarea>
+          </label>
+
+          <label class="field docqa-folder-field" id="htmlc-folder-field" hidden>
+            <span>Folder of documents (local path, on this machine)</span>
+            <input id="htmlc-folder" type="text" placeholder="C:\Users\you\Documents\myproject" />
+          </label>
+
+          <label class="field">
+            <span>Engine</span>
+            <select id="htmlc-engine">
+              <option value="portable">Portable (llama.cpp, CPU)</option>
+              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Compute device</span>
+            <select id="htmlc-compute-device"></select>
+          </label>
+        </div>
+
+        <div class="run-row">
+          <button id="htmlc-generate" class="primary-btn" type="button">Generate</button>
+          <button id="htmlc-download" class="secondary-btn" type="button" hidden>Download .html</button>
+          <span id="htmlc-status" class="run-status">Idle</span>
+        </div>
+
+        <div id="htmlc-result" aria-live="polite">
+          <p class="transcript-placeholder">The generated page will appear here.</p>
         </div>
       </div>
     </div>

@@ -31,15 +31,27 @@ def create_embedder(engine: Engine, *, device: str = "AUTO", model_dir: str | No
     raise ValueError(f"Unknown engine '{engine}'.")
 
 
-def create_llm(engine: Engine, *, device: str = "AUTO", model_dir: str | None = None) -> LLM:
+def create_llm(
+    engine: Engine,
+    *,
+    device: str = "AUTO",
+    model_dir: str | None = None,
+    model_repo: str | None = None,
+    n_ctx: int | None = None,
+) -> LLM:
     if engine == Engine.PORTABLE:
         from .llm_portable import PortableLLM
 
-        return PortableLLM()
+        kwargs = {}
+        if model_repo:
+            kwargs["repo_id"] = model_repo
+        if n_ctx:
+            kwargs["n_ctx"] = n_ctx
+        return PortableLLM(**kwargs)
 
     if engine == Engine.OPENVINO:
         from .llm_openvino import OpenVINOLLM
 
-        return OpenVINOLLM(device=device, model_dir=model_dir)
+        return OpenVINOLLM(device=device, model_dir=model_dir, model_repo=model_repo)
 
     raise ValueError(f"Unknown engine '{engine}'.")

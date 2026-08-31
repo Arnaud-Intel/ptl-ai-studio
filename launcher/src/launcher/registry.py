@@ -165,7 +165,23 @@ REGISTRY: list[Demo] = [
             "leaves the machine."
         ),
         engines=["portable", "openvino"],
-        status="planned",
+        status="available",
+    ),
+    Demo(
+        id="html-creator",
+        name="HTML Creator",
+        category="Productivity",
+        tagline="Describe a page or point at a folder, get one self-contained HTML file back.",
+        description=(
+            "Generates a complete, self-contained HTML page -- inline CSS, no build step, no "
+            "external assets -- from a text prompt (a landing page) or a folder of documents "
+            "(a styled summary report, replacing a rigid PDF), using a local LLM (the doc-qa "
+            "brick, with the same coding-specialized model code-review-assist uses). Previews "
+            "live in the browser and downloads as a single .html file -- nothing you type or "
+            "upload leaves the machine."
+        ),
+        engines=["portable", "openvino"],
+        status="available",
     ),
     Demo(
         id="smart-recall",

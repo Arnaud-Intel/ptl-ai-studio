@@ -1,0 +1,29 @@
+[project]
+name = "html-creator"
+version = "0.1.0"
+description = "Generates a self-contained HTML page -- a landing page from a prompt, or a styled summary from a folder of documents -- using a local LLM. Composes doc-qa's engine_factory, no LLM code of its own."
+requires-python = ">=3.10"
+dependencies = [
+    "pantherlake-ai-core",
+    "doc-qa",
+]
+
+[project.optional-dependencies]
+# Mirrors the openvino extra of the one brick this one composes.
+openvino = [
+    "doc-qa[openvino]",
+]
+
+[project.scripts]
+html-creator = "html_creator.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/html_creator"]
+
+[tool.uv.sources]
+pantherlake-ai-core = { workspace = true }
+doc-qa = { workspace = true }

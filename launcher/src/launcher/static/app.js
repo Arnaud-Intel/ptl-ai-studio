@@ -103,6 +103,10 @@ function openDemo(demo) {
     openExpenseExtract();
   } else if (demo.id === "smart-recall") {
     openRecall();
+  } else if (demo.id === "code-review-assist") {
+    openCodeReviewAssist();
+  } else if (demo.id === "html-creator") {
+    openHtmlCreator();
   }
 }
 
@@ -159,7 +163,7 @@ async function populateLiveTranslationDevices() {
     for (const value of options) {
       const opt = document.createElement("option");
       opt.value = value;
-      opt.textContent = value;
+      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
       computeSelect.appendChild(opt);
     }
     el("ctl-model").value = engineSelect.value === "openvino" ? "base" : "small";
@@ -288,7 +292,7 @@ async function populateDocQaDevices() {
     for (const value of options) {
       const opt = document.createElement("option");
       opt.value = value;
-      opt.textContent = value;
+      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
       computeSelect.appendChild(opt);
     }
   };
@@ -414,12 +418,17 @@ const DEMO_NAMES_BY_ID = {
   "voice-assistant": "Local Voice Assistant",
   "expense-extract": "Expense Report Extractor",
   "smart-recall": "Local Screen Memory",
+  "code-review-assist": "Commit & Code Review Assistant",
+  "html-creator": "HTML Creator",
 };
 
 function matchGaugeKind(device) {
   const d = (device || "").toUpperCase();
   if (d === "CPU") return "cpu";
-  if (d.startsWith("GPU")) return "gpu";
+  // A specific GPU id ("GPU.0", "GPU.1", or bare "GPU" on a single-GPU
+  // machine), not a collapsed "gpu" bucket -- so pinning a demo's stage to
+  // one physical GPU lights up only that GPU's gauge, not every GPU's.
+  if (d.startsWith("GPU")) return d;
   if (d === "NPU") return "npu";
   return null; // e.g. "AUTO" or "cuda" -- device OpenVINO/faster-whisper picks internally, not pinned to one gauge
 }
@@ -437,20 +446,26 @@ function renderTelemetry(data) {
     activeByKind[kind] = info.stage_label ? `${baseName} (${info.stage_label})` : baseName;
   }
 
+  // CPU/NPU are singular gauges (data-device); each GPU gets its own gauge
+  // (data-gpu-id), built dynamically from however many GPUs this machine
+  // reports -- see initGpuGauges(). A gpu id with no matching DOM gauge
+  // (e.g. the OpenVINO-unavailable fallback reading, id "GPU") is simply
+  // skipped below rather than guessed at.
   const gauges = {
-    cpu: { value: data.cpu_percent, name: null },
-    gpu: { value: data.gpu_percent, name: data.gpu_name },
-    npu: { value: data.npu_percent, name: data.npu_name },
+    cpu: { value: data.cpu_percent, name: null, selector: '.telemetry-gauge[data-device="cpu"]' },
+    npu: { value: data.npu_percent, name: data.npu_name, selector: '.telemetry-gauge[data-device="npu"]' },
   };
+  for (const gpu of data.gpus || []) {
+    gauges[gpu.id] = { value: gpu.percent, name: gpu.name, selector: `.telemetry-gauge[data-gpu-id="${gpu.id}"]` };
+  }
 
-  for (const kind of ["cpu", "gpu", "npu"]) {
-    // querySelectorAll, not querySelector: the same three gauges appear
-    // once in the header and once more per demo modal's footer (cloned
-    // from #telemetry-footer-template in initTelemetryFooters), and every
-    // copy needs to stay in sync on each poll.
-    const gaugeInstances = document.querySelectorAll(`.telemetry-gauge[data-device="${kind}"]`);
+  for (const [kind, { value, name, selector }] of Object.entries(gauges)) {
+    // querySelectorAll, not querySelector: the same gauges appear once in
+    // the header and once more per demo modal's footer (cloned from
+    // #telemetry-footer-template in initTelemetryFooters), and every copy
+    // needs to stay in sync on each poll.
+    const gaugeInstances = document.querySelectorAll(selector);
     if (!gaugeInstances.length) continue;
-    const { value, name } = gauges[kind];
     const activeLabel = activeByKind[kind];
 
     for (const gauge of gaugeInstances) {
@@ -494,8 +509,48 @@ function initTelemetryFooters() {
   }
 }
 
-function initTelemetry() {
+// Every OpenVINO-visible GPU on this machine, fetched once at startup:
+// {id, full_name}[]. Drives both the per-GPU telemetry gauges below and the
+// friendly labels on every brick's compute-device dropdown (via
+// gpuDeviceLabel(), called from each brick's device-select population).
+let GPU_DEVICES = [];
+
+async function loadGpuDevices() {
+  try {
+    GPU_DEVICES = await fetchJSON("/api/system/gpu-devices");
+  } catch {
+    GPU_DEVICES = [];
+  }
+}
+
+function gpuDeviceLabel(id) {
+  const gpu = GPU_DEVICES.find((g) => g.id === id);
+  return gpu ? gpu.full_name : id;
+}
+
+// Builds one telemetry gauge per detected GPU inside every
+// .telemetry-gpu-gauges placeholder (the header strip plus each modal
+// footer, already present after initTelemetryFooters()). GPU_DEVICES is the
+// source of truth for *which* gauges exist; /api/telemetry polls only fill
+// in their values.
+function initGpuGauges() {
+  const template = el("telemetry-gpu-gauge-template");
+  for (const container of document.querySelectorAll(".telemetry-gpu-gauges")) {
+    for (const gpu of GPU_DEVICES) {
+      const gauge = template.content.cloneNode(true).querySelector(".telemetry-gauge");
+      gauge.dataset.gpuId = gpu.id;
+      if (GPU_DEVICES.length > 1) {
+        gauge.querySelector(".telemetry-gauge-label").textContent = gpu.id;
+      }
+      container.appendChild(gauge);
+    }
+  }
+}
+
+async function initTelemetry() {
   initTelemetryFooters();
+  await loadGpuDevices();
+  initGpuGauges();
   pollTelemetry();
   setInterval(pollTelemetry, 2000);
 }
@@ -557,7 +612,7 @@ async function populateObjectDetectionDevices() {
     for (const value of options) {
       const opt = document.createElement("option");
       opt.value = value;
-      opt.textContent = value;
+      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
       computeSelect.appendChild(opt);
     }
   };
@@ -729,7 +784,7 @@ async function populateOcrDevices() {
     for (const value of options) {
       const opt = document.createElement("option");
       opt.value = value;
-      opt.textContent = value;
+      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
       computeSelect.appendChild(opt);
     }
     translateCheckbox.disabled = !isOpenvino;
@@ -880,7 +935,7 @@ async function populateMeetingNotesDevices() {
     for (const value of options) {
       const opt = document.createElement("option");
       opt.value = value;
-      opt.textContent = value;
+      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
       computeSelect.appendChild(opt);
     }
   };
@@ -1046,7 +1101,7 @@ async function populateWebcamDevices() {
     for (const value of options) {
       const opt = document.createElement("option");
       opt.value = value;
-      opt.textContent = value;
+      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
       computeSelect.appendChild(opt);
     }
   };
@@ -1193,7 +1248,7 @@ async function populateExpenseExtractDevices() {
       for (const value of options) {
         const opt = document.createElement("option");
         opt.value = value;
-        opt.textContent = value;
+        opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
         deviceSelect.appendChild(opt);
       }
     };
@@ -1211,10 +1266,11 @@ async function populateExpenseExtractDevices() {
   // 76 Bit to Byte" in OpenVINO's vpux-compiler) -- GPU is the OCR device
   // that's actually verified working. doc-qa's LLM, much smaller, compiles
   // and runs fine on NPU. See expense-extract's README for the finding.
-  if (hasOpenvino && data.openvino_devices.includes("GPU")) {
+  const anyGpu = data.openvino_devices.find((d) => d.toUpperCase().startsWith("GPU"));
+  if (hasOpenvino && anyGpu) {
     el("expx-ocr-engine").value = "openvino";
     el("expx-ocr-engine").dispatchEvent(new Event("change"));
-    el("expx-ocr-device").value = "GPU";
+    el("expx-ocr-device").value = anyGpu;
   }
   if (hasOpenvino && data.openvino_devices.includes("NPU")) {
     el("expx-llm-engine").value = "openvino";
@@ -1367,7 +1423,7 @@ async function populateRecallDevices() {
       for (const value of options) {
         const opt = document.createElement("option");
         opt.value = value;
-        opt.textContent = value;
+        opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
         deviceSelect.appendChild(opt);
       }
     };
@@ -1611,7 +1667,7 @@ async function populateVoiceAssistantDevices() {
     for (const value of options) {
       const opt = document.createElement("option");
       opt.value = value;
-      opt.textContent = value;
+      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
       computeSelect.appendChild(opt);
     }
   };
@@ -1759,7 +1815,7 @@ async function populateVoiceDevices() {
     for (const value of options) {
       const opt = document.createElement("option");
       opt.value = value;
-      opt.textContent = value;
+      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
       computeSelect.appendChild(opt);
     }
   };
@@ -1892,6 +1948,289 @@ async function loadVersion() {
   }
 }
 
+// --- Commit & Code Review Assistant demo ---
+
+async function openCodeReviewAssist() {
+  el("cra-modal-overlay").classList.remove("hidden");
+  await populateCodeReviewDevices();
+}
+
+async function populateCodeReviewDevices() {
+  const data = await fetchJSON("/api/code-review-assist/devices");
+
+  const sourceSelect = el("cra-source");
+  const folderField = el("cra-folder-field");
+  const againstField = el("cra-against-field");
+  const diffTextField = el("cra-diff-text-field");
+  const fillSource = () => {
+    const isWorktree = sourceSelect.value === "worktree";
+    folderField.hidden = !isWorktree;
+    againstField.hidden = !isWorktree;
+    diffTextField.hidden = isWorktree;
+  };
+  sourceSelect.onchange = fillSource;
+  fillSource();
+
+  const engineSelect = el("cra-engine");
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  openvinoOption.textContent = hasOpenvino
+    ? `OpenVINO (coding model, ${data.openvino_devices.join(", ")})`
+    : "OpenVINO (install this brick's `openvino` extra to enable)";
+
+  const computeSelect = el("cra-compute-device");
+  const fillComputeDevices = () => {
+    computeSelect.innerHTML = "";
+    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
+    for (const value of options) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
+      computeSelect.appendChild(opt);
+    }
+    // This brick's default OpenVINO model is picked to run well on the B60 --
+    // prefer GPU.1 when it's present, fall back to AUTO on a machine without it.
+    if (engineSelect.value === "openvino" && data.openvino_devices.includes("GPU.1")) {
+      computeSelect.value = "GPU.1";
+    }
+  };
+  engineSelect.onchange = fillComputeDevices;
+  fillComputeDevices();
+}
+
+function setCraStatus(text, kind) {
+  const status = el("cra-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function renderCodeReviewResult(data) {
+  const container = el("cra-result");
+  container.innerHTML = "";
+
+  if (data.diff_truncated) {
+    const warning = document.createElement("p");
+    warning.className = "ocr-result-label";
+    warning.textContent = `Diff was ${data.diff_char_count} characters -- truncated before review, some changes may not be reflected.`;
+    container.appendChild(warning);
+  }
+
+  const commitLabel = document.createElement("p");
+  commitLabel.className = "ocr-result-label";
+  commitLabel.textContent = "Commit message";
+  container.appendChild(commitLabel);
+
+  const commitBlock = document.createElement("pre");
+  commitBlock.className = "ocr-text-block";
+  commitBlock.textContent = data.commit_message;
+  container.appendChild(commitBlock);
+
+  const notesLabel = document.createElement("p");
+  notesLabel.className = "ocr-result-label";
+  notesLabel.textContent = "Review notes";
+  container.appendChild(notesLabel);
+
+  const notesBlock = document.createElement("p");
+  notesBlock.className = "ocr-text-block";
+  notesBlock.textContent = data.review_notes;
+  container.appendChild(notesBlock);
+}
+
+async function runCodeReview() {
+  const source = el("cra-source").value;
+  const engine = el("cra-engine").value;
+  const computeDevice = el("cra-compute-device").value;
+
+  if (source === "diff_text" && !el("cra-diff-text").value.trim()) {
+    setCraStatus("Paste a diff first.", "error");
+    return;
+  }
+  if (source === "worktree" && !el("cra-folder").value.trim()) {
+    setCraStatus("Enter a git repo folder first.", "error");
+    return;
+  }
+
+  el("cra-review").disabled = true;
+  setCraStatus("Reviewing...");
+
+  try {
+    const data = await fetchJSON("/api/code-review-assist/review", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source,
+        folder: el("cra-folder").value,
+        against: el("cra-against").value || "HEAD",
+        diff_text: el("cra-diff-text").value,
+        engine,
+        compute_device: computeDevice,
+      }),
+    });
+    renderCodeReviewResult(data);
+    setCraStatus("Done", "live");
+  } catch (err) {
+    setCraStatus(`Error: ${err.message}`, "error");
+  } finally {
+    el("cra-review").disabled = false;
+  }
+}
+
+function closeCodeReviewAssist() {
+  el("cra-modal-overlay").classList.add("hidden");
+}
+
+// --- HTML Creator demo ---
+
+let htmlcCurrentHtml = null;
+
+async function openHtmlCreator() {
+  el("htmlc-modal-overlay").classList.remove("hidden");
+  await populateHtmlCreatorDevices();
+}
+
+async function populateHtmlCreatorDevices() {
+  const data = await fetchJSON("/api/html-creator/devices");
+
+  const modeSelect = el("htmlc-mode");
+  const promptField = el("htmlc-prompt-field");
+  const folderField = el("htmlc-folder-field");
+  const fillMode = () => {
+    const isLandingPage = modeSelect.value === "landing_page";
+    promptField.hidden = !isLandingPage;
+    folderField.hidden = isLandingPage;
+  };
+  modeSelect.onchange = fillMode;
+  fillMode();
+
+  const engineSelect = el("htmlc-engine");
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  openvinoOption.textContent = hasOpenvino
+    ? `OpenVINO (coding model, ${data.openvino_devices.join(", ")})`
+    : "OpenVINO (install this brick's `openvino` extra to enable)";
+
+  const computeSelect = el("htmlc-compute-device");
+  const fillComputeDevices = () => {
+    computeSelect.innerHTML = "";
+    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
+    for (const value of options) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
+      computeSelect.appendChild(opt);
+    }
+    // This brick's default OpenVINO model is picked to run well on the B60 --
+    // prefer GPU.1 when it's present, fall back to AUTO on a machine without it.
+    if (engineSelect.value === "openvino" && data.openvino_devices.includes("GPU.1")) {
+      computeSelect.value = "GPU.1";
+    }
+  };
+  engineSelect.onchange = fillComputeDevices;
+  fillComputeDevices();
+}
+
+function setHtmlCreatorStatus(text, kind) {
+  const status = el("htmlc-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+function renderHtmlCreatorResult(data) {
+  htmlcCurrentHtml = data.html;
+
+  const container = el("htmlc-result");
+  container.innerHTML = "";
+
+  if (data.html_truncated) {
+    const warning = document.createElement("p");
+    warning.className = "ocr-result-label";
+    warning.textContent = "Output doesn't end with </html> -- it may have been cut off.";
+    container.appendChild(warning);
+  }
+  if (data.source_truncated) {
+    const warning = document.createElement("p");
+    warning.className = "ocr-result-label";
+    warning.textContent = `Source was ${data.source_char_count} characters -- truncated before generation, some content may not be reflected.`;
+    container.appendChild(warning);
+  }
+
+  const iframe = document.createElement("iframe");
+  iframe.className = "htmlc-preview-frame";
+  iframe.setAttribute("sandbox", "allow-scripts");
+  iframe.srcdoc = data.html;
+  container.appendChild(iframe);
+
+  const details = document.createElement("details");
+  const summary = document.createElement("summary");
+  summary.textContent = "View raw HTML";
+  details.appendChild(summary);
+  const pre = document.createElement("pre");
+  pre.className = "ocr-text-block";
+  pre.textContent = data.html;
+  details.appendChild(pre);
+  container.appendChild(details);
+
+  el("htmlc-download").hidden = false;
+}
+
+function downloadHtmlCreatorResult() {
+  if (!htmlcCurrentHtml) return;
+  const blob = new Blob([htmlcCurrentHtml], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "generated.html";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function runHtmlCreator() {
+  const mode = el("htmlc-mode").value;
+  const engine = el("htmlc-engine").value;
+  const computeDevice = el("htmlc-compute-device").value;
+
+  if (mode === "landing_page" && !el("htmlc-prompt").value.trim()) {
+    setHtmlCreatorStatus("Describe the page first.", "error");
+    return;
+  }
+  if (mode === "document" && !el("htmlc-folder").value.trim()) {
+    setHtmlCreatorStatus("Enter a folder first.", "error");
+    return;
+  }
+
+  el("htmlc-generate").disabled = true;
+  el("htmlc-download").hidden = true;
+  setHtmlCreatorStatus("Generating...");
+
+  try {
+    const data = await fetchJSON("/api/html-creator/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode,
+        prompt: el("htmlc-prompt").value,
+        folder: el("htmlc-folder").value,
+        engine,
+        compute_device: computeDevice,
+      }),
+    });
+    renderHtmlCreatorResult(data);
+    setHtmlCreatorStatus("Done", "live");
+  } catch (err) {
+    setHtmlCreatorStatus(`Error: ${err.message}`, "error");
+  } finally {
+    el("htmlc-generate").disabled = false;
+  }
+}
+
+function closeHtmlCreator() {
+  el("htmlc-modal-overlay").classList.add("hidden");
+}
+
 async function init() {
   const demos = await fetchJSON("/api/demos");
   renderCards(demos);
@@ -1952,6 +2291,13 @@ async function init() {
   el("recall-question").addEventListener("keydown", (event) => {
     if (event.key === "Enter") runRecallSearch();
   });
+
+  el("cra-modal-close").addEventListener("click", closeCodeReviewAssist);
+  el("cra-review").addEventListener("click", runCodeReview);
+
+  el("htmlc-modal-close").addEventListener("click", closeHtmlCreator);
+  el("htmlc-generate").addEventListener("click", runHtmlCreator);
+  el("htmlc-download").addEventListener("click", downloadHtmlCreatorResult);
 }
 
 init();
