@@ -60,6 +60,9 @@ class MeetingNotesRunner:
         def on_ready() -> None:
             events.set_phase(_DEMO_ID, "running", "Transcribing...")
 
+        def on_downloading() -> None:
+            events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine.value})...")
+
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
             events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine.value}, device={compute_device})...")
@@ -69,6 +72,7 @@ class MeetingNotesRunner:
                     audio_device=audio_device,
                     on_line=on_line,
                     on_ready=on_ready,
+                    on_downloading=on_downloading,
                     stop_event=stop_event,
                 )
             except Exception as exc:  # surfaced to the UI, not silently dropped
@@ -97,9 +101,16 @@ class MeetingNotesRunner:
             raise RuntimeError("Start capturing audio first.")
         if self._engine is not None:
             activity.set_active(_DEMO_ID, engine=self._engine.value, device=self._compute_device)
-        events.set_phase(f"{_DEMO_ID}:notes", "running", "Generating notes...")
+
+        def on_ready() -> None:
+            events.set_phase(f"{_DEMO_ID}:notes", "running", "Generating notes...")
+
+        def on_downloading() -> None:
+            events.set_phase(f"{_DEMO_ID}:notes", "loading", "Downloading notes model (first run only)...")
+
+        events.set_phase(f"{_DEMO_ID}:notes", "loading", "Preparing notes model...")
         try:
-            notes = self._session.generate_notes()
+            notes = self._session.generate_notes(on_ready=on_ready, on_downloading=on_downloading)
         except Exception as exc:
             events.set_phase(f"{_DEMO_ID}:notes", "error", str(exc))
             raise

@@ -25,6 +25,7 @@ def run(
     ov_model_dir: str | None = None,
     on_result: Callable[[TranslationResult], None],
     on_ready: Callable[[], None] | None = None,
+    on_downloading: Callable[[], None] | None = None,
     stop_event: threading.Event | None = None,
 ) -> None:
     """Blocks the calling thread, calling `on_result` for each translated
@@ -34,6 +35,8 @@ def run(
     so this is the real "loading -> actually running" boundary, not
     something a caller can infer from timing or from the first result
     (which may be seconds or minutes away depending on when someone speaks).
+    `on_downloading`, if given, fires before that load has to fetch the
+    model from the network rather than just reading it off local disk.
     """
     translator = create_translator(
         engine=engine,
@@ -41,6 +44,7 @@ def run(
         device=compute_device,
         compute_type=compute_type,
         ov_model_dir=ov_model_dir,
+        on_downloading=on_downloading,
     )
     if on_ready is not None:
         on_ready()

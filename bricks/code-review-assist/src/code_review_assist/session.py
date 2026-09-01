@@ -11,6 +11,8 @@ strengths than document Q&A.
 """
 from __future__ import annotations
 
+from typing import Callable
+
 from doc_qa.engine_factory import create_llm
 from pantherlake_ai_core.engine import Engine
 
@@ -58,7 +60,13 @@ class CodeReviewSession:
         against: str = "HEAD",
         diff_text: str | None = None,
         max_tokens: int = 400,
+        on_ready: Callable[[], None] | None = None,
+        on_downloading: Callable[[], None] | None = None,
     ) -> ReviewResult:
+        """`on_ready`/`on_downloading`, if given: the LLM is lazy (built on
+        the first `review()` call, reused after) so a caller wanting to
+        distinguish "building the model" from "actually reviewing" needs a
+        seam here rather than around `__init__`, which does no loading."""
         raw = diff.read_diff(folder=folder, against=against, diff_text=diff_text)
         if not raw.strip():
             raise RuntimeError(f"No changes to review against '{against}'.")
@@ -66,11 +74,18 @@ class CodeReviewSession:
 
         if self._llm is None:
             if self.engine == Engine.OPENVINO:
-                self._llm = create_llm(self.engine, device=self.compute_device, model_repo=_DEFAULT_OPENVINO_REPO)
+                self._llm = create_llm(
+                    self.engine,
+                    device=self.compute_device,
+                    model_repo=_DEFAULT_OPENVINO_REPO,
+                    on_downloading=on_downloading,
+                )
             else:
                 self._llm = create_llm(
                     self.engine, model_repo=_DEFAULT_PORTABLE_REPO, n_ctx=_PORTABLE_N_CTX
                 )
+        if on_ready is not None:
+            on_ready()
 
         commit_message = self._llm.answer(_COMMIT_MESSAGE_SYSTEM_PROMPT, text, max_tokens=120).strip()
         review_notes = self._llm.answer(_REVIEW_NOTES_SYSTEM_PROMPT, text, max_tokens=max_tokens).strip()

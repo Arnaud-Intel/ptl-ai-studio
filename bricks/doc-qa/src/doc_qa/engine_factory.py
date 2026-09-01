@@ -3,7 +3,7 @@ doesn't need to know which one it's talking to.
 """
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Callable, Protocol
 
 from pantherlake_ai_core.engine import Engine
 
@@ -17,7 +17,16 @@ class LLM(Protocol):
     def answer(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str: ...
 
 
-def create_embedder(engine: Engine, *, device: str = "AUTO", model_dir: str | None = None) -> Embedder:
+def create_embedder(
+    engine: Engine,
+    *,
+    device: str = "AUTO",
+    model_dir: str | None = None,
+    on_downloading: Callable[[], None] | None = None,
+) -> Embedder:
+    """`on_downloading`, if given, fires before an openvino model that isn't
+    already cached locally starts downloading (portable's GGUF download
+    isn't covered)."""
     if engine == Engine.PORTABLE:
         from .embedder_portable import PortableEmbedder
 
@@ -26,7 +35,7 @@ def create_embedder(engine: Engine, *, device: str = "AUTO", model_dir: str | No
     if engine == Engine.OPENVINO:
         from .embedder_openvino import OpenVINOEmbedder
 
-        return OpenVINOEmbedder(device=device, model_dir=model_dir)
+        return OpenVINOEmbedder(device=device, model_dir=model_dir, on_downloading=on_downloading)
 
     raise ValueError(f"Unknown engine '{engine}'.")
 
@@ -38,7 +47,11 @@ def create_llm(
     model_dir: str | None = None,
     model_repo: str | None = None,
     n_ctx: int | None = None,
+    on_downloading: Callable[[], None] | None = None,
 ) -> LLM:
+    """`on_downloading`, if given, fires before an openvino model that isn't
+    already cached locally starts downloading (portable's GGUF download
+    isn't covered)."""
     if engine == Engine.PORTABLE:
         from .llm_portable import PortableLLM
 
@@ -52,6 +65,6 @@ def create_llm(
     if engine == Engine.OPENVINO:
         from .llm_openvino import OpenVINOLLM
 
-        return OpenVINOLLM(device=device, model_dir=model_dir, model_repo=model_repo)
+        return OpenVINOLLM(device=device, model_dir=model_dir, model_repo=model_repo, on_downloading=on_downloading)
 
     raise ValueError(f"Unknown engine '{engine}'.")

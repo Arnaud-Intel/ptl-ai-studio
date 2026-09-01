@@ -31,13 +31,21 @@ class HtmlCreatorRunner:
             activity.set_active(_DEMO_ID, engine=engine, device=device)
             try:
                 if self._session is None or self._engine != engine or self._device != device:
-                    events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
                     self._session = HtmlCreatorSession(Engine(engine), compute_device=device)
                     self._engine = engine
                     self._device = device
-                events.set_phase(_DEMO_ID, "running", "Generating HTML...")
+
+                def on_ready() -> None:
+                    events.set_phase(_DEMO_ID, "running", "Generating HTML...")
+
+                def on_downloading() -> None:
+                    events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine})...")
+
+                events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
                 try:
-                    result = self._session.generate(mode=mode, prompt=prompt, folder=folder)
+                    result = self._session.generate(
+                        mode=mode, prompt=prompt, folder=folder, on_ready=on_ready, on_downloading=on_downloading
+                    )
                 except Exception as exc:
                     events.set_phase(_DEMO_ID, "error", str(exc))
                     raise

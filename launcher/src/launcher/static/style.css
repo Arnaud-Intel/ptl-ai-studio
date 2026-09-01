@@ -323,19 +323,27 @@ body {
 
 .modal-overlay.hidden { display: none; }
 
+/* While any modal is open, the page behind it shouldn't also be
+   scrollable -- without this, a wheel scroll over the dimmed backdrop
+   (outside the modal itself) silently scrolled the card grid underneath,
+   which felt like the scroll had "gone missing". */
+body:has(.modal-overlay:not(.hidden)) { overflow: hidden; }
+
 .modal {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 16px;
   box-shadow: var(--shadow);
   width: 100%;
-  max-width: 640px;
-  max-height: 88vh;
-  overflow: auto;
+  max-width: 720px;
+  max-height: 92vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .modal-small { max-width: 420px; }
-.modal-wide { max-width: 860px; }
+.modal-wide { max-width: 1040px; }
 
 .modal-header {
   display: flex;
@@ -647,9 +655,10 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px;
-  min-height: 180px;
-  max-height: 320px;
+  min-height: 200px;
+  max-height: 420px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   font-size: 13px;
 }
 
@@ -720,9 +729,10 @@ body {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px;
-  min-height: 180px;
-  max-height: 320px;
+  min-height: 200px;
+  max-height: 420px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   font-size: 13.5px;
   line-height: 1.7;
 }

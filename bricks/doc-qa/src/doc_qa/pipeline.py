@@ -5,6 +5,7 @@ one place.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 from pantherlake_ai_core.engine import Engine
 
@@ -24,10 +25,17 @@ _SYSTEM_PROMPT = (
 class DocQASession:
     """Holds one loaded embedder + LLM + index. Ingest once, ask many times."""
 
-    def __init__(self, engine: Engine, *, device: str = "AUTO", model_dir: str | None = None):
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        device: str = "AUTO",
+        model_dir: str | None = None,
+        on_downloading: Callable[[], None] | None = None,
+    ):
         self.engine = engine
-        self.embedder = create_embedder(engine, device=device, model_dir=model_dir)
-        self.llm = create_llm(engine, device=device, model_dir=model_dir)
+        self.embedder = create_embedder(engine, device=device, model_dir=model_dir, on_downloading=on_downloading)
+        self.llm = create_llm(engine, device=device, model_dir=model_dir, on_downloading=on_downloading)
         self.store = VectorStore()
         self.folder: Path | None = None
 

@@ -14,6 +14,8 @@ quantizations Intel hasn't pre-published.
 """
 from __future__ import annotations
 
+from typing import Callable
+
 import numpy as np
 from pantherlake_ai_core.types import TranslationResult
 
@@ -23,7 +25,9 @@ _AVAILABLE_SIZES = ("tiny", "base", "medium", "large-v3")
 _DEFAULT_REPO_TEMPLATE = "OpenVINO/whisper-{size}-fp16-ov"
 
 
-def _resolve_model_dir(model_size: str, model_dir: str | None) -> str:
+def _resolve_model_dir(
+    model_size: str, model_dir: str | None, on_downloading: Callable[[], None] | None = None
+) -> str:
     if model_dir:
         return model_dir
     if model_size not in _AVAILABLE_SIZES:
@@ -34,8 +38,11 @@ def _resolve_model_dir(model_size: str, model_dir: str | None) -> str:
             "openvino` and pass --ov-model-dir."
         )
     from huggingface_hub import snapshot_download
+    from pantherlake_ai_core.model_cache import is_repo_cached
 
     repo_id = _DEFAULT_REPO_TEMPLATE.format(size=model_size)
+    if on_downloading is not None and not is_repo_cached(repo_id):
+        on_downloading()
     return snapshot_download(repo_id)
 
 
@@ -58,9 +65,16 @@ class OpenVINOTranslator:
     """Loads a local OpenVINO Whisper model once and translates audio chunks
     to English text, targeting whichever OpenVINO device is requested."""
 
-    def __init__(self, model_size: str = "base", device: str = "AUTO", model_dir: str | None = None, task: str = "translate"):
+    def __init__(
+        self,
+        model_size: str = "base",
+        device: str = "AUTO",
+        model_dir: str | None = None,
+        task: str = "translate",
+        on_downloading: Callable[[], None] | None = None,
+    ):
         pipeline_cls = _load_pipeline_class()
-        resolved_dir = _resolve_model_dir(model_size, model_dir)
+        resolved_dir = _resolve_model_dir(model_size, model_dir, on_downloading)
 
         ov_config = {}
         if device == "NPU" or "GPU" in device:

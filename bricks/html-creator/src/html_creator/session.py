@@ -9,6 +9,8 @@ doc-qa's own small general-purpose default is the wrong tool here too.
 """
 from __future__ import annotations
 
+from typing import Callable
+
 from doc_qa.engine_factory import create_llm
 from pantherlake_ai_core.engine import Engine
 
@@ -72,7 +74,13 @@ class HtmlCreatorSession:
         prompt: str | None = None,
         folder: str | None = None,
         max_tokens: int | None = None,
+        on_ready: Callable[[], None] | None = None,
+        on_downloading: Callable[[], None] | None = None,
     ) -> HtmlResult:
+        """`on_ready`/`on_downloading`, if given: the LLM is lazy (built on
+        the first `generate()` call, reused after) so a caller wanting to
+        distinguish "building the model" from "actually generating" needs a
+        seam here rather than around `__init__`, which does no loading."""
         if mode == "landing_page":
             if not prompt or not prompt.strip():
                 raise ValueError("Provide a prompt describing the page to generate.")
@@ -92,11 +100,18 @@ class HtmlCreatorSession:
 
         if self._llm is None:
             if self.engine == Engine.OPENVINO:
-                self._llm = create_llm(self.engine, device=self.compute_device, model_repo=_DEFAULT_OPENVINO_REPO)
+                self._llm = create_llm(
+                    self.engine,
+                    device=self.compute_device,
+                    model_repo=_DEFAULT_OPENVINO_REPO,
+                    on_downloading=on_downloading,
+                )
             else:
                 self._llm = create_llm(
                     self.engine, model_repo=_DEFAULT_PORTABLE_REPO, n_ctx=_PORTABLE_N_CTX
                 )
+        if on_ready is not None:
+            on_ready()
 
         tokens = max_tokens or _MAX_TOKENS_BY_MODE[mode]
         raw_output = self._llm.answer(system_prompt, source_text, max_tokens=tokens)

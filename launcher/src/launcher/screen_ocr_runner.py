@@ -31,7 +31,11 @@ class ScreenOcrRunner:
             try:
                 if self._session is None or self._engine != engine or self._device != device:
                     events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
-                    self._session = OcrSession(Engine(engine), device=device)
+
+                    def on_downloading() -> None:
+                        events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine})...")
+
+                    self._session = OcrSession(Engine(engine), device=device, on_downloading=on_downloading)
                     self._engine = engine
                     self._device = device
                 events.set_phase(_DEMO_ID, "running", "Extracting text...")

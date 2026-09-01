@@ -59,6 +59,7 @@ class MeetingSession:
         audio_device: str | None,
         on_line: Callable[[TranscriptLine], None],
         on_ready: Callable[[], None] | None = None,
+        on_downloading: Callable[[], None] | None = None,
         stop_event: threading.Event | None = None,
     ) -> None:
         """Blocks the calling thread until stop_event is set (or forever if
@@ -67,7 +68,8 @@ class MeetingSession:
         fires once the whisper model is loaded and capture is about to
         start -- __init__ doesn't load it (the LLM is also lazy, built on
         first `generate_notes()` call), so this call is where that actually
-        happens."""
+        happens. `on_downloading`, if given, fires before that load has to
+        fetch the model from the network rather than just reading local disk."""
 
         def handle_result(result: TranslationResult) -> None:
             line = TranscriptLine(
@@ -87,6 +89,7 @@ class MeetingSession:
             compute_device=self.compute_device,
             on_result=handle_result,
             on_ready=on_ready,
+            on_downloading=on_downloading,
             stop_event=stop_event,
         )
 
@@ -94,7 +97,17 @@ class MeetingSession:
         with self._lock:
             return "\n".join(f"[{line.timestamp}] {line.text}" for line in self._transcript)
 
-    def generate_notes(self, max_tokens: int = 600) -> MeetingNotes:
+    def generate_notes(
+        self,
+        max_tokens: int = 600,
+        *,
+        on_ready: Callable[[], None] | None = None,
+        on_downloading: Callable[[], None] | None = None,
+    ) -> MeetingNotes:
+        """`on_ready`/`on_downloading`, if given, mirror `transcribe`'s: the
+        notes LLM is also lazy (built on first call, reused after), so a
+        caller that wants to distinguish "building the notes LLM" from
+        "actually generating notes" needs the same seam here."""
         with self._lock:
             line_count = len(self._transcript)
         transcript_text = self.transcript_text()
@@ -118,7 +131,9 @@ class MeetingSession:
             )
 
         if self._llm is None:
-            self._llm = create_llm(self.engine, device=self.compute_device)
+            self._llm = create_llm(self.engine, device=self.compute_device, on_downloading=on_downloading)
+        if on_ready is not None:
+            on_ready()
 
         notes_text = self._llm.answer(_NOTES_SYSTEM_PROMPT, transcript_text, max_tokens=max_tokens)
         return MeetingNotes(text=notes_text, transcript_line_count=line_count)

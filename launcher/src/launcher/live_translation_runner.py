@@ -51,6 +51,9 @@ class LiveTranslationRunner:
         def on_ready() -> None:
             events.set_phase(_DEMO_ID, "running", "Listening and translating...")
 
+        def on_downloading() -> None:
+            events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine.value})...")
+
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
             events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine.value}, device={compute_device})...")
@@ -63,6 +66,7 @@ class LiveTranslationRunner:
                     compute_device=compute_device,
                     on_result=on_result,
                     on_ready=on_ready,
+                    on_downloading=on_downloading,
                     stop_event=stop_event,
                 )
             except Exception as exc:  # surfaced to the UI, not silently dropped

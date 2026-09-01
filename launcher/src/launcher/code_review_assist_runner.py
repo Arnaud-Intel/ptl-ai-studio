@@ -31,13 +31,25 @@ class CodeReviewAssistRunner:
             activity.set_active(_DEMO_ID, engine=engine, device=device)
             try:
                 if self._session is None or self._engine != engine or self._device != device:
-                    events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
                     self._session = CodeReviewSession(Engine(engine), compute_device=device)
                     self._engine = engine
                     self._device = device
-                events.set_phase(_DEMO_ID, "running", "Reviewing diff...")
+
+                def on_ready() -> None:
+                    events.set_phase(_DEMO_ID, "running", "Reviewing diff...")
+
+                def on_downloading() -> None:
+                    events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine})...")
+
+                # The LLM itself is lazy (built on the session's first
+                # review() call, reused after) -- this "loading" phase may
+                # or may not turn into real work; on_ready flips it to
+                # "running" only once the model is actually ready.
+                events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
                 try:
-                    result = self._session.review(folder=folder, against=against, diff_text=diff_text)
+                    result = self._session.review(
+                        folder=folder, against=against, diff_text=diff_text, on_ready=on_ready, on_downloading=on_downloading
+                    )
                 except Exception as exc:
                     events.set_phase(_DEMO_ID, "error", str(exc))
                     raise
