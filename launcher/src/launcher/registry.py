@@ -17,6 +17,11 @@ class Demo:
     description: str
     engines: list[str] = field(default_factory=list)
     status: str = "planned"  # "available" | "planned"
+    # True if the openvino engine's model is too large to fit an iGPU's or
+    # NPU's memory budget -- needs an actual discrete GPU with its own
+    # VRAM. Doesn't mean the demo itself can't run at all elsewhere: the
+    # portable engine still works everywhere with a much smaller model.
+    requires_dgpu: bool = False
 
 
 REGISTRY: list[Demo] = [
@@ -166,6 +171,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        requires_dgpu=True,
     ),
     Demo(
         id="html-creator",
@@ -182,6 +188,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        requires_dgpu=True,
     ),
     Demo(
         id="smart-recall",

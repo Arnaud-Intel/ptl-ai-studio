@@ -59,6 +59,13 @@ function renderCards(demos) {
         span.textContent = engine;
         badges.appendChild(span);
       }
+      if (demo.requires_dgpu) {
+        const span = document.createElement("span");
+        span.className = "engine-badge requires-dgpu";
+        span.textContent = "Discrete GPU";
+        span.title = "The openvino engine's model here needs a real discrete GPU with its own VRAM -- too large for an iGPU's or NPU's memory budget. The portable engine still runs everywhere.";
+        badges.appendChild(span);
+      }
 
       const btn = node.querySelector(".launch-btn");
       if (demo.status === "available") {

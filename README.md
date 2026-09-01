@@ -81,15 +81,19 @@ handed the inference runtime, not a guess.
 | --- | --- | --- |
 | **Expense Report Extractor** | Photograph a folder of receipts, get a structured CSV -- OCR and the LLM run *concurrently* on two different chips | GPU **+** NPU, at once |
 | **Local Screen Memory** | Continuously indexes your own screen so you can semantically search it later -- OCR and embedding run *concurrently*, the same way | GPU **+** NPU, at once |
-| **Commit & Code Review Assistant** | Turn a git diff into a commit message and review notes, entirely locally | CPU / NPU / GPU |
-| **HTML Creator** | Describe a page or point at a folder of documents, get one self-contained HTML file back | CPU / NPU / GPU |
+| **Commit & Code Review Assistant** | Turn a git diff into a commit message and review notes, entirely locally | CPU / GPU\* |
+| **HTML Creator** | Describe a page or point at a folder of documents, get one self-contained HTML file back | CPU / GPU\* |
 
 *Every "Runs on" cell is real, tested hardware routing -- not a spec
 sheet claim. `expense-extract` and `smart-recall` are the showcase: each
 runs OCR on one chip while a second model (an LLM, or an embedder) works
 on a *different* chip at the same time -- both gauges lit simultaneously,
 proof captured live from the telemetry API during testing, not claimed
-from a spec sheet.*
+from a spec sheet. \*These two ask for a 30B-parameter coding model on
+the OpenVINO engine (~15GB) -- too large for an iGPU's or NPU's memory
+budget, so that path needs a real **discrete** GPU with its own VRAM
+(flagged with an amber "Discrete GPU" tag in the launcher). The portable
+engine still runs everywhere, with a much smaller model.*
 
 <p align="center">
   <img src="docs/screenshot-code-review.png" alt="Commit & Code Review Assistant showing a generated commit message and review notes, with the GPU.1 telemetry gauge lit up and labeled with the demo's name" width="820" />

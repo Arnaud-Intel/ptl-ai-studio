@@ -17,6 +17,8 @@
 
   --success: #4ade80;
   --danger: #e2604f;
+  --warning: #f5a623;
+  --warning-soft: rgba(245, 166, 35, 0.12);
   --radius: 12px;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
   font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -285,6 +287,14 @@ body {
   border-radius: 6px;
   border: 1px solid var(--border);
   color: var(--text-dim);
+}
+
+.engine-badge.requires-dgpu {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-weight: 600;
+  cursor: help;
 }
 
 .launch-btn {
