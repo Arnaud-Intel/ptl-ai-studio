@@ -429,6 +429,27 @@ body {
   border-color: var(--accent-hover);
 }
 
+.sample-picker {
+  width: 100%;
+  background: var(--bg-card);
+  color: var(--text-dim);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  margin-bottom: 8px;
+}
+
+.sample-picker:focus {
+  outline: none;
+  border-color: var(--accent-hover);
+}
+
+.sample-picker:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .field input[type="text"] {
   background: var(--bg-card);
   color: var(--text);

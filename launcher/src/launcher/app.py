@@ -17,9 +17,14 @@ from fastapi import FastAPI, Form, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from code_review_assist.samples import SAMPLES as CODE_REVIEW_ASSIST_SAMPLES
+from doc_qa.samples import SAMPLES as DOC_QA_SAMPLES
+from html_creator.samples import SAMPLES as HTML_CREATOR_SAMPLES
 from pantherlake_ai_core import audio, video
 from pantherlake_ai_core.engine import Engine, list_gpu_devices, list_openvino_devices
 from pydantic import BaseModel
+from smart_recall.samples import SAMPLES as SMART_RECALL_SAMPLES
+from voice_clone_studio.samples import SAMPLES as VOICE_CLONE_STUDIO_SAMPLES
 
 from . import activity, registry
 from .code_review_assist_runner import CodeReviewAssistRunner
@@ -246,7 +251,9 @@ async def ws_live_translation(websocket: WebSocket) -> None:
 
 @app.get("/api/doc-qa/devices")
 def doc_qa_devices() -> JSONResponse:
-    return JSONResponse({"openvino_devices": list_openvino_devices()})
+    return JSONResponse(
+        {"openvino_devices": list_openvino_devices(), "samples": [asdict(s) for s in DOC_QA_SAMPLES]}
+    )
 
 
 class DocQAIngestRequest(BaseModel):
@@ -634,7 +641,13 @@ def webcam_effects_stream() -> StreamingResponse:
 
 @app.get("/api/voice-clone-studio/devices")
 def voice_clone_studio_devices() -> JSONResponse:
-    return JSONResponse({"microphones": audio.list_microphones(), "openvino_devices": list_openvino_devices()})
+    return JSONResponse(
+        {
+            "microphones": audio.list_microphones(),
+            "openvino_devices": list_openvino_devices(),
+            "samples": [asdict(s) for s in VOICE_CLONE_STUDIO_SAMPLES],
+        }
+    )
 
 
 class VoiceCloneStudioEnrollRecordRequest(BaseModel):
@@ -868,7 +881,13 @@ async def ws_expense_extract(websocket: WebSocket) -> None:
 
 @app.get("/api/smart-recall/devices")
 def smart_recall_devices() -> JSONResponse:
-    return JSONResponse({"screens": video.list_screens(), "openvino_devices": list_openvino_devices()})
+    return JSONResponse(
+        {
+            "screens": video.list_screens(),
+            "openvino_devices": list_openvino_devices(),
+            "samples": [asdict(s) for s in SMART_RECALL_SAMPLES],
+        }
+    )
 
 
 @app.get("/api/smart-recall/status")
@@ -993,7 +1012,9 @@ def smart_recall_screenshot(filename: str) -> FileResponse:
 
 @app.get("/api/code-review-assist/devices")
 def code_review_assist_devices() -> JSONResponse:
-    return JSONResponse({"openvino_devices": list_openvino_devices()})
+    return JSONResponse(
+        {"openvino_devices": list_openvino_devices(), "samples": [asdict(s) for s in CODE_REVIEW_ASSIST_SAMPLES]}
+    )
 
 
 class CodeReviewRequest(BaseModel):
@@ -1038,7 +1059,9 @@ async def code_review_assist_review(req: CodeReviewRequest) -> JSONResponse:
 
 @app.get("/api/html-creator/devices")
 def html_creator_devices() -> JSONResponse:
-    return JSONResponse({"openvino_devices": list_openvino_devices()})
+    return JSONResponse(
+        {"openvino_devices": list_openvino_devices(), "samples": [asdict(s) for s in HTML_CREATOR_SAMPLES]}
+    )
 
 
 class HtmlCreatorRequest(BaseModel):

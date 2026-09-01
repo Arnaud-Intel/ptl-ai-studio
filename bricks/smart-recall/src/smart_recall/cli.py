@@ -8,6 +8,7 @@ from pantherlake_ai_core import engine as engine_mod
 from pantherlake_ai_core import video
 
 from . import pipeline
+from .samples import SAMPLES
 
 _OCR_ENGINE_DEFAULTS = {
     engine_mod.Engine.PORTABLE: {"device": "cpu"},
@@ -49,11 +50,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     search = sub.add_parser("search", help="Search everything recorded so far.")
-    search.add_argument("question", help="What you're looking for, in plain language.")
+    search.add_argument(
+        "question", nargs="?", default=None,
+        help="What you're looking for, in plain language. Or use --sample.",
+    )
+    search.add_argument("--sample", default=None, help="Use a named example question instead (see list-samples).")
     search.add_argument("--top-k", type=int, default=5, help="Number of matches to show. Default: 5")
     search.add_argument("--embed-device", default="AUTO", help="AUTO, CPU, GPU, or NPU (openvino index only).")
 
     sub.add_parser("list-devices", help="List available screens and inference devices, then exit.")
+    sub.add_parser("list-samples", help="List available example search questions, then exit.")
 
     return p
 
@@ -110,6 +116,16 @@ def _run_record(args: argparse.Namespace) -> int:
 
 
 def _run_search(args: argparse.Namespace) -> int:
+    if bool(args.question) == bool(args.sample):
+        print("Error: provide a question or --sample (not both, not neither).", file=sys.stderr)
+        return 1
+    if args.sample:
+        matches = [s for s in SAMPLES if s.name == args.sample]
+        if not matches:
+            print(f"Error: no sample named '{args.sample}' (see: smart-recall list-samples)", file=sys.stderr)
+            return 1
+        args.question = matches[0].question
+
     try:
         index = pipeline.RecallIndex(device=args.embed_device)
     except RuntimeError as exc:
@@ -146,6 +162,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "list-devices":
         _list_devices()
+        return 0
+    if args.command == "list-samples":
+        for s in SAMPLES:
+            print(f"{s.name}: {s.description}")
         return 0
     if args.command == "record":
         return _run_record(args)

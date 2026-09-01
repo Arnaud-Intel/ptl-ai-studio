@@ -7,6 +7,7 @@ import sys
 from pantherlake_ai_core import engine as engine_mod
 
 from .pipeline import DocQASession
+from .samples import SAMPLES
 
 _ENGINE_DEFAULTS = {
     engine_mod.Engine.PORTABLE: {"device": "cpu"},
@@ -19,7 +20,10 @@ def build_parser() -> argparse.ArgumentParser:
         prog="doc-qa",
         description="Locally ask questions about your own documents (retrieval-augmented, fully on-device).",
     )
-    p.add_argument("folder", help="Folder of .txt/.md/.pdf files to answer questions about.")
+    p.add_argument(
+        "folder", nargs="?", default=None,
+        help="Folder of .txt/.md/.pdf files to answer questions about. Not needed with --list-samples.",
+    )
     p.add_argument(
         "--engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
         help="Inference backend: 'portable' (llama.cpp, CPU) or 'openvino' (Intel CPU/iGPU/NPU -- "
@@ -32,11 +36,34 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reindex", action="store_true", help="Rebuild the index even if a cached one exists.")
     p.add_argument("--top-k", type=int, default=4, help="Number of source chunks to retrieve per question. Default: 4")
     p.add_argument("--question", default=None, help="Ask a single question and exit, instead of an interactive loop.")
+    p.add_argument("--sample", default=None, help="Use a named example question instead (see --list-samples).")
+    p.add_argument(
+        "--list-samples", action="store_true",
+        help="List available example questions, then exit.",
+    )
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.list_samples:
+        for s in SAMPLES:
+            print(f"{s.name}: {s.description}")
+        return 0
+
+    if args.question and args.sample:
+        parser.error("--question and --sample are mutually exclusive")
+    if args.sample:
+        matches = [s for s in SAMPLES if s.name == args.sample]
+        if not matches:
+            parser.error(f"no sample named '{args.sample}' (see --list-samples)")
+        args.question = matches[0].question
+
+    if not args.folder:
+        parser.error("folder is required (unless using --list-samples)")
+
     engine = engine_mod.Engine(args.engine)
     defaults = _ENGINE_DEFAULTS[engine]
     device = args.compute_device or defaults["device"]

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pantherlake_ai_core import engine as engine_mod
 
+from .samples import SAMPLES
 from .session import HtmlCreatorSession
 
 _ENGINE_DEFAULTS = {
@@ -23,9 +24,12 @@ def build_parser() -> argparse.ArgumentParser:
         prog="html-creator",
         description="Locally generate a self-contained HTML page from a prompt or a folder of documents.",
     )
-    source = p.add_mutually_exclusive_group(required=True)
+    # Not required at parse time -- --list-devices/--list-samples need to work
+    # standalone too; "exactly one of these unless listing" is checked in main().
+    source = p.add_mutually_exclusive_group(required=False)
     source.add_argument("--prompt", default=None, help="Describe a landing page to generate.")
     source.add_argument("--folder", default=None, help="Summarize every document in this folder instead.")
+    source.add_argument("--sample", default=None, help="Use a named example prompt instead (see --list-samples).")
     p.add_argument("--out", default=None, help="Write the generated HTML to this file instead of stdout.")
     p.add_argument(
         "--engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
@@ -37,17 +41,36 @@ def build_parser() -> argparse.ArgumentParser:
         "--list-devices", action="store_true",
         help="List available inference devices, then exit.",
     )
+    p.add_argument(
+        "--list-samples", action="store_true",
+        help="List available example prompts, then exit.",
+    )
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     if args.list_devices:
         from pantherlake_ai_core.engine import describe_devices
 
         print(describe_devices())
         return 0
+
+    if args.list_samples:
+        for s in SAMPLES:
+            print(f"{s.name}: {s.description}")
+        return 0
+
+    if sum(bool(v) for v in (args.prompt, args.folder, args.sample)) != 1:
+        parser.error("exactly one of --prompt, --folder, --sample is required")
+
+    if args.sample:
+        matches = [s for s in SAMPLES if s.name == args.sample]
+        if not matches:
+            parser.error(f"no sample named '{args.sample}' (see --list-samples)")
+        args.prompt = matches[0].prompt
 
     engine = engine_mod.Engine(args.engine)
     compute_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]

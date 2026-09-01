@@ -7,6 +7,7 @@ import sys
 from pantherlake_ai_core import audio, engine as engine_mod
 
 from .pipeline import VoiceCloneSession
+from .samples import SAMPLES
 from .voice_model import STYLES
 
 _ENGINE_DEFAULTS = {
@@ -27,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Record that many seconds from the default microphone instead of using a file.",
     )
     p.add_argument("--text", required=False, help="Text to speak in the cloned voice. If omitted, only enrolls and exits.")
+    p.add_argument("--sample", default=None, help="Use a named example text instead (see --list-samples).")
     p.add_argument("--style", choices=STYLES, default="default", help="Base delivery style before tone cloning. Default: default")
     p.add_argument("--tau", type=float, default=0.3, help="Tone-conversion strength (higher = closer to the reference tone). Default: 0.3")
     p.add_argument("--output", default="cloned.wav", help="Output WAV path. Default: cloned.wav")
@@ -41,6 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--list-devices", action="store_true",
         help="List available microphones and inference devices, then exit.",
+    )
+    p.add_argument(
+        "--list-samples", action="store_true",
+        help="List available example texts, then exit.",
     )
     return p
 
@@ -91,6 +97,19 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_devices:
         list_devices()
         return 0
+
+    if args.list_samples:
+        for s in SAMPLES:
+            print(f"{s.name}: {s.description}")
+        return 0
+
+    if args.text and args.sample:
+        parser.error("--text and --sample are mutually exclusive")
+    if args.sample:
+        matches = [s for s in SAMPLES if s.name == args.sample]
+        if not matches:
+            parser.error(f"no sample named '{args.sample}' (see --list-samples)")
+        args.text = matches[0].text
 
     if not args.reference and not args.record:
         parser.error("one of the arguments --reference --record is required")

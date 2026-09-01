@@ -298,6 +298,8 @@ async function populateDocQaDevices() {
   };
   engineSelect.onchange = fillComputeDevices;
   fillComputeDevices();
+
+  wireSamplePicker("docqa-sample", "docqa-question", data.samples, "question");
 }
 
 function setDocQaIngestStatus(text, kind) {
@@ -311,6 +313,7 @@ function setDocQaBusy(busy) {
   el("docqa-ingest").disabled = busy;
   el("docqa-ask").disabled = busy || !docQaIndexed;
   el("docqa-question").disabled = busy || !docQaIndexed;
+  el("docqa-sample").disabled = busy || !docQaIndexed;
   for (const id of ["docqa-folder", "docqa-engine", "docqa-compute-device", "docqa-reindex"]) {
     el(id).disabled = busy;
   }
@@ -526,6 +529,32 @@ async function loadGpuDevices() {
 function gpuDeviceLabel(id) {
   const gpu = GPU_DEVICES.find((g) => g.id === id);
   return gpu ? gpu.full_name : id;
+}
+
+// Populates a "try a sample" <select> (samplePickerId) from a brick's
+// /devices response (samples: [{name, description, ...payload}]) and wires
+// it to fill targetFieldId's value with the picked sample's payloadKey on
+// change, then reset back to the placeholder -- a one-shot insert, not a
+// persistent selection.
+function wireSamplePicker(samplePickerId, targetFieldId, samples, payloadKey) {
+  const picker = el(samplePickerId);
+  if (!picker) return;
+  while (picker.options.length > 1) picker.remove(1);
+  for (const sample of samples || []) {
+    const opt = document.createElement("option");
+    opt.value = sample.name;
+    opt.textContent = `${sample.name} — ${sample.description}`;
+    picker.appendChild(opt);
+  }
+  picker.onchange = () => {
+    const sample = (samples || []).find((s) => s.name === picker.value);
+    if (sample) {
+      const target = el(targetFieldId);
+      target.value = sample[payloadKey];
+      target.dispatchEvent(new Event("input"));
+    }
+    picker.value = "";
+  };
 }
 
 // Builds one telemetry gauge per detected GPU inside every
@@ -1432,6 +1461,8 @@ async function populateRecallDevices() {
   };
   wireComputeDevices("recall-ocr-engine", "recall-ocr-device");
   wireComputeDevices("recall-embed-engine", "recall-embed-device");
+
+  wireSamplePicker("recall-sample", "recall-question", data.samples, "question");
 }
 
 async function refreshRecallStatus() {
@@ -1829,6 +1860,8 @@ async function populateVoiceDevices() {
     sourceSelect.value = "upload";
     fillSource();
   }
+
+  wireSamplePicker("voice-sample", "voice-text", data.samples, "text");
 }
 
 function setVoiceEnrollStatus(text, kind) {
@@ -1840,6 +1873,7 @@ function setVoiceEnrollStatus(text, kind) {
 
 function setVoiceEnrolled(enrolled) {
   el("voice-text").disabled = !enrolled;
+  el("voice-sample").disabled = !enrolled;
   el("voice-style").disabled = !enrolled;
   el("voice-tau").disabled = !enrolled;
   el("voice-synthesize").disabled = !enrolled;
@@ -1997,6 +2031,8 @@ async function populateCodeReviewDevices() {
   };
   engineSelect.onchange = fillComputeDevices;
   fillComputeDevices();
+
+  wireSamplePicker("cra-sample", "cra-diff-text", data.samples, "diff_text");
 }
 
 function setCraStatus(text, kind) {
@@ -2130,6 +2166,8 @@ async function populateHtmlCreatorDevices() {
   };
   engineSelect.onchange = fillComputeDevices;
   fillComputeDevices();
+
+  wireSamplePicker("htmlc-sample", "htmlc-prompt", data.samples, "prompt");
 }
 
 function setHtmlCreatorStatus(text, kind) {
