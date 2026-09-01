@@ -299,7 +299,7 @@ async function populateDocQaDevices() {
   engineSelect.onchange = fillComputeDevices;
   fillComputeDevices();
 
-  wireSamplePicker("docqa-sample", "docqa-question", data.samples, "question");
+  wireSamplePicker("docqa-sample", data.samples, { "docqa-folder": "folder", "docqa-question": "question" });
 }
 
 function setDocQaIngestStatus(text, kind) {
@@ -313,8 +313,10 @@ function setDocQaBusy(busy) {
   el("docqa-ingest").disabled = busy;
   el("docqa-ask").disabled = busy || !docQaIndexed;
   el("docqa-question").disabled = busy || !docQaIndexed;
-  el("docqa-sample").disabled = busy || !docQaIndexed;
-  for (const id of ["docqa-folder", "docqa-engine", "docqa-compute-device", "docqa-reindex"]) {
+  // Unlike the question field, the sample picker also fills the folder
+  // field -- it needs to be usable *before* ingest to bootstrap a demo
+  // from a cold start, so it's only gated on busy, not on docQaIndexed.
+  for (const id of ["docqa-folder", "docqa-engine", "docqa-compute-device", "docqa-reindex", "docqa-sample"]) {
     el(id).disabled = busy;
   }
 }
@@ -533,10 +535,14 @@ function gpuDeviceLabel(id) {
 
 // Populates a "try a sample" <select> (samplePickerId) from a brick's
 // /devices response (samples: [{name, description, ...payload}]) and wires
-// it to fill targetFieldId's value with the picked sample's payloadKey on
-// change, then reset back to the placeholder -- a one-shot insert, not a
-// persistent selection.
-function wireSamplePicker(samplePickerId, targetFieldId, samples, payloadKey) {
+// it to fill one or more target fields from the picked sample on change,
+// then reset back to the placeholder -- a one-shot insert, not a
+// persistent selection. fieldMap is {targetElementId: sampleFieldName};
+// a sample field that's null/undefined (e.g. html-creator's document-mode
+// sample has no `prompt`) is left alone rather than overwriting the
+// target with "null". A <select> target fires a change event (so mode-
+// toggle show/hide logic reacts), everything else fires input.
+function wireSamplePicker(samplePickerId, samples, fieldMap) {
   const picker = el(samplePickerId);
   if (!picker) return;
   while (picker.options.length > 1) picker.remove(1);
@@ -549,9 +555,13 @@ function wireSamplePicker(samplePickerId, targetFieldId, samples, payloadKey) {
   picker.onchange = () => {
     const sample = (samples || []).find((s) => s.name === picker.value);
     if (sample) {
-      const target = el(targetFieldId);
-      target.value = sample[payloadKey];
-      target.dispatchEvent(new Event("input"));
+      for (const [targetId, sampleField] of Object.entries(fieldMap)) {
+        const value = sample[sampleField];
+        if (value === null || value === undefined) continue;
+        const target = el(targetId);
+        target.value = value;
+        target.dispatchEvent(new Event(target.tagName === "SELECT" ? "change" : "input"));
+      }
     }
     picker.value = "";
   };
@@ -1462,7 +1472,7 @@ async function populateRecallDevices() {
   wireComputeDevices("recall-ocr-engine", "recall-ocr-device");
   wireComputeDevices("recall-embed-engine", "recall-embed-device");
 
-  wireSamplePicker("recall-sample", "recall-question", data.samples, "question");
+  wireSamplePicker("recall-sample", data.samples, { "recall-question": "question" });
 }
 
 async function refreshRecallStatus() {
@@ -1861,7 +1871,7 @@ async function populateVoiceDevices() {
     fillSource();
   }
 
-  wireSamplePicker("voice-sample", "voice-text", data.samples, "text");
+  wireSamplePicker("voice-sample", data.samples, { "voice-text": "text" });
 }
 
 function setVoiceEnrollStatus(text, kind) {
@@ -2032,7 +2042,7 @@ async function populateCodeReviewDevices() {
   engineSelect.onchange = fillComputeDevices;
   fillComputeDevices();
 
-  wireSamplePicker("cra-sample", "cra-diff-text", data.samples, "diff_text");
+  wireSamplePicker("cra-sample", data.samples, { "cra-diff-text": "diff_text" });
 }
 
 function setCraStatus(text, kind) {
@@ -2167,7 +2177,11 @@ async function populateHtmlCreatorDevices() {
   engineSelect.onchange = fillComputeDevices;
   fillComputeDevices();
 
-  wireSamplePicker("htmlc-sample", "htmlc-prompt", data.samples, "prompt");
+  wireSamplePicker("htmlc-sample", data.samples, {
+    "htmlc-mode": "mode",
+    "htmlc-prompt": "prompt",
+    "htmlc-folder": "folder",
+  });
 }
 
 function setHtmlCreatorStatus(text, kind) {

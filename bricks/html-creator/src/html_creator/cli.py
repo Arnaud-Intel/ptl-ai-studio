@@ -71,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         if not matches:
             parser.error(f"no sample named '{args.sample}' (see --list-samples)")
         args.prompt = matches[0].prompt
+        args.folder = matches[0].folder
 
     engine = engine_mod.Engine(args.engine)
     compute_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]

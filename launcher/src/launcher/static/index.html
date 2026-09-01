@@ -163,6 +163,9 @@
       </div>
 
       <div class="modal-body">
+        <select id="docqa-sample" class="sample-picker">
+          <option value="">Try a sample (fills a demo folder + question)...</option>
+        </select>
         <div class="controls">
           <label class="field docqa-folder-field">
             <span>Folder to index (local path, on this machine)</span>
@@ -193,9 +196,6 @@
           <p class="transcript-placeholder">Ingest a folder of .txt/.md/.pdf files, then ask a question below.</p>
         </div>
 
-        <select id="docqa-sample" class="sample-picker" disabled>
-          <option value="">Try a sample question...</option>
-        </select>
         <div class="ask-row">
           <input id="docqa-question" type="text" placeholder="Ask a question about the indexed documents..." disabled />
           <button id="docqa-ask" class="primary-btn" type="button" disabled>Ask</button>

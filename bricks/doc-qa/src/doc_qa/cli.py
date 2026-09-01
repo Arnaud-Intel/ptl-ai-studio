@@ -60,9 +60,13 @@ def main(argv: list[str] | None = None) -> int:
         if not matches:
             parser.error(f"no sample named '{args.sample}' (see --list-samples)")
         args.question = matches[0].question
+        # A sample carries its own bundled demo folder -- use it unless the
+        # caller already gave an explicit folder to ask the same kind of
+        # question about their own documents instead.
+        args.folder = args.folder or matches[0].folder
 
     if not args.folder:
-        parser.error("folder is required (unless using --list-samples)")
+        parser.error("folder is required (unless using --list-samples, or --sample with its bundled folder)")
 
     engine = engine_mod.Engine(args.engine)
     defaults = _ENGINE_DEFAULTS[engine]
