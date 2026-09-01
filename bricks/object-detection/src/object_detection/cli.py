@@ -28,10 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--camera-index", type=int, default=0, help="Webcam index (see --list-devices). Default: 0")
     p.add_argument("--screen-index", type=int, default=1, help="Screen/monitor index (see --list-devices). Default: 1")
     p.add_argument(
-        "--engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
+        "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
         help="Inference backend: 'portable' (DETR via ONNX Runtime, CPU) or 'openvino' "
              "(YOLO11n via OpenVINO, Intel CPU/iGPU/NPU -- requires this brick's `openvino` extra). "
-             "Default: portable",
+             "Default: openvino if installed and a device is available, otherwise portable.",
     )
     p.add_argument(
         "--compute-device", default=None,
@@ -75,7 +75,12 @@ def main(argv: list[str] | None = None) -> int:
         list_devices()
         return 0
 
-    engine = engine_mod.Engine(args.engine)
+    if args.engine:
+        engine = engine_mod.Engine(args.engine)
+    else:
+        from pantherlake_ai_core.engine import list_openvino_devices
+
+        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
     compute_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]
 
     print(f"Loading detector (engine={engine.value}, device={compute_device})... this may download a model on first use.")

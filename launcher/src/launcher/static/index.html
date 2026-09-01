@@ -844,12 +844,31 @@
         <img class="footer-logo footer-logo-wordmark" src="/static/dell-logo.png" alt="Dell" />
       </div>
       <span id="app-version" class="footer-version"></span>
+      <button id="log-open" class="footer-link-btn" type="button">Activity Log</button>
       <div class="site-footer-group">
         <img class="footer-logo footer-logo-badge" src="/static/intel-core-ultra.png" alt="Intel Core Ultra" />
         <img class="footer-logo footer-logo-badge" src="/static/intel-arc.png" alt="Intel Arc Graphics" />
       </div>
     </div>
   </footer>
+
+  <div id="log-modal-overlay" class="modal-overlay hidden">
+    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="log-modal-title">
+      <div class="modal-header">
+        <h2 id="log-modal-title">Activity Log</h2>
+        <button id="log-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="card-description" style="margin-bottom: 14px;">
+          Recent lifecycle events across every brick -- what loaded, what ran, and what failed.
+          Also persisted to <code>logs/events.log</code> at the repo root.
+        </p>
+        <div id="log-list" aria-live="polite">
+          <p class="transcript-placeholder">No events yet -- launch a brick to see activity here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

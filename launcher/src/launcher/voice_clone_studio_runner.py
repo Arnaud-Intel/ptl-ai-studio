@@ -10,7 +10,7 @@ from pantherlake_ai_core import audio
 from pantherlake_ai_core.engine import Engine
 from voice_clone_studio.pipeline import VoiceCloneSession
 
-from . import activity
+from . import activity, events
 
 _DEMO_ID = "voice-clone-studio"
 
@@ -59,11 +59,18 @@ class VoiceCloneStudioRunner:
             activity.set_active(_DEMO_ID, engine=engine, device=device)
             try:
                 if self._session is None or self._engine != engine or self._device != device:
+                    events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
                     self._session = VoiceCloneSession(Engine(engine), device=device)
                     self._engine = engine
                     self._device = device
-                self._session.enroll(reference_path)
+                events.set_phase(_DEMO_ID, "running", "Enrolling voice...")
+                try:
+                    self._session.enroll(reference_path)
+                except Exception as exc:
+                    events.set_phase(_DEMO_ID, "error", str(exc))
+                    raise
                 self._enrolled = True
+                events.clear_phase(_DEMO_ID)
             finally:
                 activity.clear_active(_DEMO_ID)
 
@@ -73,7 +80,13 @@ class VoiceCloneStudioRunner:
             if self._session is None or not self._enrolled:
                 raise RuntimeError("Enroll a voice first.")
             activity.set_active(_DEMO_ID, engine=self._engine, device=self._device)
+            events.set_phase(_DEMO_ID, "running", "Synthesizing speech...")
             try:
-                return self._session.synthesize(text, style=style, tau=tau)
+                result = self._session.synthesize(text, style=style, tau=tau)
+            except Exception as exc:
+                events.set_phase(_DEMO_ID, "error", str(exc))
+                raise
             finally:
                 activity.clear_active(_DEMO_ID)
+            events.clear_phase(_DEMO_ID)
+            return result

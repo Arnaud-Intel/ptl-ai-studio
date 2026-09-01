@@ -29,10 +29,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Substring to match a specific microphone/output device name.",
     )
     p.add_argument(
-        "--engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
+        "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
         help="Inference backend for BOTH transcription (faster-whisper/OpenVINO Whisper, via the "
              "live-translation brick) and notes generation (llama.cpp/OpenVINO LLM, via the doc-qa "
-             "brick): 'portable' or 'openvino' (requires this brick's `openvino` extra). Default: portable",
+             "brick): 'portable' or 'openvino' (requires this brick's `openvino` extra). Default: "
+             "openvino if installed and a device is available, otherwise portable.",
     )
     p.add_argument("--compute-device", default=None, help="openvino engine only: AUTO, CPU, GPU, or NPU.")
     p.add_argument("--whisper-model", default=None, help="Whisper model size override (tiny/base/small/medium/large-v3).")
@@ -63,7 +64,12 @@ def main(argv: list[str] | None = None) -> int:
         list_devices()
         return 0
 
-    engine = engine_mod.Engine(args.engine)
+    if args.engine:
+        engine = engine_mod.Engine(args.engine)
+    else:
+        from pantherlake_ai_core.engine import list_openvino_devices
+
+        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
     defaults = _ENGINE_DEFAULTS[engine]
     compute_device = args.compute_device or defaults["device"]
     whisper_model = args.whisper_model or defaults["whisper_model"]

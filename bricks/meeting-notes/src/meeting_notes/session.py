@@ -58,11 +58,16 @@ class MeetingSession:
         source: str,
         audio_device: str | None,
         on_line: Callable[[TranscriptLine], None],
+        on_ready: Callable[[], None] | None = None,
         stop_event: threading.Event | None = None,
     ) -> None:
         """Blocks the calling thread until stop_event is set (or forever if
         none given), appending each transcribed utterance to the running
-        transcript and forwarding it to `on_line`."""
+        transcript and forwarding it to `on_line`. `on_ready`, if given,
+        fires once the whisper model is loaded and capture is about to
+        start -- __init__ doesn't load it (the LLM is also lazy, built on
+        first `generate_notes()` call), so this call is where that actually
+        happens."""
 
         def handle_result(result: TranslationResult) -> None:
             line = TranscriptLine(
@@ -81,6 +86,7 @@ class MeetingSession:
             model_size=self.whisper_model_size,
             compute_device=self.compute_device,
             on_result=handle_result,
+            on_ready=on_ready,
             stop_event=stop_event,
         )
 

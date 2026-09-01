@@ -11,7 +11,7 @@ import threading
 from pantherlake_ai_core.engine import Engine
 from voice_assistant import session
 
-from . import activity
+from . import activity, events
 
 _DEMO_ID = "voice-assistant"
 
@@ -51,6 +51,7 @@ class VoiceAssistantRunner:
 
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
+            events.set_phase(_DEMO_ID, "running", "Listening for the wake word...")
             try:
                 session.run(
                     audio_device=audio_device,
@@ -67,7 +68,10 @@ class VoiceAssistantRunner:
                 )
             except Exception as exc:  # surfaced to the UI, not silently dropped
                 self.error = str(exc)
+                events.set_phase(_DEMO_ID, "error", str(exc))
                 emit({"type": "error", "message": str(exc)})
+            else:
+                events.clear_phase(_DEMO_ID)
             finally:
                 activity.clear_active(_DEMO_ID)
                 emit({"type": "stopped"})

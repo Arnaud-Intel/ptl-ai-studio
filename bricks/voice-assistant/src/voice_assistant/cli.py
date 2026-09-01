@@ -31,11 +31,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--audio-device", default=None, help="Substring to match a specific microphone name.")
     p.add_argument(
-        "--engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
+        "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
         help="Inference backend for speech-to-text, the LLM, and text-to-speech: 'portable' "
              "(CPU) or 'openvino' (Intel CPU/iGPU/NPU -- requires this brick's `openvino` "
              "extra). Wake-word detection always runs the same way regardless -- see this "
-             "brick's README for why. Default: portable",
+             "brick's README for why. Default: openvino if installed and a device is "
+             "available, otherwise portable.",
     )
     p.add_argument(
         "--whisper-model", default=None,
@@ -69,7 +70,12 @@ def main(argv: list[str] | None = None) -> int:
         list_devices()
         return 0
 
-    engine = engine_mod.Engine(args.engine)
+    if args.engine:
+        engine = engine_mod.Engine(args.engine)
+    else:
+        from pantherlake_ai_core.engine import list_openvino_devices
+
+        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
     defaults = _ENGINE_DEFAULTS[engine]
     whisper_model = args.whisper_model or defaults["whisper_model"]
     compute_device = args.compute_device or defaults["device"]

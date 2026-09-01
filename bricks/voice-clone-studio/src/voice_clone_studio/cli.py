@@ -33,10 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tau", type=float, default=0.3, help="Tone-conversion strength (higher = closer to the reference tone). Default: 0.3")
     p.add_argument("--output", default="cloned.wav", help="Output WAV path. Default: cloned.wav")
     p.add_argument(
-        "--engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
+        "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
         help="Inference backend: 'portable' (PyTorch, CPU) or 'openvino' (Intel CPU/iGPU/NPU -- "
              "requires this brick's `openvino` extra). Both run the identical checkpoints, so "
-             "this only changes which silicon runs them. Default: portable",
+             "this only changes which silicon runs them. Default: openvino if installed and a "
+             "device is available, otherwise portable.",
     )
     p.add_argument("--compute-device", default=None, help="openvino engine only: AUTO, CPU, GPU, or NPU.")
     p.add_argument("--model-path", default=None, help="Use a local model instead of downloading the default.")
@@ -114,7 +115,12 @@ def main(argv: list[str] | None = None) -> int:
     if not args.reference and not args.record:
         parser.error("one of the arguments --reference --record is required")
 
-    engine = engine_mod.Engine(args.engine)
+    if args.engine:
+        engine = engine_mod.Engine(args.engine)
+    else:
+        from pantherlake_ai_core.engine import list_openvino_devices
+
+        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
     compute_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]
 
     reference_path = args.reference or _record_reference(args.record)

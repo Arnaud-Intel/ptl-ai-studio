@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from smart_recall.samples import SAMPLES as SMART_RECALL_SAMPLES
 from voice_clone_studio.samples import SAMPLES as VOICE_CLONE_STUDIO_SAMPLES
 
-from . import activity, registry
+from . import activity, events, registry
 from .code_review_assist_runner import CodeReviewAssistRunner
 from .doc_qa_runner import DocQARunner
 from .html_creator_runner import HtmlCreatorRunner
@@ -168,6 +168,22 @@ def telemetry_snapshot() -> JSONResponse:
     payload = telemetry_poller.snapshot()
     payload["active"] = activity.snapshot()
     return JSONResponse(payload)
+
+
+@app.get("/api/status")
+def status_snapshot() -> JSONResponse:
+    """Per-demo lifecycle phase (loading/running/error) -- what's actually
+    happening right now, for a UI indicator during a slow first-time model
+    load. See events.py; a separate concern from /api/telemetry's activity
+    (which device, for gauge labeling), not a replacement for it."""
+    return JSONResponse(events.status_snapshot())
+
+
+@app.get("/api/logs")
+def logs(limit: int = 100) -> JSONResponse:
+    """Recent lifecycle events (successes and errors) for the Activity Log
+    viewer -- also persisted to logs/events.log at the repo root."""
+    return JSONResponse(events.recent_events(limit))
 
 
 @app.get("/api/system/gpu-devices")

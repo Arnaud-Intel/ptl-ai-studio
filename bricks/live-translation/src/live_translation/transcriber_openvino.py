@@ -76,10 +76,12 @@ class OpenVINOTranslator:
         text = str(result).strip()
         if not text:
             return None
-        # The simple generate() call here doesn't expose per-utterance
-        # source-language detection, unlike faster-whisper's `info.language`.
+        # result.languages is a list of per-chunk detected codes (e.g.
+        # ["fr"], same 2-letter format as faster-whisper's `info.language`);
+        # a short single-utterance chunk normally yields exactly one.
+        detected_language = result.languages[0] if result.languages else "auto"
         return TranslationResult(
             text=text,
-            detected_language="auto",
+            detected_language=detected_language,
             language_probability=1.0,
         )

@@ -32,9 +32,10 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--sample", default=None, help="Use a named example prompt instead (see --list-samples).")
     p.add_argument("--out", default=None, help="Write the generated HTML to this file instead of stdout.")
     p.add_argument(
-        "--engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
+        "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
         help="Inference backend: 'portable' (llama.cpp, CPU) or 'openvino' (Intel CPU/iGPU/NPU -- "
-             "requires this brick's `openvino` extra). Default: portable",
+             "requires this brick's `openvino` extra). Default: openvino if installed and a device "
+             "is available, otherwise portable.",
     )
     p.add_argument("--compute-device", default=None, help="Device for the openvino engine. Ignored for portable.")
     p.add_argument(
@@ -73,7 +74,12 @@ def main(argv: list[str] | None = None) -> int:
         args.prompt = matches[0].prompt
         args.folder = matches[0].folder
 
-    engine = engine_mod.Engine(args.engine)
+    if args.engine:
+        engine = engine_mod.Engine(args.engine)
+    else:
+        from pantherlake_ai_core.engine import list_openvino_devices
+
+        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
     compute_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]
     mode = "landing_page" if args.prompt else "document"
 

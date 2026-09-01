@@ -153,6 +153,7 @@ async function populateLiveTranslationDevices() {
   openvinoOption.textContent = hasOpenvino
     ? `OpenVINO (${data.openvino_devices.join(", ")})`
     : "OpenVINO (install this brick's `openvino` extra to enable)";
+  if (hasOpenvino) engineSelect.value = "openvino";
 
   const computeSelect = el("ctl-compute-device");
   const fillComputeDevices = () => {
@@ -201,7 +202,7 @@ function appendTranscriptLine(result) {
   const line = document.createElement("p");
   line.className = "transcript-line";
   const time = new Date().toLocaleTimeString();
-  line.innerHTML = `<span class="transcript-time">${time}</span><span class="transcript-lang">(${result.detected_language})</span>${escapeHtml(result.text)}`;
+  line.innerHTML = `<span class="transcript-time">${time}</span><span class="transcript-lang">(${(result.detected_language || "auto").toUpperCase()})</span>${escapeHtml(result.text)}`;
   container.appendChild(line);
   container.scrollTop = container.scrollHeight;
 }
@@ -226,7 +227,15 @@ function setRunning(isRunning) {
   for (const id of ["ctl-source", "ctl-audio-device", "ctl-engine", "ctl-compute-device", "ctl-model"]) {
     el(id).disabled = isRunning;
   }
-  if (isRunning) setRunStatus("Listening...", "live");
+  if (isRunning) {
+    // Don't claim "Listening..." yet -- the model may still be loading;
+    // the status poll (started below) will show the real phase within
+    // 1.5s, including the "live" class once it's actually running.
+    setRunStatus("Starting...");
+    startStatusPoll("live-translation", "live-translation", "run-status");
+  } else {
+    stopStatusPoll("live-translation");
+  }
 }
 
 async function startLiveTranslation() {
@@ -284,6 +293,7 @@ async function populateDocQaDevices() {
   openvinoOption.textContent = hasOpenvino
     ? `OpenVINO (${data.openvino_devices.join(", ")})`
     : "OpenVINO (install this brick's `openvino` extra to enable)";
+  if (hasOpenvino) engineSelect.value = "openvino";
 
   const computeSelect = el("docqa-compute-device");
   const fillComputeDevices = () => {
@@ -331,6 +341,7 @@ async function runDocQaIngest() {
   docQaIndexed = false;
   setDocQaBusy(true);
   setDocQaIngestStatus("Indexing... (first run downloads models)");
+  const stopStatus = pollBrickStatus("doc-qa", "docqa-ingest-status");
 
   try {
     const result = await fetchJSON("/api/doc-qa/ingest", {
@@ -348,6 +359,7 @@ async function runDocQaIngest() {
   } catch (err) {
     setDocQaIngestStatus(`Error: ${err.message}`, "error");
   } finally {
+    stopStatus();
     setDocQaBusy(false);
   }
 }
@@ -567,6 +579,50 @@ function wireSamplePicker(samplePickerId, samples, fieldMap) {
   };
 }
 
+// Polls /api/status while a brick call is in flight and reflects its real
+// backend phase (loading a model vs. actively running) into a status
+// element -- so a slow first-time model download/compile shows *something*
+// moving instead of a static "Generating..." the whole time. Returns a
+// stop() function; call it once the caller's own fetch settles. Falls back
+// to whatever text is already in the element (typically set synchronously
+// by the caller before this starts) until the first poll resolves, so this
+// can only ever add information, never blank something out.
+function pollBrickStatus(demoId, statusElementId) {
+  const target = el(statusElementId);
+  const intervalId = setInterval(async () => {
+    let data;
+    try {
+      data = await fetchJSON("/api/status");
+    } catch {
+      return; // best-effort -- a missed poll just skips this tick
+    }
+    const status = data[demoId];
+    if (!target || !status) return;
+    const icon = status.phase === "loading" ? "⏳" : status.phase === "error" ? "⚠" : "▶";
+    target.textContent = `${icon} ${status.message || status.phase}`;
+    target.classList.toggle("error", status.phase === "error");
+    target.classList.toggle("live", status.phase === "running");
+  }, 1500);
+  return () => clearInterval(intervalId);
+}
+
+// Named-slot registry on top of pollBrickStatus, for the streaming bricks
+// whose "in flight" window is "while running", not "during one fetch" --
+// start alongside setXRunning(true), stop alongside setXRunning(false),
+// keyed by a short string so each streaming brick doesn't need its own
+// module-level stop-function variable.
+const _statusPolls = {};
+function startStatusPoll(key, demoId, statusElementId) {
+  stopStatusPoll(key);
+  _statusPolls[key] = pollBrickStatus(demoId, statusElementId);
+}
+function stopStatusPoll(key) {
+  if (_statusPolls[key]) {
+    _statusPolls[key]();
+    delete _statusPolls[key];
+  }
+}
+
 // Builds one telemetry gauge per detected GPU inside every
 // .telemetry-gpu-gauges placeholder (the header strip plus each modal
 // footer, already present after initTelemetryFooters()). GPU_DEVICES is the
@@ -643,6 +699,7 @@ async function populateObjectDetectionDevices() {
   openvinoOption.textContent = hasOpenvino
     ? `OpenVINO (YOLO11n, ${data.openvino_devices.join(", ")})`
     : "OpenVINO (install this brick's `openvino` extra to enable)";
+  if (hasOpenvino) engineSelect.value = "openvino";
 
   const computeSelect = el("objdet-compute-device");
   const fillComputeDevices = () => {
@@ -677,10 +734,12 @@ function setObjdetRunning(isRunning) {
   const img = el("objdet-video");
   if (isRunning) {
     setObjdetStatus("Running...", "live");
+    startStatusPoll("object-detection", "object-detection", "objdet-status");
     img.src = `/api/object-detection/stream?t=${Date.now()}`;
     img.classList.add("visible");
     objdetDetectionsTimer = setInterval(pollObjectDetections, 700);
   } else {
+    stopStatusPoll("object-detection");
     setObjdetStatus("Idle");
     img.removeAttribute("src");
     img.classList.remove("visible");
@@ -813,6 +872,7 @@ async function populateOcrDevices() {
   openvinoOption.textContent = hasOpenvino
     ? `OpenVINO (vision-language model, ${data.openvino_devices.join(", ")})`
     : "OpenVINO (install this brick's `openvino` extra to enable)";
+  if (hasOpenvino) engineSelect.value = "openvino";
 
   const computeSelect = el("ocr-compute-device");
   const translateCheckbox = el("ocr-translate");
@@ -878,6 +938,7 @@ async function runScreenOcrExtract() {
 
   el("ocr-extract").disabled = true;
   setOcrStatus(source === "upload" ? "Uploading and extracting..." : "Capturing and extracting...");
+  const stopStatus = pollBrickStatus("screen-ocr", "ocr-status");
 
   try {
     let data;
@@ -914,6 +975,7 @@ async function runScreenOcrExtract() {
   } catch (err) {
     setOcrStatus(`Error: ${err.message}`, "error");
   } finally {
+    stopStatus();
     el("ocr-extract").disabled = false;
   }
 }
@@ -966,6 +1028,7 @@ async function populateMeetingNotesDevices() {
   openvinoOption.textContent = hasOpenvino
     ? `OpenVINO (Whisper + LLM, ${data.openvino_devices.join(", ")})`
     : "OpenVINO (install this brick's `openvino` extra to enable)";
+  if (hasOpenvino) engineSelect.value = "openvino";
 
   const computeSelect = el("mtg-compute-device");
   const fillComputeDevices = () => {
@@ -1010,7 +1073,7 @@ function appendMeetingTranscriptLine(line) {
 
   const p = document.createElement("p");
   p.className = "transcript-line";
-  p.innerHTML = `<span class="transcript-time">${line.timestamp}</span><span class="transcript-lang">(${line.detected_language})</span>${escapeHtml(line.text)}`;
+  p.innerHTML = `<span class="transcript-time">${line.timestamp}</span><span class="transcript-lang">(${(line.detected_language || "auto").toUpperCase()})</span>${escapeHtml(line.text)}`;
   container.appendChild(p);
   container.scrollTop = container.scrollHeight;
 }
@@ -1029,7 +1092,15 @@ function setMtgRunning(isRunning) {
   for (const id of ["mtg-source", "mtg-audio-device", "mtg-engine", "mtg-compute-device"]) {
     el(id).disabled = isRunning;
   }
-  if (isRunning) setMtgStatus("Listening...", "live");
+  if (isRunning) {
+    // Don't claim "Listening..." yet -- the model may still be loading;
+    // the status poll (started below) will show the real phase within
+    // 1.5s, including the "live" class once it's actually running.
+    setMtgStatus("Starting...");
+    startStatusPoll("meeting-notes", "meeting-notes", "mtg-status");
+  } else {
+    stopStatusPoll("meeting-notes");
+  }
 }
 
 async function startMeetingNotes() {
@@ -1081,6 +1152,7 @@ function renderMeetingNotes(text) {
 async function generateMeetingNotes() {
   el("mtg-generate").disabled = true;
   setMtgNotesStatus("Generating...");
+  const stopStatus = pollBrickStatus("meeting-notes:notes", "mtg-notes-status");
   try {
     const data = await fetchJSON("/api/meeting-notes/generate", { method: "POST" });
     renderMeetingNotes(data.text);
@@ -1088,6 +1160,7 @@ async function generateMeetingNotes() {
   } catch (err) {
     setMtgNotesStatus(`Error: ${err.message}`, "error");
   } finally {
+    stopStatus();
     el("mtg-generate").disabled = false;
   }
 }
@@ -1132,6 +1205,7 @@ async function populateWebcamDevices() {
   openvinoOption.textContent = hasOpenvino
     ? `OpenVINO (${data.openvino_devices.join(", ")})`
     : "OpenVINO (install this brick's `openvino` extra to enable)";
+  if (hasOpenvino) engineSelect.value = "openvino";
 
   const computeSelect = el("webcam-compute-device");
   const fillComputeDevices = () => {
@@ -1188,10 +1262,12 @@ function setWebcamRunning(isRunning) {
   const img = el("webcam-video");
   if (isRunning) {
     setWebcamStatus("Running...", "live");
+    startStatusPoll("webcam-effects", "webcam-effects", "webcam-status");
     img.src = `/api/webcam-effects/stream?t=${Date.now()}`;
     img.classList.add("visible");
     webcamStatsTimer = setInterval(pollWebcamStats, 700);
   } else {
+    stopStatusPoll("webcam-effects");
     setWebcamStatus("Idle");
     img.removeAttribute("src");
     img.classList.remove("visible");
@@ -1276,6 +1352,7 @@ async function populateExpenseExtractDevices() {
     openvinoOption.textContent = hasOpenvino
       ? `OpenVINO (${data.openvino_devices.join(", ")})`
       : "OpenVINO (install this brick's `openvino` extra to enable)";
+    if (hasOpenvino) engineSelect.value = "openvino";
   }
 
   const wireComputeDevices = (engineSelectId, deviceSelectId) => {
@@ -1375,6 +1452,14 @@ function setExpxRunning(isRunning) {
   for (const id of ["expx-folder", "expx-ocr-engine", "expx-ocr-device", "expx-llm-engine", "expx-llm-device"]) {
     el(id).disabled = isRunning;
   }
+  // Two stages run concurrently (OCR + LLM structuring); the single status
+  // span shows the OCR stage's phase -- both start together, so it's
+  // representative of "is the pipeline actually going" either way.
+  if (isRunning) {
+    startStatusPoll("expense-extract", "expense-extract:ocr", "expx-status");
+  } else {
+    stopStatusPoll("expense-extract");
+  }
 }
 
 async function startExpenseExtract() {
@@ -1451,6 +1536,7 @@ async function populateRecallDevices() {
     openvinoOption.textContent = hasOpenvino
       ? `OpenVINO (${data.openvino_devices.join(", ")})`
       : "OpenVINO (install this brick's `openvino` extra to enable)";
+    if (hasOpenvino) el(engineId).value = "openvino";
   }
 
   const wireComputeDevices = (engineSelectId, deviceSelectId) => {
@@ -1559,7 +1645,12 @@ function setRecallRunning(isRunning) {
   for (const id of ["recall-screen", "recall-interval", "recall-ocr-engine", "recall-ocr-device", "recall-embed-device"]) {
     el(id).disabled = isRunning;
   }
-  if (isRunning) setRecallStatus("Recording...", "live");
+  if (isRunning) {
+    setRecallStatus("Recording...", "live");
+    startStatusPoll("smart-recall", "smart-recall:ocr", "recall-status");
+  } else {
+    stopStatusPoll("smart-recall");
+  }
 }
 
 async function startRecall() {
@@ -1700,6 +1791,7 @@ async function populateVoiceAssistantDevices() {
   openvinoOption.textContent = hasOpenvino
     ? `OpenVINO (${data.openvino_devices.join(", ")})`
     : "OpenVINO (install this brick's `openvino` extra to enable)";
+  if (hasOpenvino) engineSelect.value = "openvino";
 
   const computeSelect = el("va-compute-device");
   const fillComputeDevices = () => {
@@ -1779,7 +1871,12 @@ function setVaRunning(isRunning) {
   for (const id of ["va-audio-device", "va-wake-word", "va-engine", "va-compute-device", "va-speak"]) {
     el(id).disabled = isRunning;
   }
-  if (isRunning) setVaStatus("Listening...", "live");
+  if (isRunning) {
+    setVaStatus("Listening...", "live");
+    startStatusPoll("voice-assistant", "voice-assistant", "va-status");
+  } else {
+    stopStatusPoll("voice-assistant");
+  }
 }
 
 async function startVoiceAssistant() {
@@ -1848,6 +1945,7 @@ async function populateVoiceDevices() {
   openvinoOption.textContent = hasOpenvino
     ? `OpenVINO (${data.openvino_devices.join(", ")})`
     : "OpenVINO (install this brick's `openvino` extra to enable)";
+  if (hasOpenvino) engineSelect.value = "openvino";
 
   const computeSelect = el("voice-compute-device");
   const fillComputeDevices = () => {
@@ -1897,6 +1995,7 @@ async function runVoiceEnroll() {
 
   el("voice-enroll").disabled = true;
   setVoiceEnrollStatus(source === "record" ? "Recording..." : "Uploading and enrolling...");
+  const stopStatus = pollBrickStatus("voice-clone-studio", "voice-enroll-status");
 
   try {
     if (source === "upload") {
@@ -1923,6 +2022,7 @@ async function runVoiceEnroll() {
   } catch (err) {
     setVoiceEnrollStatus(`Error: ${err.message}`, "error");
   } finally {
+    stopStatus();
     el("voice-enroll").disabled = false;
   }
 }
@@ -1943,6 +2043,7 @@ async function runVoiceSynthesize() {
 
   el("voice-synthesize").disabled = true;
   setVoiceSynthesizeStatus("Synthesizing...");
+  const stopStatus = pollBrickStatus("voice-clone-studio", "voice-synthesize-status");
 
   try {
     const res = await fetch("/api/voice-clone-studio/synthesize", {
@@ -1963,6 +2064,7 @@ async function runVoiceSynthesize() {
   } catch (err) {
     setVoiceSynthesizeStatus(`Error: ${err.message}`, "error");
   } finally {
+    stopStatus();
     el("voice-synthesize").disabled = false;
   }
 }
@@ -2022,6 +2124,7 @@ async function populateCodeReviewDevices() {
   openvinoOption.textContent = hasOpenvino
     ? `OpenVINO (coding model, ${data.openvino_devices.join(", ")})`
     : "OpenVINO (install this brick's `openvino` extra to enable)";
+  if (hasOpenvino) engineSelect.value = "openvino";
 
   const computeSelect = el("cra-compute-device");
   const fillComputeDevices = () => {
@@ -2100,6 +2203,7 @@ async function runCodeReview() {
 
   el("cra-review").disabled = true;
   setCraStatus("Reviewing...");
+  const stopStatus = pollBrickStatus("code-review-assist", "cra-status");
 
   try {
     const data = await fetchJSON("/api/code-review-assist/review", {
@@ -2119,6 +2223,7 @@ async function runCodeReview() {
   } catch (err) {
     setCraStatus(`Error: ${err.message}`, "error");
   } finally {
+    stopStatus();
     el("cra-review").disabled = false;
   }
 }
@@ -2157,6 +2262,7 @@ async function populateHtmlCreatorDevices() {
   openvinoOption.textContent = hasOpenvino
     ? `OpenVINO (coding model, ${data.openvino_devices.join(", ")})`
     : "OpenVINO (install this brick's `openvino` extra to enable)";
+  if (hasOpenvino) engineSelect.value = "openvino";
 
   const computeSelect = el("htmlc-compute-device");
   const fillComputeDevices = () => {
@@ -2257,6 +2363,7 @@ async function runHtmlCreator() {
   el("htmlc-generate").disabled = true;
   el("htmlc-download").hidden = true;
   setHtmlCreatorStatus("Generating...");
+  const stopStatus = pollBrickStatus("html-creator", "htmlc-status");
 
   try {
     const data = await fetchJSON("/api/html-creator/generate", {
@@ -2275,12 +2382,52 @@ async function runHtmlCreator() {
   } catch (err) {
     setHtmlCreatorStatus(`Error: ${err.message}`, "error");
   } finally {
+    stopStatus();
     el("htmlc-generate").disabled = false;
   }
 }
 
 function closeHtmlCreator() {
   el("htmlc-modal-overlay").classList.add("hidden");
+}
+
+// --- Activity Log ---
+
+function formatLogTime(atSeconds) {
+  return new Date(atSeconds * 1000).toLocaleTimeString();
+}
+
+function logDemoLabel(demoId) {
+  // demo_id can carry a stage suffix, e.g. "expense-extract:ocr" or
+  // "meeting-notes:notes" -- show the friendly brick name plus the stage.
+  const [baseId, stage] = demoId.split(":");
+  const base = DEMO_NAMES_BY_ID[baseId] || baseId;
+  return stage ? `${base} (${stage})` : base;
+}
+
+async function openLogViewer() {
+  el("log-modal-overlay").classList.remove("hidden");
+  const container = el("log-list");
+  try {
+    const entries = await fetchJSON("/api/logs?limit=100");
+    if (!entries.length) {
+      container.innerHTML = '<p class="transcript-placeholder">No events yet -- launch a brick to see activity here.</p>';
+      return;
+    }
+    container.innerHTML = "";
+    for (const entry of entries.slice().reverse()) {
+      const row = document.createElement("div");
+      row.className = `log-entry${entry.phase === "error" ? " error" : ""}`;
+      row.innerHTML = `<span class="log-entry-time">${formatLogTime(entry.at)}</span><span class="log-entry-demo">${escapeHtml(logDemoLabel(entry.demo_id))}</span><span class="log-entry-message">${escapeHtml(entry.message || entry.phase)}</span>`;
+      container.appendChild(row);
+    }
+  } catch (err) {
+    container.innerHTML = `<p class="transcript-placeholder">Error loading log: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function closeLogViewer() {
+  el("log-modal-overlay").classList.add("hidden");
 }
 
 async function init() {
@@ -2350,6 +2497,9 @@ async function init() {
   el("htmlc-modal-close").addEventListener("click", closeHtmlCreator);
   el("htmlc-generate").addEventListener("click", runHtmlCreator);
   el("htmlc-download").addEventListener("click", downloadHtmlCreatorResult);
+
+  el("log-open").addEventListener("click", openLogViewer);
+  el("log-modal-close").addEventListener("click", closeLogViewer);
 }
 
 init();

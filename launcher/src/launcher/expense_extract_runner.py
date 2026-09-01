@@ -19,7 +19,7 @@ from dataclasses import asdict
 from expense_extract import pipeline
 from pantherlake_ai_core.engine import Engine
 
-from . import activity
+from . import activity, events
 
 _DEMO_ID = "expense-extract"
 
@@ -64,6 +64,8 @@ class ExpenseExtractRunner:
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=ocr_engine.value, device=ocr_device, stage="ocr", stage_label="OCR")
             activity.set_active(_DEMO_ID, engine=llm_engine.value, device=llm_device, stage="llm", stage_label="Structuring")
+            events.set_phase(f"{_DEMO_ID}:ocr", "running", "Extracting receipts...")
+            events.set_phase(f"{_DEMO_ID}:llm", "running", "Structuring extracted text...")
             try:
                 results = pipeline.run(
                     folder=folder,
@@ -80,7 +82,12 @@ class ExpenseExtractRunner:
                 emit({"type": "done", "count": len(results), "structured": len(ok), "total": total})
             except Exception as exc:  # surfaced to the UI, not silently dropped
                 self.error = str(exc)
+                events.set_phase(f"{_DEMO_ID}:ocr", "error", str(exc))
+                events.set_phase(f"{_DEMO_ID}:llm", "error", str(exc))
                 emit({"type": "error", "message": str(exc)})
+            else:
+                events.clear_phase(f"{_DEMO_ID}:ocr")
+                events.clear_phase(f"{_DEMO_ID}:llm")
             finally:
                 activity.clear_active(_DEMO_ID, stage="ocr")
                 activity.clear_active(_DEMO_ID, stage="llm")

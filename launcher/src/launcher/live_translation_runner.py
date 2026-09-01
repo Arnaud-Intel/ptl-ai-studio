@@ -12,7 +12,7 @@ from live_translation import pipeline
 from pantherlake_ai_core.engine import Engine
 from pantherlake_ai_core.types import TranslationResult
 
-from . import activity
+from . import activity, events
 
 _DEMO_ID = "live-translation"
 
@@ -48,8 +48,12 @@ class LiveTranslationRunner:
         def on_result(result: TranslationResult) -> None:
             asyncio.run_coroutine_threadsafe(queue.put({"type": "result", **asdict(result)}), loop)
 
+        def on_ready() -> None:
+            events.set_phase(_DEMO_ID, "running", "Listening and translating...")
+
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
+            events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine.value}, device={compute_device})...")
             try:
                 pipeline.run(
                     source=source,
@@ -58,11 +62,15 @@ class LiveTranslationRunner:
                     model_size=model_size,
                     compute_device=compute_device,
                     on_result=on_result,
+                    on_ready=on_ready,
                     stop_event=stop_event,
                 )
             except Exception as exc:  # surfaced to the UI, not silently dropped
                 self.error = str(exc)
+                events.set_phase(_DEMO_ID, "error", str(exc))
                 asyncio.run_coroutine_threadsafe(queue.put({"type": "error", "message": str(exc)}), loop)
+            else:
+                events.clear_phase(_DEMO_ID)
             finally:
                 activity.clear_active(_DEMO_ID)
                 asyncio.run_coroutine_threadsafe(queue.put({"type": "stopped"}), loop)

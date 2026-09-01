@@ -16,7 +16,7 @@ from object_detection.draw import draw_detections
 from object_detection.types import Detection
 from pantherlake_ai_core.engine import Engine
 
-from . import activity
+from . import activity, events
 
 _DEMO_ID = "object-detection"
 _JPEG_QUALITY = 80
@@ -65,6 +65,7 @@ class ObjectDetectionRunner:
 
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
+            events.set_phase(_DEMO_ID, "running", "Detecting objects...")
             try:
                 pipeline.run(
                     source=source,
@@ -77,6 +78,9 @@ class ObjectDetectionRunner:
                 )
             except Exception as exc:  # surfaced to the UI, not silently dropped
                 self.error = str(exc)
+                events.set_phase(_DEMO_ID, "error", str(exc))
+            else:
+                events.clear_phase(_DEMO_ID)
             finally:
                 activity.clear_active(_DEMO_ID)
 

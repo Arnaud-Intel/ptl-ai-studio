@@ -10,7 +10,7 @@ from html_creator.session import HtmlCreatorSession
 from html_creator.types import HtmlResult
 from pantherlake_ai_core.engine import Engine
 
-from . import activity
+from . import activity, events
 
 _DEMO_ID = "html-creator"
 
@@ -31,9 +31,17 @@ class HtmlCreatorRunner:
             activity.set_active(_DEMO_ID, engine=engine, device=device)
             try:
                 if self._session is None or self._engine != engine or self._device != device:
+                    events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
                     self._session = HtmlCreatorSession(Engine(engine), compute_device=device)
                     self._engine = engine
                     self._device = device
-                return self._session.generate(mode=mode, prompt=prompt, folder=folder)
+                events.set_phase(_DEMO_ID, "running", "Generating HTML...")
+                try:
+                    result = self._session.generate(mode=mode, prompt=prompt, folder=folder)
+                except Exception as exc:
+                    events.set_phase(_DEMO_ID, "error", str(exc))
+                    raise
+                events.clear_phase(_DEMO_ID)
+                return result
             finally:
                 activity.clear_active(_DEMO_ID)

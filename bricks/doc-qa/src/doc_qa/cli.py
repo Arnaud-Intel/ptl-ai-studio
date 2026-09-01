@@ -25,9 +25,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Folder of .txt/.md/.pdf files to answer questions about. Not needed with --list-samples.",
     )
     p.add_argument(
-        "--engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
+        "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
         help="Inference backend: 'portable' (llama.cpp, CPU) or 'openvino' (Intel CPU/iGPU/NPU -- "
-             "requires this brick's `openvino` extra). Default: portable",
+             "requires this brick's `openvino` extra). Default: openvino if installed and a device "
+             "is available, otherwise portable.",
     )
     p.add_argument(
         "--compute-device", default=None,
@@ -68,7 +69,12 @@ def main(argv: list[str] | None = None) -> int:
     if not args.folder:
         parser.error("folder is required (unless using --list-samples, or --sample with its bundled folder)")
 
-    engine = engine_mod.Engine(args.engine)
+    if args.engine:
+        engine = engine_mod.Engine(args.engine)
+    else:
+        from pantherlake_ai_core.engine import list_openvino_devices
+
+        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
     defaults = _ENGINE_DEFAULTS[engine]
     device = args.compute_device or defaults["device"]
 

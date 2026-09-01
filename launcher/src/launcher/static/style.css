@@ -806,3 +806,47 @@ body {
   /* generated pages assume a normal white canvas regardless of the launcher's dark theme */
   background: #fff;
 }
+
+.footer-link-btn {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.footer-link-btn:hover { color: var(--text-dim); }
+
+.log-entry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.log-entry:last-child { border-bottom: none; }
+
+.log-entry-time {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.log-entry-demo {
+  color: var(--text-dim);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.log-entry-message {
+  color: var(--text);
+  flex: 1 1 100%;
+  word-break: break-word;
+}
+
+.log-entry.error .log-entry-message { color: var(--danger); }

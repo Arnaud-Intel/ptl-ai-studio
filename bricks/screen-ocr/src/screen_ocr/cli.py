@@ -28,10 +28,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--screen-index", type=int, default=1, help="Screen/monitor index. Default: 1")
     p.add_argument("--camera-index", type=int, default=0, help="Webcam index. Default: 0")
     p.add_argument(
-        "--engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
+        "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
         help="Inference backend: 'portable' (RapidOCR, CPU) or 'openvino' (vision-language model, "
              "Intel CPU/iGPU/NPU -- requires this brick's `openvino` extra, and is required for "
-             "--translate). Default: portable",
+             "--translate). Default: openvino if installed and a device is available, otherwise "
+             "portable.",
     )
     p.add_argument("--compute-device", default=None, help="openvino engine only: AUTO, CPU, GPU, or NPU.")
     p.add_argument("--model-path", default=None, help="Use a local model instead of downloading the default.")
@@ -90,7 +91,12 @@ def main(argv: list[str] | None = None) -> int:
         list_devices()
         return 0
 
-    engine = engine_mod.Engine(args.engine)
+    if args.engine:
+        engine = engine_mod.Engine(args.engine)
+    else:
+        from pantherlake_ai_core.engine import list_openvino_devices
+
+        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
     compute_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]
 
     image = _load_image(args)

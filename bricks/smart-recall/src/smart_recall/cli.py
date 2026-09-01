@@ -35,13 +35,15 @@ def build_parser() -> argparse.ArgumentParser:
              "hasn't visibly changed). Default: 5.0",
     )
     record.add_argument(
-        "--ocr-engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
-        help="Backend for the OCR stage. Default: portable",
+        "--ocr-engine", choices=[e.value for e in engine_mod.Engine], default=None,
+        help="Backend for the OCR stage. Default: openvino if installed and a device is available, "
+             "otherwise portable.",
     )
     record.add_argument("--ocr-device", default=None, help="openvino OCR engine only: AUTO, CPU, GPU, or NPU.")
     record.add_argument(
-        "--embed-engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
-        help="Backend for the embedding stage. Fixed for the life of the index -- see --reset. Default: portable",
+        "--embed-engine", choices=[e.value for e in engine_mod.Engine], default=None,
+        help="Backend for the embedding stage. Fixed for the life of the index -- see --reset. "
+             "Default: openvino if installed and a device is available, otherwise portable.",
     )
     record.add_argument("--embed-device", default=None, help="openvino embed engine only: AUTO, CPU, GPU, or NPU.")
     record.add_argument(
@@ -77,8 +79,11 @@ def _run_record(args: argparse.Namespace) -> int:
         pipeline.reset_index()
         print("Existing index and screenshots cleared.")
 
-    ocr_engine = engine_mod.Engine(args.ocr_engine)
-    embed_engine = engine_mod.Engine(args.embed_engine)
+    from pantherlake_ai_core.engine import list_openvino_devices
+
+    default_engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
+    ocr_engine = engine_mod.Engine(args.ocr_engine) if args.ocr_engine else default_engine
+    embed_engine = engine_mod.Engine(args.embed_engine) if args.embed_engine else default_engine
     ocr_device = args.ocr_device or _OCR_ENGINE_DEFAULTS[ocr_engine]["device"]
     embed_device = args.embed_device or _EMBED_ENGINE_DEFAULTS[embed_engine]["device"]
 

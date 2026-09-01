@@ -24,10 +24,17 @@ def run(
     compute_type: str = "auto",
     ov_model_dir: str | None = None,
     on_result: Callable[[TranslationResult], None],
+    on_ready: Callable[[], None] | None = None,
     stop_event: threading.Event | None = None,
 ) -> None:
     """Blocks the calling thread, calling `on_result` for each translated
-    utterance, until `stop_event` is set (or forever if none is given)."""
+    utterance, until `stop_event` is set (or forever if none is given).
+    `on_ready`, if given, fires once the model is loaded and capture is
+    about to start -- the model load is the only slow, blocking step here,
+    so this is the real "loading -> actually running" boundary, not
+    something a caller can infer from timing or from the first result
+    (which may be seconds or minutes away depending on when someone speaks).
+    """
     translator = create_translator(
         engine=engine,
         model_size=model_size,
@@ -35,6 +42,8 @@ def run(
         compute_type=compute_type,
         ov_model_dir=ov_model_dir,
     )
+    if on_ready is not None:
+        on_ready()
     blocks = audio.stream_blocks(source, audio_device, stop_event=stop_event)
     for segment in segment_stream(blocks, VADConfig()):
         result = translator.translate(segment)

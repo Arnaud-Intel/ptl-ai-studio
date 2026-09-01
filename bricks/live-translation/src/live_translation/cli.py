@@ -34,10 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
              "Default: the system default device for the chosen source.",
     )
     p.add_argument(
-        "--engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
+        "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
         help="Inference backend: 'portable' (faster-whisper, CPU/CUDA) or "
              "'openvino' (Intel CPU/iGPU/NPU, e.g. Panther Lake -- requires "
-             "this brick's `openvino` extra). Default: portable",
+             "this brick's `openvino` extra). Default: openvino if installed "
+             "and a device is available, otherwise portable.",
     )
     p.add_argument(
         "--model", default=None,
@@ -86,7 +87,12 @@ def main(argv: list[str] | None = None) -> int:
         list_devices()
         return 0
 
-    engine = engine_mod.Engine(args.engine)
+    if args.engine:
+        engine = engine_mod.Engine(args.engine)
+    else:
+        from pantherlake_ai_core.engine import list_openvino_devices
+
+        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
     defaults = _ENGINE_DEFAULTS[engine]
     model_size = args.model or defaults["model"]
     compute_device = args.compute_device or defaults["device"]

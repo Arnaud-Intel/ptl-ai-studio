@@ -33,13 +33,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("folder", help="Folder of receipt image files (.png/.jpg/.jpeg/.bmp/.tif/.webp).")
     p.add_argument("--output", default="expenses.csv", help="Output CSV path. Default: expenses.csv")
     p.add_argument(
-        "--ocr-engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
-        help="Backend for the OCR stage. Default: portable",
+        "--ocr-engine", choices=[e.value for e in engine_mod.Engine], default=None,
+        help="Backend for the OCR stage. Default: openvino if installed and a device is available, "
+             "otherwise portable.",
     )
     p.add_argument("--ocr-device", default=None, help="openvino OCR engine only: AUTO, CPU, GPU, or NPU.")
     p.add_argument(
-        "--llm-engine", choices=[e.value for e in engine_mod.Engine], default=engine_mod.Engine.PORTABLE.value,
-        help="Backend for the LLM structuring stage. Default: portable",
+        "--llm-engine", choices=[e.value for e in engine_mod.Engine], default=None,
+        help="Backend for the LLM structuring stage. Default: openvino if installed and a device is "
+             "available, otherwise portable.",
     )
     p.add_argument("--llm-device", default=None, help="openvino LLM engine only: AUTO, CPU, GPU, or NPU.")
     p.add_argument(
@@ -63,8 +65,11 @@ def main(argv: list[str] | None = None) -> int:
         list_devices()
         return 0
 
-    ocr_engine = engine_mod.Engine(args.ocr_engine)
-    llm_engine = engine_mod.Engine(args.llm_engine)
+    from pantherlake_ai_core.engine import list_openvino_devices
+
+    default_engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
+    ocr_engine = engine_mod.Engine(args.ocr_engine) if args.ocr_engine else default_engine
+    llm_engine = engine_mod.Engine(args.llm_engine) if args.llm_engine else default_engine
     ocr_device = args.ocr_device or _OCR_ENGINE_DEFAULTS[ocr_engine]["device"]
     llm_device = args.llm_device or _LLM_ENGINE_DEFAULTS[llm_engine]["device"]
 

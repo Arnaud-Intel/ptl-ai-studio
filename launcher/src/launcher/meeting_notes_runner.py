@@ -14,7 +14,7 @@ from meeting_notes.session import MeetingSession
 from meeting_notes.types import MeetingNotes, TranscriptLine
 from pantherlake_ai_core.engine import Engine
 
-from . import activity
+from . import activity, events
 
 _DEMO_ID = "meeting-notes"
 
@@ -57,13 +57,26 @@ class MeetingNotesRunner:
         def on_line(line: TranscriptLine) -> None:
             asyncio.run_coroutine_threadsafe(queue.put({"type": "line", **asdict(line)}), loop)
 
+        def on_ready() -> None:
+            events.set_phase(_DEMO_ID, "running", "Transcribing...")
+
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
+            events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine.value}, device={compute_device})...")
             try:
-                session.transcribe(source=source, audio_device=audio_device, on_line=on_line, stop_event=stop_event)
+                session.transcribe(
+                    source=source,
+                    audio_device=audio_device,
+                    on_line=on_line,
+                    on_ready=on_ready,
+                    stop_event=stop_event,
+                )
             except Exception as exc:  # surfaced to the UI, not silently dropped
                 self.error = str(exc)
+                events.set_phase(_DEMO_ID, "error", str(exc))
                 asyncio.run_coroutine_threadsafe(queue.put({"type": "error", "message": str(exc)}), loop)
+            else:
+                events.clear_phase(_DEMO_ID)
             finally:
                 activity.clear_active(_DEMO_ID)
                 asyncio.run_coroutine_threadsafe(queue.put({"type": "stopped"}), loop)
@@ -84,8 +97,14 @@ class MeetingNotesRunner:
             raise RuntimeError("Start capturing audio first.")
         if self._engine is not None:
             activity.set_active(_DEMO_ID, engine=self._engine.value, device=self._compute_device)
+        events.set_phase(f"{_DEMO_ID}:notes", "running", "Generating notes...")
         try:
-            return self._session.generate_notes()
+            notes = self._session.generate_notes()
+        except Exception as exc:
+            events.set_phase(f"{_DEMO_ID}:notes", "error", str(exc))
+            raise
         finally:
             if not self.running:
                 activity.clear_active(_DEMO_ID)
+        events.clear_phase(f"{_DEMO_ID}:notes")
+        return notes

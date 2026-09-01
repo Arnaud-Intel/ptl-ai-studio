@@ -10,7 +10,7 @@ from code_review_assist.session import CodeReviewSession
 from code_review_assist.types import ReviewResult
 from pantherlake_ai_core.engine import Engine
 
-from . import activity
+from . import activity, events
 
 _DEMO_ID = "code-review-assist"
 
@@ -31,9 +31,17 @@ class CodeReviewAssistRunner:
             activity.set_active(_DEMO_ID, engine=engine, device=device)
             try:
                 if self._session is None or self._engine != engine or self._device != device:
+                    events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
                     self._session = CodeReviewSession(Engine(engine), compute_device=device)
                     self._engine = engine
                     self._device = device
-                return self._session.review(folder=folder, against=against, diff_text=diff_text)
+                events.set_phase(_DEMO_ID, "running", "Reviewing diff...")
+                try:
+                    result = self._session.review(folder=folder, against=against, diff_text=diff_text)
+                except Exception as exc:
+                    events.set_phase(_DEMO_ID, "error", str(exc))
+                    raise
+                events.clear_phase(_DEMO_ID)
+                return result
             finally:
                 activity.clear_active(_DEMO_ID)
