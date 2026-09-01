@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/platform-Windows-0078D6" alt="Platform: Windows" />
 </p>
 
-**A local AI Studio for Intel Panther Lake -- nine on-device AI demos,
+**A local AI Studio for Intel Panther Lake -- a dozen on-device AI demos,
 one launcher, zero cloud calls.**
 
 Speech translation. A voice assistant that talks back in your own voice.
@@ -21,7 +21,7 @@ no data that leaves the device -- and every one of them can point
 directly at your Intel CPU, integrated GPU, or NPU and show you, on a
 live gauge, exactly which chip is doing the work.
 
-This isn't a slide deck about on-device AI. It's nine working
+This isn't a slide deck about on-device AI. It's twelve working
 applications that prove it.
 
 ## See it in 60 seconds
@@ -33,14 +33,26 @@ uv sync --extra openvino
 uv run panther-lake-launcher
 ```
 
-A local web UI opens at `http://127.0.0.1:8765`: pick a demo, pick an
-engine -- portable CPU or OpenVINO on your NPU/iGPU -- hit Launch, and
-watch the CPU/GPU/NPU gauges in the header light up with *which demo is
-using which chip, right now*. That live attribution is real, not
-decorative: it comes from the exact device string each demo handed the
-inference runtime, not a guess.
+A local web UI opens at `http://127.0.0.1:8765`, demos grouped by the
+kind of work they do: pick one, hit Launch -- it defaults to OpenVINO on
+your NPU/iGPU/GPU when available, portable CPU otherwise -- and the
+status line tells you what's actually happening (downloading a model the
+first time, loading it from disk after, or running), instead of a static
+"please wait." Then watch the CPU/GPU/NPU gauges in the header light up
+with *which demo is using which chip, right now*. If your machine has
+more than one GPU (say, an iGPU plus a discrete Arc card), each gets its
+own gauge, tracked independently -- point two different demos at two
+different GPUs and watch both light up at once. That live attribution is
+real, not decorative: it comes from the exact device string each demo
+handed the inference runtime, not a guess.
+
+<p align="center">
+  <img src="docs/screenshot-home.png" alt="Panther Lake AI Studio launcher, showing the header telemetry gauges and the Speech category of demo cards" width="820" />
+</p>
 
 ## The demo suite
+
+### Speech
 
 | Demo | What it does | Runs on |
 | --- | --- | --- |
@@ -48,24 +60,51 @@ inference runtime, not a guess.
 | **Local Voice Assistant** | Say a wake word, ask a question, hear a spoken answer | CPU / NPU / GPU |
 | **Live Meeting Notes** | Transcribes a call and generates a running summary + action items on demand | CPU / NPU / GPU |
 | **Voice Clone Studio** | Enroll a 10-second voice sample, then speak any text back in that voice | CPU / NPU / GPU |
+
+### Vision
+
+| Demo | What it does | Runs on |
+| --- | --- | --- |
 | **Webcam Background Effects** | Real-time background blur or replacement, no video ever leaves the machine | CPU / NPU / GPU |
 | **Object Detection Overlay** | Live labeled bounding boxes over a webcam or screen feed | CPU / NPU / GPU |
 | **Screen / Image Text Extraction** | Pull text out of a screenshot or photo, with optional on-device translation | CPU / GPU |
+
+### Text
+
+| Demo | What it does | Runs on |
+| --- | --- | --- |
 | **Local Document Q&A** | Chat with your own files -- retrieval-augmented, nothing indexed in the cloud | CPU / NPU / GPU |
+
+### Productivity
+
+| Demo | What it does | Runs on |
+| --- | --- | --- |
 | **Expense Report Extractor** | Photograph a folder of receipts, get a structured CSV -- OCR and the LLM run *concurrently* on two different chips | GPU **+** NPU, at once |
 | **Local Screen Memory** | Continuously indexes your own screen so you can semantically search it later -- OCR and embedding run *concurrently*, the same way | GPU **+** NPU, at once |
+| **Commit & Code Review Assistant** | Turn a git diff into a commit message and review notes, entirely locally | CPU / NPU / GPU |
+| **HTML Creator** | Describe a page or point at a folder of documents, get one self-contained HTML file back | CPU / NPU / GPU |
 
 *Every "Runs on" cell is real, tested hardware routing -- not a spec
 sheet claim. `expense-extract` and `smart-recall` are the showcase: each
 runs OCR on one chip while a second model (an LLM, or an embedder) works
-on a *different* chip on the previous item, at the same time -- both
-gauges lit simultaneously, proof captured live from the telemetry API
-during testing, not claimed from a spec sheet.*
+on a *different* chip at the same time -- both gauges lit simultaneously,
+proof captured live from the telemetry API during testing, not claimed
+from a spec sheet.*
+
+<p align="center">
+  <img src="docs/screenshot-code-review.png" alt="Commit & Code Review Assistant showing a generated commit message and review notes, with the GPU.1 telemetry gauge lit up and labeled with the demo's name" width="820" />
+</p>
+
+Every content-hungry demo also ships with a "Try a sample" picker --
+named example prompts, diffs, and questions, including a fictional
+company's documents (`sample-data/`) for `doc-qa` and `html-creator`'s
+document mode -- so there's always something real to click Launch on
+without hunting for your own files first.
 
 Also on the roadmap and already visible as "Coming soon" cards in the
-launcher: a local voice assistant for inbox triage, a commit/code-review
-assistant, and live noise suppression -- the suite is built to keep
-growing without touching what already ships.
+launcher: an inbox triage & draft assistant, and live noise suppression
+-- the suite is built to keep growing without touching what already
+ships.
 
 ## Why this is worth a look
 
@@ -77,9 +116,11 @@ growing without touching what already ships.
   selectable devices on a chip like Panther Lake, which is the entire
   point of demonstrating *local* AI *on this hardware*, not just on a
   laptop.
-- **Composable, not copy-pasted.** Nine demos, and the newest ones barely
-  add code: `meeting-notes` has no transcriber or LLM of its own -- it
-  composes `live-translation` and `doc-qa` directly. `voice-assistant`
+- **Composable, not copy-pasted.** Twelve demos, and the newest ones
+  barely add code: `meeting-notes` has no transcriber or LLM of its own
+  -- it composes `live-translation` and `doc-qa` directly.
+  `code-review-assist` and `html-creator` add zero new model code either,
+  each composing `doc-qa`'s LLM for a different task. `voice-assistant`
   composes three bricks and adds exactly one new model (wake-word
   detection). Shared capture, VAD, and device-discovery code lives in one
   `core` package every brick depends on.
@@ -88,9 +129,18 @@ growing without touching what already ships.
   finding (and routing around) a real OpenVINO NPU compiler limitation on
   a 7B vision-language model -- documented, not hidden, in
   [`screen-ocr`'s README](bricks/screen-ocr/README.md).
+- **Know what's happening, not just that it's "loading."** First-time
+  model loads can take a minute or more, so the launcher tracks each
+  demo's real lifecycle -- downloading, loading, running, or error -- and
+  keeps a persisted Activity Log of what happened, reviewable from the
+  footer at any time.
 - **One launcher, no build step.** The front end is vanilla HTML/CSS/JS
   served straight from FastAPI -- no npm install, no bundler, just
   `uv run panther-lake-launcher`.
+
+<p align="center">
+  <img src="docs/screenshot-activity-log.png" alt="Activity Log modal listing recent lifecycle events per demo, e.g. Loading model then Reviewing diff" width="820" />
+</p>
 
 ## Command line, if you'd rather skip the UI
 
@@ -102,6 +152,8 @@ uv run voice-assistant --engine openvino --compute-device NPU
 uv run voice-clone-studio --record 15 --text "Hello from my own cloned voice."
 uv run expense-extract ./receipts --ocr-engine openvino --ocr-device GPU --llm-engine openvino --llm-device NPU
 uv run smart-recall record --ocr-engine openvino --ocr-device GPU --embed-engine openvino --embed-device NPU
+uv run code-review-assist --folder . --engine openvino --compute-device GPU
+uv run html-creator --prompt "a landing page for a small coffee shop" --engine openvino --compute-device GPU
 ```
 
 See each brick's own README for its full set of options.

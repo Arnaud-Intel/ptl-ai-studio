@@ -156,6 +156,14 @@ async function populateLiveTranslationDevices() {
   if (hasOpenvino) engineSelect.value = "openvino";
 
   const computeSelect = el("ctl-compute-device");
+  // Intel only publishes pre-converted OpenVINO Whisper repos for
+  // tiny/base/medium/large-v3 -- there's no whisper-small-fp16-ov, so
+  // "small" throws a backend error under the OpenVINO engine. Disable it
+  // in the <select> itself (same pattern as the OpenVINO engine option
+  // being disabled when no device is available) rather than just
+  // resetting the default, since nothing else stops a manual pick.
+  const modelSelect = el("ctl-model");
+  const smallOption = modelSelect.querySelector('option[value="small"]');
   const fillComputeDevices = () => {
     computeSelect.innerHTML = "";
     const options = engineSelect.value === "openvino"
@@ -167,7 +175,10 @@ async function populateLiveTranslationDevices() {
       opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
       computeSelect.appendChild(opt);
     }
-    el("ctl-model").value = engineSelect.value === "openvino" ? "base" : "small";
+    const isOpenvino = engineSelect.value === "openvino";
+    smallOption.disabled = isOpenvino;
+    smallOption.textContent = isOpenvino ? "small (portable engine only)" : "small";
+    modelSelect.value = isOpenvino ? "base" : "small";
   };
   engineSelect.onchange = fillComputeDevices;
   fillComputeDevices();
