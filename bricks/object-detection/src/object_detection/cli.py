@@ -6,14 +6,8 @@ import datetime as dt
 import sys
 
 from pantherlake_ai_core import engine as engine_mod
-from pantherlake_ai_core import video
 
 from . import pipeline
-
-_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"device": "cpu"},
-    engine_mod.Engine.OPENVINO: {"device": "AUTO"},
-}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--compute-device", default=None,
-        help="openvino engine only: AUTO, CPU, GPU, or NPU. Ignored for the portable engine.",
+        help="openvino engine only: AUTO, CPU, GPU, or NPU (default AUTO). Ignored for the portable engine.",
     )
     p.add_argument("--model-path", default=None, help="Use a local model instead of downloading the default.")
     p.add_argument(
@@ -49,39 +43,15 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def list_devices() -> None:
-    from pantherlake_ai_core.engine import describe_devices
-
-    print("Cameras (--source webcam --camera-index N):")
-    cameras = video.list_cameras()
-    if cameras:
-        for index in cameras:
-            print(f"  - {index}")
-    else:
-        print("  (none found)")
-
-    print("\nScreens (--source screen --screen-index N):")
-    for screen in video.list_screens():
-        print(f"  - {screen['index']}: {screen['width']}x{screen['height']}")
-
-    print("\nInference devices (--compute-device):")
-    print(describe_devices())
-
-
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.list_devices:
-        list_devices()
+        engine_mod.print_devices(cameras=True, screens=True)
         return 0
 
-    if args.engine:
-        engine = engine_mod.Engine(args.engine)
-    else:
-        from pantherlake_ai_core.engine import list_openvino_devices
-
-        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
-    compute_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]
+    engine = engine_mod.resolve_engine(args.engine)
+    compute_device = args.compute_device or engine_mod.default_device(engine)
 
     print(f"Loading detector (engine={engine.value}, device={compute_device})... this may download a model on first use.")
 

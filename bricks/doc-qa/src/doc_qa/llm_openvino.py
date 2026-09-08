@@ -11,21 +11,10 @@ from __future__ import annotations
 
 from typing import Callable
 
+from pantherlake_ai_core.engine import ov_config_for
+from pantherlake_ai_core.model_cache import resolve_snapshot
+
 _DEFAULT_REPO = "OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov"
-
-
-def _resolve_model_dir(
-    model_dir: str | None, model_repo: str | None = None, on_downloading: Callable[[], None] | None = None
-) -> str:
-    if model_dir:
-        return model_dir
-    from huggingface_hub import snapshot_download
-    from pantherlake_ai_core.model_cache import is_repo_cached
-
-    repo_id = model_repo or _DEFAULT_REPO
-    if on_downloading is not None and not is_repo_cached(repo_id):
-        on_downloading()
-    return snapshot_download(repo_id)
 
 
 class OpenVINOLLM:
@@ -39,9 +28,8 @@ class OpenVINOLLM:
         import openvino_genai as ov_genai
 
         self._ov_genai = ov_genai
-        resolved_dir = _resolve_model_dir(model_dir, model_repo, on_downloading)
-        ov_config = {"CACHE_DIR": "ov_cache"} if device == "NPU" or "GPU" in device else {}
-        self.pipeline = ov_genai.LLMPipeline(resolved_dir, device, **ov_config)
+        resolved_dir = resolve_snapshot(model_repo or _DEFAULT_REPO, local_dir=model_dir, on_downloading=on_downloading)
+        self.pipeline = ov_genai.LLMPipeline(resolved_dir, device, **ov_config_for(device))
 
     def answer(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str:
         history = self._ov_genai.ChatHistory(

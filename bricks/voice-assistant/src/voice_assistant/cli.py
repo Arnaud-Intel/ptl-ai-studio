@@ -4,15 +4,13 @@ from __future__ import annotations
 import argparse
 import sys
 
-from pantherlake_ai_core import audio, engine as engine_mod
+from pantherlake_ai_core import engine as engine_mod
 
 from . import session
 from .wake_word import AVAILABLE_WAKE_WORDS, DEFAULT_WAKE_WORD
 
-_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"whisper_model": "small", "device": "auto"},
-    engine_mod.Engine.OPENVINO: {"whisper_model": "base", "device": "AUTO"},
-}
+# Whisper size per engine -- see live-translation's CLI for why.
+_WHISPER_SIZE_DEFAULTS = {engine_mod.Engine.PORTABLE: "small", engine_mod.Engine.OPENVINO: "base"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,7 +41,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Whisper model size override (tiny, base, small, medium, large-v3). "
              "Default depends on --engine.",
     )
-    p.add_argument("--compute-device", default=None, help="openvino engine only: AUTO, CPU, GPU, or NPU.")
+    p.add_argument(
+        "--compute-device", default=None,
+        help="openvino engine only: AUTO, CPU, GPU, or NPU. Default: AUTO.",
+    )
     p.add_argument(
         "--no-speak", action="store_true",
         help="Print replies instead of speaking them out loud (e.g. for a machine with no speakers).",
@@ -55,30 +56,16 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def list_devices() -> None:
-    print("Microphones:")
-    for name in audio.list_microphones():
-        print(f"  - {name}")
-    print("\nInference devices (--compute-device):")
-    print(engine_mod.describe_devices())
-
-
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.list_devices:
-        list_devices()
+        engine_mod.print_devices(mics=True)
         return 0
 
-    if args.engine:
-        engine = engine_mod.Engine(args.engine)
-    else:
-        from pantherlake_ai_core.engine import list_openvino_devices
-
-        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
-    defaults = _ENGINE_DEFAULTS[engine]
-    whisper_model = args.whisper_model or defaults["whisper_model"]
-    compute_device = args.compute_device or defaults["device"]
+    engine = engine_mod.resolve_engine(args.engine)
+    whisper_model = args.whisper_model or _WHISPER_SIZE_DEFAULTS[engine]
+    compute_device = args.compute_device or engine_mod.default_device(engine)
 
     print(
         f"Loading wake word '{args.wake_word}', Whisper '{whisper_model}', LLM, and TTS "

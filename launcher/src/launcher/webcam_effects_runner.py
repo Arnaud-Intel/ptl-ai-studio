@@ -18,6 +18,7 @@ from pantherlake_ai_core.engine import Engine
 from webcam_effects import matte, pipeline
 
 from . import activity, events
+from .errors import Conflict
 
 _DEMO_ID = "webcam-effects"
 _JPEG_QUALITY = 80
@@ -54,7 +55,7 @@ class WebcamEffectsRunner:
         color: tuple[int, int, int] = (181, 104, 0),
     ) -> None:
         if self.running:
-            raise RuntimeError("webcam-effects is already running")
+            raise Conflict("webcam-effects is already running")
 
         self.error = None
         with self._frame_lock:
@@ -86,6 +87,9 @@ class WebcamEffectsRunner:
         def on_ready() -> None:
             events.set_phase(_DEMO_ID, "running", "Applying webcam effect...")
 
+        def on_downloading() -> None:
+            events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine.value})...")
+
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
             events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine.value}, device={compute_device})...")
@@ -96,6 +100,7 @@ class WebcamEffectsRunner:
                     compute_device=compute_device,
                     on_frame=on_frame,
                     on_ready=on_ready,
+                    on_downloading=on_downloading,
                     stop_event=stop_event,
                 )
             except Exception as exc:  # surfaced to the UI, not silently dropped

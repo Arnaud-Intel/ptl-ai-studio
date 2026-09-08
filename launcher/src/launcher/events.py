@@ -23,20 +23,31 @@ _status: dict[str, dict] = {}
 _recent: deque[dict] = deque(maxlen=200)
 
 
-def set_phase(demo_id: str, phase: str, message: str = "") -> None:
+def _key(demo_id: str, stage: str | None) -> str:
+    return f"{demo_id}:{stage}" if stage else demo_id
+
+
+def set_phase(demo_id: str, phase: str, message: str = "", *, stage: str | None = None) -> None:
     """phase is "loading", "running", or "error". Errors are NOT cleared by
     clear_phase -- they stay visible until the next loading/running call
-    overwrites them, so a failed run doesn't silently look idle again."""
-    entry = {"demo_id": demo_id, "phase": phase, "message": message, "at": time.time()}
+    overwrites them, so a failed run doesn't silently look idle again.
+
+    `stage`, for a demo running several things at once (expense-extract's
+    OCR and LLM stages, smart-city-monitor's feeds), tracks each one's
+    phase separately, keyed "demo_id:stage" -- the same compound key
+    /api/status has always exposed, mirroring activity.set_active's stage.
+    """
+    key = _key(demo_id, stage)
+    entry = {"demo_id": key, "phase": phase, "message": message, "at": time.time()}
     with _lock:
-        _status[demo_id] = entry
+        _status[key] = entry
         _recent.append(entry)
     _append_to_file(entry)
 
 
-def clear_phase(demo_id: str) -> None:
+def clear_phase(demo_id: str, *, stage: str | None = None) -> None:
     with _lock:
-        _status.pop(demo_id, None)
+        _status.pop(_key(demo_id, stage), None)
 
 
 def status_snapshot() -> dict[str, dict]:

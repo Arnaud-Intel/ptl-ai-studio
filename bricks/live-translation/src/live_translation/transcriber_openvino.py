@@ -7,16 +7,18 @@ transcriber_portable.py which is CPU/CUDA only. Requires this brick's
 
 By default this downloads a pre-converted multilingual model from Intel's
 `OpenVINO` org on Hugging Face (e.g. OpenVINO/whisper-base-fp16-ov) the
-first time it's used, then runs fully offline. Pass --ov-model-dir to
-point at a model you converted yourself with `optimum-cli export openvino`
-(see this brick's README for that command) -- useful for sizes or
-quantizations Intel hasn't pre-published.
+first time it's used, then runs fully offline. Pass --model-path to point
+at a model you converted yourself with `optimum-cli export openvino` (see
+this brick's README for that command) -- useful for sizes or quantizations
+Intel hasn't pre-published.
 """
 from __future__ import annotations
 
 from typing import Callable
 
 import numpy as np
+from pantherlake_ai_core.engine import ov_config_for
+from pantherlake_ai_core.model_cache import resolve_snapshot
 from pantherlake_ai_core.types import TranslationResult
 
 # Multilingual (not "*.en") variants only -- translation needs to recognize
@@ -35,15 +37,9 @@ def _resolve_model_dir(
             f"No pre-converted multilingual OpenVINO model for size '{model_size}'. "
             f"Available sizes: {', '.join(_AVAILABLE_SIZES)}. "
             "For another size/model, convert it yourself with `optimum-cli export "
-            "openvino` and pass --ov-model-dir."
+            "openvino` and pass --model-path."
         )
-    from huggingface_hub import snapshot_download
-    from pantherlake_ai_core.model_cache import is_repo_cached
-
-    repo_id = _DEFAULT_REPO_TEMPLATE.format(size=model_size)
-    if on_downloading is not None and not is_repo_cached(repo_id):
-        on_downloading()
-    return snapshot_download(repo_id)
+    return resolve_snapshot(_DEFAULT_REPO_TEMPLATE.format(size=model_size), on_downloading=on_downloading)
 
 
 def _load_pipeline_class():
@@ -75,14 +71,7 @@ class OpenVINOTranslator:
     ):
         pipeline_cls = _load_pipeline_class()
         resolved_dir = _resolve_model_dir(model_size, model_dir, on_downloading)
-
-        ov_config = {}
-        if device == "NPU" or "GPU" in device:
-            # Cache compiled models on disk for GPU/NPU: recompiling on every
-            # run is slow, and isn't needed for CPU.
-            ov_config["CACHE_DIR"] = "ov_cache"
-
-        self.pipeline = pipeline_cls(resolved_dir, device, **ov_config)
+        self.pipeline = pipeline_cls(resolved_dir, device, **ov_config_for(device))
         self.task = task
 
     def translate(self, audio: np.ndarray) -> TranslationResult | None:

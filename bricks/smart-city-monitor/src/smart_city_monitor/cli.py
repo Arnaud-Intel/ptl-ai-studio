@@ -12,10 +12,6 @@ from . import pipeline
 from .draw import draw_tracks
 from .types import FeedSpec
 
-_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"device": "cpu"},
-    engine_mod.Engine.OPENVINO: {"device": "AUTO"},
-}
 _SUMMARY_INTERVAL_SECONDS = 10.0
 
 
@@ -52,7 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--compute-device", default=None,
-        help="openvino engine only: default device for any --source without its own '|DEVICE'.",
+        help="openvino engine only: default device for any --source without its own '|DEVICE'. Default: AUTO.",
     )
     p.add_argument("--model-path", default=None, help="Use a local model instead of downloading the default.")
     p.add_argument(
@@ -70,31 +66,19 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def list_devices() -> None:
-    from pantherlake_ai_core.engine import describe_devices
-
-    print("Inference devices (--compute-device or a --source's |DEVICE suffix):")
-    print(describe_devices())
-
-
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.list_devices:
-        list_devices()
+        engine_mod.print_devices(inference_flag="--compute-device or a --source's |DEVICE suffix")
         return 0
 
     if not args.sources:
         print("Error: at least one --source is required.", file=sys.stderr)
         return 1
 
-    if args.engine:
-        engine = engine_mod.Engine(args.engine)
-    else:
-        from pantherlake_ai_core.engine import list_openvino_devices
-
-        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
-    default_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]
+    engine = engine_mod.resolve_engine(args.engine)
+    default_device = args.compute_device or engine_mod.default_device(engine)
 
     feeds = []
     for i, raw in enumerate(args.sources, start=1):

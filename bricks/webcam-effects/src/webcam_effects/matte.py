@@ -11,8 +11,11 @@ same model, same weights, different silicon.
 """
 from __future__ import annotations
 
+from typing import Callable
+
 import cv2
 import numpy as np
+from pantherlake_ai_core.model_cache import resolve_file
 
 DEFAULT_REPO = "onnx-community/mediapipe_selfie_segmentation"
 DEFAULT_FILENAME = "onnx/model_quantized.onnx"
@@ -20,12 +23,10 @@ DEFAULT_FILENAME = "onnx/model_quantized.onnx"
 INPUT_SIZE = 256
 
 
-def resolve_model_path(repo_id: str, filename: str, model_path: str | None) -> str:
-    if model_path:
-        return model_path
-    from huggingface_hub import hf_hub_download
-
-    return hf_hub_download(repo_id, filename)
+def resolve_model_path(
+    repo_id: str, filename: str, model_path: str | None, on_downloading: Callable[[], None] | None = None
+) -> str:
+    return resolve_file(repo_id, filename, local_path=model_path, on_downloading=on_downloading)
 
 
 def preprocess(frame_bgr: np.ndarray) -> np.ndarray:

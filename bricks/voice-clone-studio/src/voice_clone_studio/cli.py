@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from pantherlake_ai_core import audio, engine as engine_mod
@@ -9,11 +10,6 @@ from pantherlake_ai_core import audio, engine as engine_mod
 from .pipeline import VoiceCloneSession
 from .samples import SAMPLES
 from .voice_model import STYLES
-
-_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"device": "CPU"},
-    engine_mod.Engine.OPENVINO: {"device": "AUTO"},
-}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,7 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
              "this only changes which silicon runs them. Default: openvino if installed and a "
              "device is available, otherwise portable.",
     )
-    p.add_argument("--compute-device", default=None, help="openvino engine only: AUTO, CPU, GPU, or NPU.")
+    p.add_argument(
+        "--compute-device", default=None,
+        help="openvino engine only: AUTO, CPU, GPU, or NPU. Default: AUTO.",
+    )
     p.add_argument("--model-path", default=None, help="Use a local model instead of downloading the default.")
     p.add_argument(
         "--list-devices", action="store_true",
@@ -50,21 +49,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="List available example texts, then exit.",
     )
     return p
-
-
-def list_devices() -> None:
-    from pantherlake_ai_core.engine import describe_devices
-
-    print("Microphones (--record captures from the default one):")
-    mics = audio.list_microphones()
-    if mics:
-        for name in mics:
-            print(f"  - {name}")
-    else:
-        print("  (none found)")
-
-    print("\nInference devices (--compute-device):")
-    print(describe_devices())
 
 
 def _record_reference(seconds: float) -> str:
@@ -84,7 +68,6 @@ def _record_reference(seconds: float) -> str:
     clip = np.concatenate(blocks)
 
     fd, path = tempfile.mkstemp(suffix=".wav")
-    import os
     os.close(fd)
     sf.write(path, clip, audio.SAMPLE_RATE)
     print("Recording complete.")
@@ -96,7 +79,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.list_devices:
-        list_devices()
+        engine_mod.print_devices(mics=True)
         return 0
 
     if args.list_samples:
@@ -115,13 +98,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.reference and not args.record:
         parser.error("one of the arguments --reference --record is required")
 
-    if args.engine:
-        engine = engine_mod.Engine(args.engine)
-    else:
-        from pantherlake_ai_core.engine import list_openvino_devices
-
-        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
-    compute_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]
+    engine = engine_mod.resolve_engine(args.engine)
+    compute_device = args.compute_device or engine_mod.default_device(engine)
 
     reference_path = args.reference or _record_reference(args.record)
 

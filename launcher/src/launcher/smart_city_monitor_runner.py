@@ -18,6 +18,7 @@ from smart_city_monitor.draw import draw_tracks
 from smart_city_monitor.types import CountSnapshot, FeedSpec, TrackedDetection
 
 from . import activity, events
+from .errors import Conflict
 
 _DEMO_ID = "smart-city-monitor"
 _JPEG_QUALITY = 80
@@ -45,7 +46,7 @@ class SmartCityMonitorRunner:
         loop: bool,
     ) -> None:
         if self.running:
-            raise RuntimeError("smart-city-monitor is already running")
+            raise Conflict("smart-city-monitor is already running")
 
         self.error = None
         with self._frame_lock:
@@ -68,12 +69,12 @@ class SmartCityMonitorRunner:
                 self._latest_snapshot = snapshot
 
         def on_ready(feed_id: str) -> None:
-            events.set_phase(f"{_DEMO_ID}:{feed_id}", "running", "Monitoring...")
+            events.set_phase(_DEMO_ID, "running", "Monitoring...", stage=feed_id)
 
         def on_feed_error(feed_id: str, message: str) -> None:
             # One feed failing (bad device id, unreadable file) must be visible
             # right away on that feed's tile -- the others keep running.
-            events.set_phase(f"{_DEMO_ID}:{feed_id}", "error", message)
+            events.set_phase(_DEMO_ID, "error", message, stage=feed_id)
             activity.clear_active(_DEMO_ID, stage=feed_id)
 
         def target() -> None:
@@ -83,8 +84,9 @@ class SmartCityMonitorRunner:
                     stage=feed.feed_id, stage_label=f"Feed {feed.feed_id.removeprefix('feed-')}",
                 )
                 events.set_phase(
-                    f"{_DEMO_ID}:{feed.feed_id}", "loading",
+                    _DEMO_ID, "loading",
                     f"Loading model (engine={engine.value}, device={feed.compute_device})...",
+                    stage=feed.feed_id,
                 )
             try:
                 pipeline.run(
@@ -100,10 +102,10 @@ class SmartCityMonitorRunner:
             except Exception as exc:  # surfaced to the UI, not silently dropped
                 self.error = str(exc)
                 for feed in feeds:
-                    events.set_phase(f"{_DEMO_ID}:{feed.feed_id}", "error", str(exc))
+                    events.set_phase(_DEMO_ID, "error", str(exc), stage=feed.feed_id)
             else:
                 for feed in feeds:
-                    events.clear_phase(f"{_DEMO_ID}:{feed.feed_id}")
+                    events.clear_phase(_DEMO_ID, stage=feed.feed_id)
             finally:
                 for feed in feeds:
                     activity.clear_active(_DEMO_ID, stage=feed.feed_id)

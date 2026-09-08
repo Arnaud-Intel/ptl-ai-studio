@@ -4,6 +4,8 @@ place.
 """
 from __future__ import annotations
 
+from typing import Callable
+
 from pantherlake_ai_core.engine import Engine
 
 from .engine_factory import create_cloner
@@ -13,9 +15,16 @@ from .voice_model import STYLES
 class VoiceCloneSession:
     """Holds one loaded cloner. Enroll once, synthesize many times."""
 
-    def __init__(self, engine: Engine, *, device: str = "CPU", model_path: str | None = None):
+    def __init__(
+        self,
+        engine: Engine,
+        *,
+        device: str = "CPU",
+        model_path: str | None = None,
+        on_downloading: Callable[[], None] | None = None,
+    ):
         self.engine = engine
-        self.cloner = create_cloner(engine, device=device, model_path=model_path)
+        self.cloner = create_cloner(engine, device=device, model_path=model_path, on_downloading=on_downloading)
         self.target_se = None
         self.reference_path: str | None = None
 

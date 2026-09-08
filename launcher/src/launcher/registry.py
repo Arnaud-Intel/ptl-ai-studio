@@ -22,6 +22,13 @@ class Demo:
     # VRAM. Doesn't mean the demo itself can't run at all elsewhere: the
     # portable engine still works everywhere with a much smaller model.
     requires_dgpu: bool = False
+    # What GET /api/<id>/devices enumerates from the machine for this demo's
+    # controls, any of: "microphones", "speakers", "cameras", "screens",
+    # "wake_words". Every available demo gets "openvino_devices" regardless.
+    devices: tuple[str, ...] = ()
+    # Dotted path of a module exposing a SAMPLES list of dataclasses (e.g.
+    # "doc_qa.samples"), included as "samples" in that same response.
+    samples: str | None = None
 
 
 REGISTRY: list[Demo] = [
@@ -37,6 +44,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        devices=("microphones", "speakers"),
     ),
     Demo(
         id="voice-assistant",
@@ -49,6 +57,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        devices=("microphones", "wake_words"),
     ),
     Demo(
         id="meeting-notes",
@@ -63,6 +72,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        devices=("microphones", "speakers"),
     ),
     Demo(
         id="voice-clone-studio",
@@ -77,6 +87,8 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        devices=("microphones",),
+        samples="voice_clone_studio.samples",
     ),
     Demo(
         id="webcam-effects",
@@ -90,6 +102,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        devices=("cameras",),
     ),
     Demo(
         id="object-detection",
@@ -102,6 +115,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        devices=("cameras", "screens"),
     ),
     Demo(
         id="screen-ocr",
@@ -115,6 +129,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        devices=("cameras", "screens"),
     ),
     Demo(
         id="smart-city-monitor",
@@ -146,6 +161,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        samples="doc_qa.samples",
     ),
     Demo(
         id="expense-extract",
@@ -190,6 +206,7 @@ REGISTRY: list[Demo] = [
         engines=["portable", "openvino"],
         status="available",
         requires_dgpu=True,
+        samples="code_review_assist.samples",
     ),
     Demo(
         id="html-creator",
@@ -207,6 +224,7 @@ REGISTRY: list[Demo] = [
         engines=["portable", "openvino"],
         status="available",
         requires_dgpu=True,
+        samples="html_creator.samples",
     ),
     Demo(
         id="smart-recall",
@@ -224,6 +242,8 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        devices=("screens",),
+        samples="smart_recall.samples",
     ),
     Demo(
         id="noise-suppression",

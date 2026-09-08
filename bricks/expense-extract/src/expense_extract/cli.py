@@ -10,15 +10,6 @@ from pantherlake_ai_core import engine as engine_mod
 
 from . import pipeline
 
-_OCR_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"device": "cpu"},
-    engine_mod.Engine.OPENVINO: {"device": "AUTO"},
-}
-_LLM_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"device": "AUTO"},
-    engine_mod.Engine.OPENVINO: {"device": "AUTO"},
-}
-
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -39,13 +30,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Backend for the OCR stage. Default: openvino if installed and a device is available, "
              "otherwise portable.",
     )
-    p.add_argument("--ocr-device", default=None, help="openvino OCR engine only: AUTO, CPU, GPU, or NPU.")
+    p.add_argument(
+        "--ocr-device", default=None,
+        help="openvino OCR engine only: AUTO, CPU, GPU, or NPU. Default: AUTO.",
+    )
     p.add_argument(
         "--llm-engine", choices=[e.value for e in engine_mod.Engine], default=None,
         help="Backend for the LLM structuring stage. Default: openvino if installed and a device is "
              "available, otherwise portable.",
     )
-    p.add_argument("--llm-device", default=None, help="openvino LLM engine only: AUTO, CPU, GPU, or NPU.")
+    p.add_argument(
+        "--llm-device", default=None,
+        help="openvino LLM engine only: AUTO, CPU, GPU, or NPU. Default: AUTO.",
+    )
     p.add_argument(
         "--list-devices", action="store_true",
         help="List available inference devices, then exit.",
@@ -53,31 +50,21 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def list_devices() -> None:
-    from pantherlake_ai_core.engine import describe_devices
-
-    print("Inference devices (--ocr-device / --llm-device):")
-    print(describe_devices())
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
     if args.list_devices:
-        list_devices()
+        engine_mod.print_devices(inference_flag="--ocr-device / --llm-device")
         return 0
 
     if not args.folder:
         parser.error("the following arguments are required: folder")
 
-    from pantherlake_ai_core.engine import list_openvino_devices
-
-    default_engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
-    ocr_engine = engine_mod.Engine(args.ocr_engine) if args.ocr_engine else default_engine
-    llm_engine = engine_mod.Engine(args.llm_engine) if args.llm_engine else default_engine
-    ocr_device = args.ocr_device or _OCR_ENGINE_DEFAULTS[ocr_engine]["device"]
-    llm_device = args.llm_device or _LLM_ENGINE_DEFAULTS[llm_engine]["device"]
+    ocr_engine = engine_mod.resolve_engine(args.ocr_engine)
+    llm_engine = engine_mod.resolve_engine(args.llm_engine)
+    ocr_device = args.ocr_device or engine_mod.default_device(ocr_engine)
+    llm_device = args.llm_device or engine_mod.default_device(llm_engine)
 
     print(
         f"OCR stage: engine={ocr_engine.value}, device={ocr_device}\n"

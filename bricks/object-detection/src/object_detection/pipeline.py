@@ -26,14 +26,16 @@ def run(
     model_path: str | None = None,
     on_frame: Callable[[np.ndarray, list[Detection]], None],
     on_ready: Callable[[], None] | None = None,
+    on_downloading: Callable[[], None] | None = None,
     stop_event: threading.Event | None = None,
 ) -> None:
     """Blocks the calling thread, calling `on_frame(frame, detections)` for
     each captured frame, until `stop_event` is set (or forever if none is
     given). `on_ready`, if given, fires once the model is loaded and capture
     is about to start -- the real "loading -> running" boundary (a first-run
-    download plus compile can take a while)."""
-    detector = create_detector(engine, device=compute_device, model_path=model_path)
+    download plus compile can take a while); `on_downloading` fires before
+    that load has to fetch the model first."""
+    detector = create_detector(engine, device=compute_device, model_path=model_path, on_downloading=on_downloading)
     if on_ready is not None:
         on_ready()
 

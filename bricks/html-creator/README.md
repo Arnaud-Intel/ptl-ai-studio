@@ -13,8 +13,9 @@ HTML/CSS is a code-generation task, so it asks `create_llm` for the same
 coding-specialized model instead of doc-qa's small general-purpose default.
 
 - **OpenVINO engine**: `OpenVINO/Qwen3-Coder-30B-A3B-Instruct-int4-ov`
-  (Mixture-of-Experts, 30B total/~3B active per token, ~15.2GB), pinned to
-  `GPU.1` (this dev machine's Arc B60). Already verified loadable on this
+  (Mixture-of-Experts, 30B total/~3B active per token, ~15.2GB), defaulting
+  to the machine's discrete GPU when it has one (`GPU.1`, the Arc B60, on
+  this dev machine) and `AUTO` otherwise. Already verified loadable on this
   machine this session (see `code-review-assist/README.md`) -- not
   re-verified in isolation, but this brick's own end-to-end run confirmed
   it works for HTML generation specifically, not just prose.

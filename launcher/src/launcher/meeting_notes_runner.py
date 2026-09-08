@@ -15,6 +15,7 @@ from meeting_notes.types import MeetingNotes, TranscriptLine
 from pantherlake_ai_core.engine import Engine
 
 from . import activity, events
+from .errors import Conflict
 
 _DEMO_ID = "meeting-notes"
 
@@ -27,6 +28,13 @@ class MeetingNotesRunner:
         self._engine: Engine | None = None
         self._compute_device: str | None = None
         self.error: str | None = None
+        # Guards the session/thread state (start vs. stop vs. a notes
+        # request racing each other); notes generation itself runs outside
+        # it so Stop stays responsive during a long LLM call.
+        self._state_lock = threading.Lock()
+        # Serializes generate_notes calls: the session builds its LLM lazily
+        # on the first one, and two at once would build it twice.
+        self._notes_lock = threading.Lock()
 
     @property
     def running(self) -> bool:
@@ -43,88 +51,95 @@ class MeetingNotesRunner:
         compute_device: str,
         whisper_model_size: str,
     ) -> None:
-        if self.running:
-            raise RuntimeError("meeting-notes is already running")
+        with self._state_lock:
+            if self.running:
+                raise Conflict("meeting-notes is already running")
 
-        self.error = None
-        self._engine = engine
-        self._compute_device = compute_device
-        self._session = MeetingSession(engine, compute_device=compute_device, whisper_model_size=whisper_model_size)
-        self._stop_event = threading.Event()
-        stop_event = self._stop_event
-        session = self._session
+            self.error = None
+            self._engine = engine
+            self._compute_device = compute_device
+            self._session = MeetingSession(engine, compute_device=compute_device, whisper_model_size=whisper_model_size)
+            self._stop_event = threading.Event()
+            stop_event = self._stop_event
+            session = self._session
 
-        def on_line(line: TranscriptLine) -> None:
-            asyncio.run_coroutine_threadsafe(queue.put({"type": "line", **asdict(line)}), loop)
+            def on_line(line: TranscriptLine) -> None:
+                asyncio.run_coroutine_threadsafe(queue.put({"type": "line", **asdict(line)}), loop)
 
-        def on_ready() -> None:
-            events.set_phase(_DEMO_ID, "running", "Transcribing...")
+            def on_ready() -> None:
+                events.set_phase(_DEMO_ID, "running", "Transcribing...")
 
-        def on_downloading() -> None:
-            events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine.value})...")
+            def on_downloading() -> None:
+                events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine.value})...")
 
-        def target() -> None:
-            activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
-            events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine.value}, device={compute_device})...")
-            try:
-                session.transcribe(
-                    source=source,
-                    audio_device=audio_device,
-                    on_line=on_line,
-                    on_ready=on_ready,
-                    on_downloading=on_downloading,
-                    stop_event=stop_event,
-                )
-            except Exception as exc:  # surfaced to the UI, not silently dropped
-                self.error = str(exc)
-                events.set_phase(_DEMO_ID, "error", str(exc))
-                asyncio.run_coroutine_threadsafe(queue.put({"type": "error", "message": str(exc)}), loop)
-            else:
-                events.clear_phase(_DEMO_ID)
-            finally:
-                activity.clear_active(_DEMO_ID)
-                asyncio.run_coroutine_threadsafe(queue.put({"type": "stopped"}), loop)
+            def target() -> None:
+                activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
+                events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine.value}, device={compute_device})...")
+                try:
+                    session.transcribe(
+                        source=source,
+                        audio_device=audio_device,
+                        on_line=on_line,
+                        on_ready=on_ready,
+                        on_downloading=on_downloading,
+                        stop_event=stop_event,
+                    )
+                except Exception as exc:  # surfaced to the UI, not silently dropped
+                    self.error = str(exc)
+                    events.set_phase(_DEMO_ID, "error", str(exc))
+                    asyncio.run_coroutine_threadsafe(queue.put({"type": "error", "message": str(exc)}), loop)
+                else:
+                    events.clear_phase(_DEMO_ID)
+                finally:
+                    activity.clear_active(_DEMO_ID)
+                    asyncio.run_coroutine_threadsafe(queue.put({"type": "stopped"}), loop)
 
-        self._thread = threading.Thread(target=target, daemon=True)
-        self._thread.start()
+            self._thread = threading.Thread(target=target, daemon=True)
+            self._thread.start()
 
     def stop(self) -> None:
-        if self._stop_event is not None:
-            self._stop_event.set()
-        thread = self._thread
-        if thread is not None:
-            # Wait for the loop to actually exit, so `running` only turns
-            # false once it has -- otherwise a quick Stop -> Start overlaps two
-            # threads on the same mic/queue. A thread still inside a long
-            # model load keeps `running` true until it gets out.
-            thread.join(timeout=3.0)
-            if thread.is_alive():
-                return
-        self._thread = None
+        with self._state_lock:
+            if self._stop_event is not None:
+                self._stop_event.set()
+            thread = self._thread
+            if thread is not None:
+                # Wait for the loop to actually exit, so `running` only turns
+                # false once it has -- otherwise a quick Stop -> Start overlaps
+                # two threads on the same mic/queue. A thread still inside a
+                # long model load keeps `running` true until it gets out.
+                thread.join(timeout=3.0)
+                if thread.is_alive():
+                    return
+            self._thread = None
 
     def generate_notes(self) -> MeetingNotes:
         """Blocking -- call via run_in_threadpool. Works while still
         transcribing (notes reflect everything captured so far) or after
         stopping (the session and its transcript outlive the thread)."""
-        if self._session is None:
-            raise RuntimeError("Start capturing audio first.")
-        if self._engine is not None:
-            activity.set_active(_DEMO_ID, engine=self._engine.value, device=self._compute_device)
+        with self._state_lock:
+            session = self._session
+            engine = self._engine
+            device = self._compute_device
+        if session is None or engine is None:
+            raise Conflict("Start capturing audio first.")
 
         def on_ready() -> None:
-            events.set_phase(f"{_DEMO_ID}:notes", "running", "Generating notes...")
+            events.set_phase(_DEMO_ID, "running", "Generating notes...", stage="notes")
 
         def on_downloading() -> None:
-            events.set_phase(f"{_DEMO_ID}:notes", "loading", "Downloading notes model (first run only)...")
+            events.set_phase(_DEMO_ID, "loading", "Downloading notes model (first run only)...", stage="notes")
 
-        events.set_phase(f"{_DEMO_ID}:notes", "loading", "Preparing notes model...")
-        try:
-            notes = self._session.generate_notes(on_ready=on_ready, on_downloading=on_downloading)
-        except Exception as exc:
-            events.set_phase(f"{_DEMO_ID}:notes", "error", str(exc))
-            raise
-        finally:
-            if not self.running:
-                activity.clear_active(_DEMO_ID)
-        events.clear_phase(f"{_DEMO_ID}:notes")
+        # The notes stage gets its own activity entry, so it never clears
+        # the transcription thread's while that is still running.
+        activity.set_active(_DEMO_ID, engine=engine.value, device=device, stage="notes", stage_label="notes")
+        events.set_phase(_DEMO_ID, "loading", "Preparing notes model...", stage="notes")
+        with self._notes_lock:
+            try:
+                notes = session.generate_notes(on_ready=on_ready, on_downloading=on_downloading)
+            except Exception as exc:
+                events.set_phase(_DEMO_ID, "error", str(exc), stage="notes")
+                raise
+            finally:
+                activity.clear_active(_DEMO_ID, stage="notes")
+        events.clear_phase(_DEMO_ID, stage="notes")
         return notes

@@ -5,14 +5,14 @@ import argparse
 import datetime as dt
 import sys
 
-from pantherlake_ai_core import audio, engine as engine_mod
+from pantherlake_ai_core import engine as engine_mod
 
 from . import pipeline
 
-_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"model": "small", "device": "auto"},
-    engine_mod.Engine.OPENVINO: {"model": "base", "device": "AUTO"},
-}
+# Whisper size per engine: faster-whisper is comfortable with "small" on
+# CPU; "base" is the largest multilingual size Intel pre-converts for
+# OpenVINO short of large-v3.
+_MODEL_SIZE_DEFAULTS = {engine_mod.Engine.PORTABLE: "small", engine_mod.Engine.OPENVINO: "base"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,18 +49,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--compute-device", default=None,
         help="Which device the engine should run on. For --engine portable: "
-             "auto, cpu, or cuda. For --engine openvino: AUTO, CPU, GPU, or NPU. "
-             "Default depends on --engine.",
+             "cpu, cuda, or auto. For --engine openvino: AUTO, CPU, GPU, or NPU. "
+             "Default: cpu for portable, AUTO for openvino.",
     )
     p.add_argument(
         "--compute-type", default="auto",
         help="faster-whisper compute type, portable engine only (auto, int8, float16, ...). Default: auto",
     )
     p.add_argument(
-        "--ov-model-dir", default=None,
+        "--model-path", default=None,
         help="openvino engine only: path to a model you converted yourself with "
              "`optimum-cli export openvino`, instead of downloading Intel's default.",
     )
+    # The flag's old name, still accepted for existing scripts but not advertised.
+    p.add_argument("--ov-model-dir", dest="model_path", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     p.add_argument("--output", default=None, help="Also append translated lines to this text file.")
     p.add_argument(
         "--list-devices", action="store_true",
@@ -69,33 +71,16 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def list_devices() -> None:
-    print("Microphones (--source mic):")
-    for name in audio.list_microphones():
-        print(f"  - {name}")
-    print("\nOutput devices (--source system, captured via loopback):")
-    for name in audio.list_speakers():
-        print(f"  - {name}")
-    print("\nInference devices (--compute-device):")
-    print(engine_mod.describe_devices())
-
-
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.list_devices:
-        list_devices()
+        engine_mod.print_devices(mics=True, speakers=True)
         return 0
 
-    if args.engine:
-        engine = engine_mod.Engine(args.engine)
-    else:
-        from pantherlake_ai_core.engine import list_openvino_devices
-
-        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
-    defaults = _ENGINE_DEFAULTS[engine]
-    model_size = args.model or defaults["model"]
-    compute_device = args.compute_device or defaults["device"]
+    engine = engine_mod.resolve_engine(args.engine)
+    model_size = args.model or _MODEL_SIZE_DEFAULTS[engine]
+    compute_device = args.compute_device or engine_mod.default_device(engine)
 
     print(
         f"Loading '{model_size}' Whisper model on engine={engine.value}, device={compute_device}... "
@@ -124,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
             model_size=model_size,
             compute_device=compute_device,
             compute_type=args.compute_type,
-            ov_model_dir=args.ov_model_dir,
+            ov_model_dir=args.model_path,
             on_result=handle_result,
         )
     except KeyboardInterrupt:

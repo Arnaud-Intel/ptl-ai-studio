@@ -8,8 +8,11 @@ trade for "runs anywhere, simple to trust" in the portable engine.
 """
 from __future__ import annotations
 
+from typing import Callable
+
 import cv2
 import numpy as np
+from pantherlake_ai_core.model_cache import resolve_file
 
 from .coco91_labels import ID2LABEL
 from .types import Detection
@@ -20,14 +23,6 @@ _DEFAULT_FILENAME = "onnx/model_quantized.onnx"
 _IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 _IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 _NO_OBJECT_INDEX = 91  # DETR appends one "no object" class after the 91 real labels
-
-
-def _resolve_model_path(repo_id: str, filename: str, model_path: str | None) -> str:
-    if model_path:
-        return model_path
-    from huggingface_hub import hf_hub_download
-
-    return hf_hub_download(repo_id, filename)
 
 
 def _preprocess(frame_bgr: np.ndarray, short_side: int = 480, max_side: int = 800) -> np.ndarray:
@@ -86,10 +81,11 @@ class PortableDetector:
         filename: str = _DEFAULT_FILENAME,
         model_path: str | None = None,
         confidence_threshold: float = 0.7,
+        on_downloading: Callable[[], None] | None = None,
     ):
         import onnxruntime as ort
 
-        resolved_path = _resolve_model_path(repo_id, filename, model_path)
+        resolved_path = resolve_file(repo_id, filename, local_path=model_path, on_downloading=on_downloading)
         self.session = ort.InferenceSession(resolved_path, providers=["CPUExecutionProvider"])
         self.confidence_threshold = confidence_threshold
 

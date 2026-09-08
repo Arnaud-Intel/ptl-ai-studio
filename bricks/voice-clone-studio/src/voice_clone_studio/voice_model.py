@@ -5,9 +5,11 @@ forward passes (`BaseSpeakerTTS.model.infer`, `ToneColorConverter.model.voice_co
 """
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 import torch
-from huggingface_hub import hf_hub_download
+from pantherlake_ai_core.engine import ov_config_for
+from pantherlake_ai_core.model_cache import is_file_cached, resolve_file
 
 from ._openvoice import se_extractor
 from ._openvoice.api import BaseSpeakerTTS, OpenVoiceBaseClass, ToneColorConverter
@@ -28,11 +30,12 @@ _CHECKPOINT_FILES = {
 }
 
 
-def resolve_checkpoints(local_dir: str | None = None) -> dict:
+def resolve_checkpoints(local_dir: str | None = None, on_downloading: Callable[[], None] | None = None) -> dict:
     """Paths to the five OpenVoice checkpoint files: from `local_dir` (a
     folder laid out like the upstream repo, i.e. containing `checkpoints/`)
     if given -- what `--model-path` means -- else downloaded from the Hub
-    and cached."""
+    and cached. `on_downloading` fires once, before the first fetch, if
+    any of the five still has to be downloaded."""
     if local_dir:
         root = Path(local_dir)
         paths = {key: root / rel for key, rel in _CHECKPOINT_FILES.items()}
@@ -40,14 +43,16 @@ def resolve_checkpoints(local_dir: str | None = None) -> dict:
         if missing:
             raise FileNotFoundError(f"Checkpoint file(s) not found under {local_dir}: {', '.join(missing)}")
         return {key: str(p) for key, p in paths.items()}
-    return {key: hf_hub_download(REPO_ID, rel) for key, rel in _CHECKPOINT_FILES.items()}
+    if on_downloading is not None and not all(is_file_cached(REPO_ID, rel) for rel in _CHECKPOINT_FILES.values()):
+        on_downloading()
+    return {key: resolve_file(REPO_ID, rel) for key, rel in _CHECKPOINT_FILES.items()}
 
 
-def load_models(local_dir: str | None = None):
+def load_models(local_dir: str | None = None, on_downloading: Callable[[], None] | None = None):
     """Loads the base speaker TTS, the tone converter, and the TTS's own
     default-voice embedding (the fixed 'source' tone every clone starts
     from) -- pure PyTorch, CPU. Both engine backends load through this."""
-    paths = resolve_checkpoints(local_dir)
+    paths = resolve_checkpoints(local_dir, on_downloading)
 
     tts = BaseSpeakerTTS(paths["en_config"], device="cpu")
     tts.load_ckpt(paths["en_ckpt"])
@@ -59,12 +64,12 @@ def load_models(local_dir: str | None = None):
     return tts, converter, source_se
 
 
-def load_tts_only(local_dir: str | None = None) -> BaseSpeakerTTS:
+def load_tts_only(local_dir: str | None = None, on_downloading: Callable[[], None] | None = None) -> BaseSpeakerTTS:
     """Loads just BaseSpeakerTTS -- for consumers that only need speech in
     the base voice, with no cloning stage at all (e.g. voice-assistant's
     generic spoken-reply voice). Skips loading ToneColorConverter entirely,
     since it would otherwise sit there unused."""
-    paths = resolve_checkpoints(local_dir)
+    paths = resolve_checkpoints(local_dir, on_downloading)
     tts = BaseSpeakerTTS(paths["en_config"], device="cpu")
     tts.load_ckpt(paths["en_ckpt"])
     return tts
@@ -88,7 +93,7 @@ def accelerate_tts_with_openvino(tts: BaseSpeakerTTS, device: str = "CPU") -> No
         ov_model = ov.convert_model(wrapped, example_input=wrapped.get_example_input())
         ov.save_model(ov_model, ir_path)
 
-    compiled = core.compile_model(ov_model, device)
+    compiled = core.compile_model(ov_model, device, ov_config_for(device))
 
     def infer(x, x_lengths, sid, noise_scale, length_scale, noise_scale_w):
         output = compiled((x, x_lengths, sid, noise_scale, length_scale, noise_scale_w))

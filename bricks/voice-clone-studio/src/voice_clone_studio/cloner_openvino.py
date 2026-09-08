@@ -1,5 +1,6 @@
 import torch
 from openvino import Core
+from pantherlake_ai_core.engine import ov_config_for
 
 from . import voice_model
 
@@ -10,10 +11,13 @@ class OpenVINOCloner:
     ToneColorConverter's tone transform -- run as OpenVINO IR models
     instead of native PyTorch, on CPU/GPU/NPU. Converted IR is cached on
     disk (voice_model.ir_cache_dir()) since conversion itself takes
-    several seconds and only needs to happen once per machine."""
+    several seconds and only needs to happen once per machine; the
+    compiled form is cached too (ov_config_for) for GPU/NPU targets."""
 
-    def __init__(self, device="CPU", model_path=None):
-        self.tts, self.converter, self.source_se = voice_model.load_models(local_dir=model_path)
+    def __init__(self, device="CPU", model_path=None, on_downloading=None):
+        self.tts, self.converter, self.source_se = voice_model.load_models(
+            local_dir=model_path, on_downloading=on_downloading
+        )
 
         cache_dir = voice_model.ir_cache_dir()
         tts_ir_path = cache_dir / "openvoice_en_tts.xml"
@@ -23,8 +27,9 @@ class OpenVINOCloner:
         ov_tts = self._convert_or_load(core, tts_ir_path, voice_model.OVWrapTTS(self.tts))
         ov_conv = self._convert_or_load(core, conv_ir_path, voice_model.OVWrapConverter(self.converter))
 
-        compiled_tts = core.compile_model(ov_tts, device)
-        compiled_conv = core.compile_model(ov_conv, device)
+        config = ov_config_for(device)
+        compiled_tts = core.compile_model(ov_tts, device, config)
+        compiled_conv = core.compile_model(ov_conv, device, config)
 
         self.tts.model.infer = self._patched_infer(compiled_tts)
         self.converter.model.voice_conversion = self._patched_voice_conversion(compiled_conv)

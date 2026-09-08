@@ -14,6 +14,7 @@ from pantherlake_ai_core.engine import Engine
 from smart_recall import pipeline
 
 from . import activity, events
+from .errors import Conflict
 
 _DEMO_ID = "smart-recall"
 
@@ -44,7 +45,7 @@ class SmartRecallRunner:
         embed_device: str,
     ) -> None:
         if self.running:
-            raise RuntimeError("smart-recall is already running")
+            raise Conflict("smart-recall is already running")
 
         self.error = None
         self._stop_event = threading.Event()
@@ -64,8 +65,8 @@ class SmartRecallRunner:
             activity.set_active(
                 _DEMO_ID, engine=embed_engine.value, device=embed_device, stage="embed", stage_label="Indexing"
             )
-            events.set_phase(f"{_DEMO_ID}:ocr", "running", "Recording and indexing...")
-            events.set_phase(f"{_DEMO_ID}:embed", "running", "Recording and indexing...")
+            events.set_phase(_DEMO_ID, "running", "Recording and indexing...", stage="ocr")
+            events.set_phase(_DEMO_ID, "running", "Recording and indexing...", stage="embed")
             try:
                 pipeline.run(
                     screen_index=screen_index,
@@ -79,12 +80,12 @@ class SmartRecallRunner:
                 )
             except Exception as exc:  # surfaced to the UI, not silently dropped
                 self.error = str(exc)
-                events.set_phase(f"{_DEMO_ID}:ocr", "error", str(exc))
-                events.set_phase(f"{_DEMO_ID}:embed", "error", str(exc))
+                events.set_phase(_DEMO_ID, "error", str(exc), stage="ocr")
+                events.set_phase(_DEMO_ID, "error", str(exc), stage="embed")
                 emit({"type": "error", "message": str(exc)})
             else:
-                events.clear_phase(f"{_DEMO_ID}:ocr")
-                events.clear_phase(f"{_DEMO_ID}:embed")
+                events.clear_phase(_DEMO_ID, stage="ocr")
+                events.clear_phase(_DEMO_ID, stage="embed")
             finally:
                 activity.clear_active(_DEMO_ID, stage="ocr")
                 activity.clear_active(_DEMO_ID, stage="embed")
@@ -109,32 +110,34 @@ class SmartRecallRunner:
 
     def reset(self) -> None:
         if self.running:
-            raise RuntimeError("Stop recording before resetting the index.")
+            raise Conflict("Stop recording before resetting the index.")
         with self._search_lock:
             pipeline.reset_index()
             self._search_index = None
             self._search_device = None
 
-    def search(self, *, question: str, top_k: int, device: str) -> list:
+    def search(self, *, question: str, top_k: int, device: str | None = None) -> list:
         """Blocking -- loads (or reuses) the search-side index, which only
-        needs the embedder the index was actually built with, not OCR."""
+        needs the embedder the index was actually built with, not OCR.
+        `device` None means that embedding engine's default device."""
         with self._search_lock:
             try:
                 if self._search_index is None or self._search_device != device:
-                    events.set_phase(f"{_DEMO_ID}:search", "loading", f"Loading search index (device={device})...")
+                    label = device or "default"
+                    events.set_phase(_DEMO_ID, "loading", f"Loading search index (device={label})...", stage="search")
                     self._search_index = pipeline.RecallIndex(device=device)
                     self._search_device = device
                 activity.set_active(
-                    _DEMO_ID, engine=self._search_index.embed_engine.value, device=device,
+                    _DEMO_ID, engine=self._search_index.embed_engine.value, device=device or "AUTO",
                     stage="search", stage_label="Search",
                 )
-                events.set_phase(f"{_DEMO_ID}:search", "running", "Searching...")
+                events.set_phase(_DEMO_ID, "running", "Searching...", stage="search")
                 try:
                     results = self._search_index.search(question, top_k=top_k)
                 finally:
                     activity.clear_active(_DEMO_ID, stage="search")
-                events.clear_phase(f"{_DEMO_ID}:search")
+                events.clear_phase(_DEMO_ID, stage="search")
                 return results
             except Exception as exc:  # covers the index load too (e.g. "nothing recorded yet"), not just the search
-                events.set_phase(f"{_DEMO_ID}:search", "error", str(exc))
+                events.set_phase(_DEMO_ID, "error", str(exc), stage="search")
                 raise

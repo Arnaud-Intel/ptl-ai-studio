@@ -9,11 +9,6 @@ from pantherlake_ai_core import video
 
 from .pipeline import OcrSession
 
-_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"device": "cpu"},
-    engine_mod.Engine.OPENVINO: {"device": "AUTO"},
-}
-
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -34,7 +29,10 @@ def build_parser() -> argparse.ArgumentParser:
              "--translate). Default: openvino if installed and a device is available, otherwise "
              "portable.",
     )
-    p.add_argument("--compute-device", default=None, help="openvino engine only: AUTO, CPU, GPU, or NPU.")
+    p.add_argument(
+        "--compute-device", default=None,
+        help="openvino engine only: AUTO, CPU, GPU, or NPU. Default: AUTO.",
+    )
     p.add_argument("--model-path", default=None, help="Use a local model instead of downloading the default.")
     p.add_argument(
         "--translate", action="store_true",
@@ -45,25 +43,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="List available cameras, screens, and inference devices, then exit.",
     )
     return p
-
-
-def list_devices() -> None:
-    from pantherlake_ai_core.engine import describe_devices
-
-    print("Cameras (--source webcam --camera-index N):")
-    cameras = video.list_cameras()
-    if cameras:
-        for index in cameras:
-            print(f"  - {index}")
-    else:
-        print("  (none found)")
-
-    print("\nScreens (--source screen --screen-index N):")
-    for screen in video.list_screens():
-        print(f"  - {screen['index']}: {screen['width']}x{screen['height']}")
-
-    print("\nInference devices (--compute-device):")
-    print(describe_devices())
 
 
 def _load_image(args):
@@ -88,16 +67,11 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.list_devices:
-        list_devices()
+        engine_mod.print_devices(cameras=True, screens=True)
         return 0
 
-    if args.engine:
-        engine = engine_mod.Engine(args.engine)
-    else:
-        from pantherlake_ai_core.engine import list_openvino_devices
-
-        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
-    compute_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]
+    engine = engine_mod.resolve_engine(args.engine)
+    compute_device = args.compute_device or engine_mod.default_device(engine)
 
     image = _load_image(args)
     if image is None:

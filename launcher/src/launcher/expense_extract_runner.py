@@ -20,8 +20,10 @@ from expense_extract import pipeline
 from pantherlake_ai_core.engine import Engine
 
 from . import activity, events
+from .errors import Conflict
 
 _DEMO_ID = "expense-extract"
+_STAGES = ("ocr", "llm")
 
 
 class ExpenseExtractRunner:
@@ -46,7 +48,7 @@ class ExpenseExtractRunner:
         llm_device: str,
     ) -> None:
         if self.running:
-            raise RuntimeError("expense-extract is already running")
+            raise Conflict("expense-extract is already running")
 
         self.error = None
         self._stop_event = threading.Event()
@@ -64,8 +66,8 @@ class ExpenseExtractRunner:
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=ocr_engine.value, device=ocr_device, stage="ocr", stage_label="OCR")
             activity.set_active(_DEMO_ID, engine=llm_engine.value, device=llm_device, stage="llm", stage_label="Structuring")
-            events.set_phase(f"{_DEMO_ID}:ocr", "running", "Extracting receipts...")
-            events.set_phase(f"{_DEMO_ID}:llm", "running", "Structuring extracted text...")
+            events.set_phase(_DEMO_ID, "running", "Extracting receipts...", stage="ocr")
+            events.set_phase(_DEMO_ID, "running", "Structuring extracted text...", stage="llm")
             try:
                 results = pipeline.run(
                     folder=folder,
@@ -82,15 +84,15 @@ class ExpenseExtractRunner:
                 emit({"type": "done", "count": len(results), "structured": len(ok), "total": total})
             except Exception as exc:  # surfaced to the UI, not silently dropped
                 self.error = str(exc)
-                events.set_phase(f"{_DEMO_ID}:ocr", "error", str(exc))
-                events.set_phase(f"{_DEMO_ID}:llm", "error", str(exc))
+                for stage in _STAGES:
+                    events.set_phase(_DEMO_ID, "error", str(exc), stage=stage)
                 emit({"type": "error", "message": str(exc)})
             else:
-                events.clear_phase(f"{_DEMO_ID}:ocr")
-                events.clear_phase(f"{_DEMO_ID}:llm")
+                for stage in _STAGES:
+                    events.clear_phase(_DEMO_ID, stage=stage)
             finally:
-                activity.clear_active(_DEMO_ID, stage="ocr")
-                activity.clear_active(_DEMO_ID, stage="llm")
+                for stage in _STAGES:
+                    activity.clear_active(_DEMO_ID, stage=stage)
 
         self._thread = threading.Thread(target=target, daemon=True)
         self._thread.start()

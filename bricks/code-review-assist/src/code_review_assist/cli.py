@@ -10,14 +10,14 @@ from pantherlake_ai_core import engine as engine_mod
 from .samples import SAMPLES
 from .session import CodeReviewSession
 
-_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"device": "cpu"},
-    # None: resolved at run time by pantherlake_ai_core.engine's
-    # preferred_large_model_device() -- the machine's discrete GPU if it has
-    # one (this brick's 30B coding model needs real VRAM), else AUTO. Never a
-    # hardcoded card id from one dev machine.
-    engine_mod.Engine.OPENVINO: {"device": None},
-}
+
+def _default_device(engine: engine_mod.Engine) -> str:
+    # This brick's default openvino model is a 30B coder that needs real
+    # VRAM: the discrete GPU when the machine has one, else AUTO -- never
+    # one dev machine's card id baked in as everyone's default.
+    if engine == engine_mod.Engine.OPENVINO:
+        return engine_mod.preferred_large_model_device()
+    return engine_mod.default_device(engine)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -41,7 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
              "requires this brick's `openvino` extra). Default: openvino if installed and a device "
              "is available, otherwise portable.",
     )
-    p.add_argument("--compute-device", default=None, help="Device for the openvino engine. Ignored for portable.")
+    p.add_argument(
+        "--compute-device", default=None,
+        help="Device for the openvino engine. Default: the discrete GPU if there is one, else AUTO. "
+             "Ignored for portable.",
+    )
     p.add_argument(
         "--list-devices", action="store_true",
         help="List available inference devices, then exit.",
@@ -58,9 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.list_devices:
-        from pantherlake_ai_core.engine import describe_devices
-
-        print(describe_devices())
+        engine_mod.print_devices()
         return 0
 
     if args.list_samples:
@@ -71,17 +73,8 @@ def main(argv: list[str] | None = None) -> int:
     if sum(bool(v) for v in (args.folder, args.diff_file, args.sample)) != 1:
         parser.error("exactly one of --folder, --diff-file, --sample is required")
 
-    if args.engine:
-        engine = engine_mod.Engine(args.engine)
-    else:
-        from pantherlake_ai_core.engine import list_openvino_devices
-
-        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
-    compute_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]
-    if compute_device is None:
-        from pantherlake_ai_core.engine import preferred_large_model_device
-
-        compute_device = preferred_large_model_device()
+    engine = engine_mod.resolve_engine(args.engine)
+    compute_device = args.compute_device or _default_device(engine)
 
     if args.diff_file:
         diff_text = Path(args.diff_file).read_text()

@@ -12,6 +12,7 @@ from pantherlake_ai_core.engine import Engine
 from voice_assistant import session
 
 from . import activity, events
+from .errors import Conflict
 
 _DEMO_ID = "voice-assistant"
 
@@ -40,7 +41,7 @@ class VoiceAssistantRunner:
         speak_replies: bool,
     ) -> None:
         if self.running:
-            raise RuntimeError("voice-assistant is already running")
+            raise Conflict("voice-assistant is already running")
 
         self.error = None
         self._stop_event = threading.Event()

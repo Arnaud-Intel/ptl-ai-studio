@@ -17,6 +17,7 @@ from object_detection.types import Detection
 from pantherlake_ai_core.engine import Engine
 
 from . import activity, events
+from .errors import Conflict
 
 _DEMO_ID = "object-detection"
 _JPEG_QUALITY = 80
@@ -45,7 +46,7 @@ class ObjectDetectionRunner:
         compute_device: str,
     ) -> None:
         if self.running:
-            raise RuntimeError("object-detection is already running")
+            raise Conflict("object-detection is already running")
 
         self.error = None
         with self._frame_lock:
@@ -66,6 +67,9 @@ class ObjectDetectionRunner:
         def on_ready() -> None:
             events.set_phase(_DEMO_ID, "running", "Detecting objects...")
 
+        def on_downloading() -> None:
+            events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine.value})...")
+
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
             events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine.value}, device={compute_device})...")
@@ -78,6 +82,7 @@ class ObjectDetectionRunner:
                     compute_device=compute_device,
                     on_frame=on_frame,
                     on_ready=on_ready,
+                    on_downloading=on_downloading,
                     stop_event=stop_event,
                 )
             except Exception as exc:  # surfaced to the UI, not silently dropped

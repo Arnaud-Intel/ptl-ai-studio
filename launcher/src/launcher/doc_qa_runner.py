@@ -11,6 +11,7 @@ from doc_qa.types import Answer
 from pantherlake_ai_core.engine import Engine
 
 from . import activity, events
+from .errors import Conflict
 
 _DEMO_ID = "doc-qa"
 
@@ -51,7 +52,7 @@ class DocQARunner:
         """Blocking."""
         with self._lock:
             if self._session is None:
-                raise RuntimeError("Ingest a folder first.")
+                raise Conflict("Ingest a folder first.")
             activity.set_active(_DEMO_ID, engine=self._engine, device=self._device)
             events.set_phase(_DEMO_ID, "running", "Answering...")
             try:

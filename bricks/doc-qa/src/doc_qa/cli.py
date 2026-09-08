@@ -9,11 +9,6 @@ from pantherlake_ai_core import engine as engine_mod
 from .pipeline import DocQASession
 from .samples import SAMPLES
 
-_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"device": "cpu"},
-    engine_mod.Engine.OPENVINO: {"device": "AUTO"},
-}
-
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
@@ -32,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--compute-device", default=None,
-        help="Device for the openvino engine (AUTO, CPU, GPU, NPU). Ignored for the portable engine.",
+        help="Device for the openvino engine (AUTO, CPU, GPU, NPU; default AUTO). Ignored for the portable engine.",
     )
     p.add_argument("--reindex", action="store_true", help="Rebuild the index even if a cached one exists.")
     p.add_argument("--top-k", type=int, default=4, help="Number of source chunks to retrieve per question. Default: 4")
@@ -54,8 +49,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.list_devices:
-        print("Inference devices (--compute-device):")
-        print(engine_mod.describe_devices())
+        engine_mod.print_devices()
         return 0
 
     if args.list_samples:
@@ -78,14 +72,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.folder:
         parser.error("folder is required (unless using --list-samples, or --sample with its bundled folder)")
 
-    if args.engine:
-        engine = engine_mod.Engine(args.engine)
-    else:
-        from pantherlake_ai_core.engine import list_openvino_devices
-
-        engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
-    defaults = _ENGINE_DEFAULTS[engine]
-    device = args.compute_device or defaults["device"]
+    engine = engine_mod.resolve_engine(args.engine)
+    device = args.compute_device or engine_mod.default_device(engine)
 
     session = DocQASession(engine, device=device)
 

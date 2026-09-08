@@ -13,6 +13,7 @@ from pantherlake_ai_core.engine import Engine
 from pantherlake_ai_core.types import TranslationResult
 
 from . import activity, events
+from .errors import Conflict
 
 _DEMO_ID = "live-translation"
 
@@ -39,7 +40,7 @@ class LiveTranslationRunner:
         compute_device: str,
     ) -> None:
         if self.running:
-            raise RuntimeError("live-translation is already running")
+            raise Conflict("live-translation is already running")
 
         self.error = None
         self._stop_event = threading.Event()

@@ -14,9 +14,12 @@ local_demo/
       audio.py             <- mic / system-audio (loopback) capture, speaker playback
       video.py               <- webcam / screen capture
       segmenter.py             <- lightweight energy-based voice-activity segmentation
-      engine.py                 <- Engine enum + OpenVINO device discovery
-      telemetry.py               <- CPU/GPU/NPU utilization reading
-      types.py                    <- small shared result types (e.g. TranslationResult)
+      engine.py                 <- Engine enum, device discovery, and the shared engine/device
+                                   defaults every CLI and the launcher resolve through
+      model_cache.py             <- Hub model resolution (repo id or --model-path -> local path)
+                                    with an "about to download" callback
+      telemetry.py                <- CPU/GPU/NPU utilization reading
+      types.py                     <- small shared result types (e.g. TranslationResult)
   bricks/
     live-translation/       <- speech -> English translation (streaming-demo template)
       pyproject.toml
@@ -80,9 +83,14 @@ local_demo/
       src/<next_brick>/
   launcher/                <- panther-lake-launcher: the web UI that runs the bricks
     src/launcher/
-      registry.py           <- every demo card shown, including not-yet-built ones
-      app.py                <- FastAPI app (REST + WebSocket)
-      static/                <- vanilla HTML/CSS/JS front end, no build step
+      registry.py           <- every demo card shown, including not-yet-built ones, plus what
+                               each one's /devices route should enumerate
+      app.py                <- FastAPI app (REST + WebSocket): one route set per brick on top of
+                               shared helpers (resolve(), error_response(), mjpeg_stream(), ws_drain())
+      *_runner.py            <- one per brick: owns its thread/session, reports phases + devices
+      errors.py               <- Conflict: the "not in a state to do that" error (-> HTTP 409)
+      events.py / activity.py <- per-brick lifecycle phase (for /api/status) / device in use (for gauges)
+      static/                  <- vanilla HTML/CSS/JS front end, no build step
 ```
 
 This is a single [`uv` workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/):
@@ -132,9 +140,34 @@ not just one.
    -> emit) in its own `pipeline.py` function that takes an `on_result`
    callback, the way `live-translation` does -- that's what let the CLI and
    the launcher share one implementation instead of forking it.
+
+   The `core` helpers every brick is expected to use rather than re-implement:
+   - `engine.resolve_engine(args.engine)` and `engine.default_device(engine)`
+     for the `--engine` / `--compute-device` defaults. The launcher applies
+     the same two, so "no choice" means the same thing in the UI and on the
+     command line. `preferred_large_model_device()` is only for a model that
+     genuinely needs a discrete GPU's VRAM (see code-review-assist).
+   - `engine.print_devices(mics=..., cameras=..., ...)` for `--list-devices`.
+   - `model_cache.resolve_snapshot(repo_id, local_dir=args.model_path,
+     on_downloading=...)` / `resolve_file(...)` to turn a Hub repo id (or the
+     user's `--model-path`) into a local path. Thread `on_downloading` (and
+     `on_ready`, fired once the model is actually up) from your pipeline /
+     session through to the factory: the launcher wires them to its
+     "Downloading (first run only)" / "loading -> running" status.
+   - `engine.ov_config_for(device)` as the config for every OpenVINO
+     `compile_model` / `openvino_genai` pipeline, so GPU/NPU compiles land in
+     the one shared cache under `~/.cache/pantherlake-ai-studio/ov_cache`
+     instead of a per-CWD `ov_cache/`.
 4. Flip its entry in [`launcher/src/launcher/registry.py`](launcher/src/launcher/registry.py)
-   from `status="planned"` to `status="available"`, and add routes +
-   control panel for it in the launcher. Three templates to follow,
+   from `status="planned"` to `status="available"`, declare which hardware
+   lists its controls need (`devices=("microphones", "cameras", ...)`) and
+   its samples module (`samples="my_brick.samples"`) -- that is all
+   `GET /api/<id>/devices` needs -- and add routes + a control panel for it
+   in the launcher. Routes go through `resolve()` for engine/device and
+   `error_response()` for errors; a runner raises `launcher.errors.Conflict`
+   for "already running" / "do X first" (a 409), `ValueError` /
+   `FileNotFoundError` for bad input (a 400), and lets a real failure
+   propagate (a 500 carrying the message). Three templates to follow,
    depending on the demo's shape (see [launcher/README.md](launcher/README.md)
    for the detail): `live-translation`'s WebSocket/background-thread routes
    for a stream where every result matters, `doc-qa`'s (and `screen-ocr`'s)

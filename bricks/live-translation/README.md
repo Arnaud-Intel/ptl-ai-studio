@@ -80,9 +80,9 @@ Press `Ctrl+C` to stop.
 | `--audio-device NAME` | Substring to match a specific microphone/output device name. Default: system default. |
 | `--engine {portable,openvino}` | Inference backend. Default: `portable`. |
 | `--model NAME` | Model size: `tiny`, `base`, `small`, `medium`, `large-v3`. Default depends on `--engine` (`small` for portable, `base` for openvino). |
-| `--compute-device NAME` | Device to run on. For `portable`: `auto`, `cpu`, `cuda`. For `openvino`: `AUTO`, `CPU`, `GPU`, `NPU`. Default depends on `--engine`. |
+| `--compute-device NAME` | Device to run on. For `portable`: `cpu`, `cuda`, `auto`. For `openvino`: `AUTO`, `CPU`, `GPU`, `NPU`. Default: `cpu` for portable, `AUTO` for openvino. |
 | `--compute-type NAME` | `portable` engine only — faster-whisper compute type (`int8`, `float16`, `float32`, ...). Default: `auto`. |
-| `--ov-model-dir PATH` | `openvino` engine only — use a model you converted yourself instead of Intel's default pre-converted one. |
+| `--model-path PATH` | `openvino` engine only — use a model you converted yourself instead of Intel's default pre-converted one (the older `--ov-model-dir` spelling still works). |
 | `--output FILE` | Also append each translated line to a text file. |
 | `--list-devices` | List available microphones, output devices, and inference devices, then exit. |
 
@@ -116,7 +116,7 @@ model, convert it yourself:
 
 ```bash
 uv run --extra openvino optimum-cli export openvino --trust-remote-code --model openai/whisper-small ./whisper-small-ov
-uv run live-translate --engine openvino --ov-model-dir ./whisper-small-ov
+uv run live-translate --engine openvino --model-path ./whisper-small-ov
 ```
 
 ## Tuning for your setup

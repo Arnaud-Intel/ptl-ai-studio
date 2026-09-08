@@ -2,16 +2,24 @@
 ONNX Runtime, CPU."""
 from __future__ import annotations
 
+from typing import Callable
+
 import numpy as np
 
 from . import matte
 
 
 class PortableSegmenter:
-    def __init__(self, repo_id: str = matte.DEFAULT_REPO, filename: str = matte.DEFAULT_FILENAME, model_path: str | None = None):
+    def __init__(
+        self,
+        repo_id: str = matte.DEFAULT_REPO,
+        filename: str = matte.DEFAULT_FILENAME,
+        model_path: str | None = None,
+        on_downloading: Callable[[], None] | None = None,
+    ):
         import onnxruntime as ort
 
-        resolved_path = matte.resolve_model_path(repo_id, filename, model_path)
+        resolved_path = matte.resolve_model_path(repo_id, filename, model_path, on_downloading)
         self.session = ort.InferenceSession(resolved_path, providers=["CPUExecutionProvider"])
 
     def segment(self, frame: np.ndarray) -> np.ndarray:

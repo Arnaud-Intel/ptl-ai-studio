@@ -5,19 +5,9 @@ import argparse
 import sys
 
 from pantherlake_ai_core import engine as engine_mod
-from pantherlake_ai_core import video
 
 from . import pipeline
 from .samples import SAMPLES
-
-_OCR_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"device": "cpu"},
-    engine_mod.Engine.OPENVINO: {"device": "AUTO"},
-}
-_EMBED_ENGINE_DEFAULTS = {
-    engine_mod.Engine.PORTABLE: {"device": "AUTO"},
-    engine_mod.Engine.OPENVINO: {"device": "AUTO"},
-}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -39,13 +29,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Backend for the OCR stage. Default: openvino if installed and a device is available, "
              "otherwise portable.",
     )
-    record.add_argument("--ocr-device", default=None, help="openvino OCR engine only: AUTO, CPU, GPU, or NPU.")
+    record.add_argument(
+        "--ocr-device", default=None,
+        help="openvino OCR engine only: AUTO, CPU, GPU, or NPU. Default: AUTO.",
+    )
     record.add_argument(
         "--embed-engine", choices=[e.value for e in engine_mod.Engine], default=None,
         help="Backend for the embedding stage. Fixed for the life of the index -- see --reset. "
              "Default: openvino if installed and a device is available, otherwise portable.",
     )
-    record.add_argument("--embed-device", default=None, help="openvino embed engine only: AUTO, CPU, GPU, or NPU.")
+    record.add_argument(
+        "--embed-device", default=None,
+        help="openvino embed engine only: AUTO, CPU, GPU, or NPU. Default: AUTO.",
+    )
     record.add_argument(
         "--reset", action="store_true",
         help="Wipe any existing index and saved screenshots before starting (e.g. to switch --embed-engine).",
@@ -58,7 +54,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     search.add_argument("--sample", default=None, help="Use a named example question instead (see list-samples).")
     search.add_argument("--top-k", type=int, default=5, help="Number of matches to show. Default: 5")
-    search.add_argument("--embed-device", default="AUTO", help="AUTO, CPU, GPU, or NPU (openvino index only).")
+    search.add_argument(
+        "--embed-device", default=None,
+        help="AUTO, CPU, GPU, or NPU (openvino index only). Default: the index's engine's default device.",
+    )
 
     sub.add_parser("list-devices", help="List available screens and inference devices, then exit.")
     sub.add_parser("list-samples", help="List available example search questions, then exit.")
@@ -66,26 +65,15 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _list_devices() -> None:
-    print("Screens (--screen-index N):")
-    for screen in video.list_screens():
-        print(f"  - {screen['index']}: {screen['width']}x{screen['height']}")
-    print("\nInference devices (--ocr-device / --embed-device):")
-    print(engine_mod.describe_devices())
-
-
 def _run_record(args: argparse.Namespace) -> int:
     if args.reset:
         pipeline.reset_index()
         print("Existing index and screenshots cleared.")
 
-    from pantherlake_ai_core.engine import list_openvino_devices
-
-    default_engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
-    ocr_engine = engine_mod.Engine(args.ocr_engine) if args.ocr_engine else default_engine
-    embed_engine = engine_mod.Engine(args.embed_engine) if args.embed_engine else default_engine
-    ocr_device = args.ocr_device or _OCR_ENGINE_DEFAULTS[ocr_engine]["device"]
-    embed_device = args.embed_device or _EMBED_ENGINE_DEFAULTS[embed_engine]["device"]
+    ocr_engine = engine_mod.resolve_engine(args.ocr_engine)
+    embed_engine = engine_mod.resolve_engine(args.embed_engine)
+    ocr_device = args.ocr_device or engine_mod.default_device(ocr_engine)
+    embed_device = args.embed_device or engine_mod.default_device(embed_engine)
 
     print(
         f"OCR stage: engine={ocr_engine.value}, device={ocr_device}\n"
@@ -166,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.command == "list-devices":
-        _list_devices()
+        engine_mod.print_devices(screens=True, inference_flag="--ocr-device / --embed-device")
         return 0
     if args.command == "list-samples":
         for s in SAMPLES:

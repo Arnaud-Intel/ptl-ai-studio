@@ -44,12 +44,12 @@ default, comfortably fits the B60's 24GB either way).
 
 ## Device
 
-The OpenVINO engine defaults to `GPU.1` (this dev machine's Arc B60,
-24GB VRAM -- the model needs ~15GB, comfortable headroom), not `AUTO` the
-way every other brick's OpenVINO default is. `GPU.1` is this specific
-machine's card id, not a portable convention -- override with
-`--compute-device` (CLI) or the compute-device dropdown (launcher) on a
-machine without that exact device. The model isn't split across both
+The OpenVINO engine defaults to the machine's **discrete GPU** when it has
+one (`pantherlake_ai_core.engine.preferred_large_model_device()` -- on
+this dev machine that's `GPU.1`, the Arc B60 with 24GB VRAM; the model
+needs ~15GB, comfortable headroom), and to `AUTO` otherwise, like every
+other brick. Override with `--compute-device` (CLI) or the compute-device
+dropdown (launcher), which pre-selects the same card. The model isn't split across both
 GPUs: `openvino_genai.LLMPipeline` targets a single device string, and
 there's no good way to shard one model's weights across the
 memory-bandwidth-limited, system-RAM-sharing iGPU and the dGPU. Two GPUs

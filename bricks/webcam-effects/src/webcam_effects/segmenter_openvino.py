@@ -10,7 +10,10 @@ shape-inference error rather than a clean Python exception).
 """
 from __future__ import annotations
 
+from typing import Callable
+
 import numpy as np
+from pantherlake_ai_core.engine import ov_config_for
 
 from . import matte
 
@@ -22,16 +25,16 @@ class OpenVINOSegmenter:
         repo_id: str = matte.DEFAULT_REPO,
         filename: str = matte.DEFAULT_FILENAME,
         model_path: str | None = None,
+        on_downloading: Callable[[], None] | None = None,
     ):
         from openvino import Core
 
-        resolved_path = matte.resolve_model_path(repo_id, filename, model_path)
+        resolved_path = matte.resolve_model_path(repo_id, filename, model_path, on_downloading)
         core = Core()
         model = core.read_model(resolved_path)
         model.reshape({model.inputs[0].get_any_name(): [1, 3, matte.INPUT_SIZE, matte.INPUT_SIZE]})
 
-        ov_config = {"CACHE_DIR": "ov_cache"} if device == "NPU" or "GPU" in device else {}
-        compiled = core.compile_model(model, device_name=device, config=ov_config)
+        compiled = core.compile_model(model, device_name=device, config=ov_config_for(device))
         self.infer_request = compiled.create_infer_request()
 
     def segment(self, frame: np.ndarray) -> np.ndarray:

@@ -23,7 +23,7 @@ from doc_qa.engine_factory import create_embedder
 from doc_qa.store import VectorStore
 from doc_qa.types import Chunk, RetrievedChunk
 from pantherlake_ai_core import video
-from pantherlake_ai_core.engine import Engine
+from pantherlake_ai_core.engine import Engine, default_device
 from screen_ocr.pipeline import OcrSession
 
 from .change_detection import frame_changed
@@ -83,15 +83,16 @@ class RecallIndex:
     model than the one that indexed the chunks would produce meaningless
     similarity scores -- vectors from two different embedding spaces
     aren't comparable, mixing them isn't a quality tradeoff, it's just
-    wrong. Only the compute *device* is actually a free choice here.
+    wrong. Only the compute *device* is actually a free choice here --
+    `None` means that engine's default.
     """
 
-    def __init__(self, *, device: str = "AUTO"):
+    def __init__(self, *, device: str | None = None):
         meta = _load_index_meta()
         if meta is None:
             raise RuntimeError("Nothing has been recorded yet -- run `smart-recall record` first.")
         self.embed_engine = Engine(meta["embed_engine"])
-        self.embedder = create_embedder(self.embed_engine, device=device)
+        self.embedder = create_embedder(self.embed_engine, device=device or default_device(self.embed_engine))
         self.store = _load_store()
 
     def search(self, question: str, top_k: int = 5) -> list[RetrievedChunk]:
