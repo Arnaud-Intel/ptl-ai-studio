@@ -99,15 +99,30 @@ def run(
     results_lock = threading.Lock()
     _DONE = object()
 
+    def stopped() -> bool:
+        return stop_event is not None and stop_event.is_set()
+
+    def put_unless_stopped(item) -> bool:
+        # Bounded queue: never block forever on put(), or a stop requested
+        # while the LLM stage is busy could never be honored.
+        while not stopped():
+            try:
+                handoff.put(item, timeout=0.2)
+                return True
+            except queue.Full:
+                continue
+        return False
+
     def ocr_worker() -> None:
         try:
             for index, path in enumerate(images, start=1):
-                if stop_event is not None and stop_event.is_set():
+                if stopped():
                     break
                 on_ocr_start(path, index, len(images))
                 image = cv2.imread(str(path))
                 text = ocr_session.extract(image).text if image is not None else ""
-                handoff.put((path.name, text))
+                if not put_unless_stopped((path.name, text)):
+                    break
         finally:
             handoff.put(_DONE)
 
@@ -116,8 +131,20 @@ def run(
             item = handoff.get()
             if item is _DONE:
                 return
+            if stopped():
+                continue  # drain without structuring so the OCR side can finish and stop promptly
             source_name, text = item
-            line = _structure(llm, text, source_name)
+            # One bad receipt must not take the structuring thread down: if
+            # it died, the OCR thread would block forever on the bounded
+            # queue with nothing left to drain it (the same deadlock
+            # smart-recall's pipeline guards against).
+            try:
+                line = _structure(llm, text, source_name)
+            except Exception as exc:
+                line = ExpenseLine(
+                    source_file=source_name, vendor="", date="", amount=None, category="Other",
+                    raw_text=text, error=f"Structuring failed: {exc}",
+                )
             with results_lock:
                 results.append(line)
             on_structured(line)

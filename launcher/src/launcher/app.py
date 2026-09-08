@@ -21,7 +21,12 @@ from code_review_assist.samples import SAMPLES as CODE_REVIEW_ASSIST_SAMPLES
 from doc_qa.samples import SAMPLES as DOC_QA_SAMPLES
 from html_creator.samples import SAMPLES as HTML_CREATOR_SAMPLES
 from pantherlake_ai_core import audio, video
-from pantherlake_ai_core.engine import Engine, list_gpu_devices, list_openvino_devices
+from pantherlake_ai_core.engine import (
+    Engine,
+    list_gpu_devices,
+    list_openvino_devices,
+    preferred_large_model_device,
+)
 from pydantic import BaseModel
 from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
 from smart_recall.samples import SAMPLES as SMART_RECALL_SAMPLES
@@ -108,17 +113,18 @@ _SMART_RECALL_ENGINE_DEFAULTS = {
     Engine.OPENVINO: {"compute_device": "AUTO"},
 }
 
+# None: resolved per request by preferred_large_model_device() -- the
+# machine's discrete GPU if it has one (these two bricks default to a 30B
+# coding model that needs real VRAM), else AUTO. Never one dev machine's
+# card id baked in as everyone's default.
 _CODE_REVIEW_ASSIST_ENGINE_DEFAULTS = {
     Engine.PORTABLE: {"compute_device": "cpu"},
-    # GPU.1 is this dev machine's Arc B60 card id, not a portable default the
-    # way "AUTO" is for every other brick -- the coding model this brick
-    # defaults to is picked to run well on that specific card.
-    Engine.OPENVINO: {"compute_device": "GPU.1"},
+    Engine.OPENVINO: {"compute_device": None},
 }
 
 _HTML_CREATOR_ENGINE_DEFAULTS = {
     Engine.PORTABLE: {"compute_device": "cpu"},
-    Engine.OPENVINO: {"compute_device": "GPU.1"},
+    Engine.OPENVINO: {"compute_device": None},
 }
 
 
@@ -664,8 +670,13 @@ def webcam_effects_devices() -> JSONResponse:
 
 
 def _hex_to_bgr(hex_color: str) -> tuple[int, int, int]:
-    hex_color = hex_color.lstrip("#")
-    r, g, b = (int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+    """'#RRGGBB' (what an <input type="color"> gives) -> OpenCV's BGR tuple.
+    Raises ValueError on anything else, so a bad client value is a 400 at
+    the route rather than an unhandled 500."""
+    digits = hex_color.strip().lstrip("#")
+    if len(digits) != 6 or any(c not in "0123456789abcdefABCDEF" for c in digits):
+        raise ValueError(f"color must be '#RRGGBB', got '{hex_color}'")
+    r, g, b = (int(digits[i : i + 2], 16) for i in (0, 2, 4))
     return (b, g, r)
 
 
@@ -690,12 +701,17 @@ async def start_webcam_effects(req: WebcamEffectsStartRequest) -> JSONResponse:
     compute_device = req.compute_device or _WEBCAM_EFFECTS_ENGINE_DEFAULTS[engine]["compute_device"]
 
     try:
+        color = _hex_to_bgr(req.color)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    try:
         webcam_effects_runner.start(
             camera_index=req.camera_index,
             engine=engine,
             compute_device=compute_device,
             effect=req.effect,
-            color=_hex_to_bgr(req.color),
+            color=color,
         )
     except RuntimeError as exc:
         return JSONResponse({"error": str(exc)}, status_code=409)
@@ -719,7 +735,11 @@ async def set_webcam_effect(req: WebcamEffectsEffectRequest) -> JSONResponse:
     # Changes the blend live -- the capture/segmentation loop keeps running
     # untouched, only the per-frame effect render (done in the runner's
     # on_frame callback) picks this up on the next frame.
-    webcam_effects_runner.set_effect(req.effect, _hex_to_bgr(req.color) if req.color else None)
+    try:
+        color = _hex_to_bgr(req.color) if req.color else None
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    webcam_effects_runner.set_effect(req.effect, color)
     return JSONResponse({"status": "ok"})
 
 
@@ -799,13 +819,19 @@ async def voice_clone_studio_enroll_upload(
         import os
         import tempfile
 
-        fd, path = tempfile.mkstemp(suffix=suffix)
+        # Write and *close* the temp file before handing it to the cloner --
+        # on Windows an open handle would make the unlink below fail and
+        # mask the real error if enrolling itself raised.
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(file_bytes)
+            path = tmp.name
         try:
-            os.write(fd, file_bytes)
-            os.close(fd)
             voice_clone_studio_runner.enroll(reference_path=path, engine=engine, device=resolved_device)
         finally:
-            os.unlink(path)
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
     try:
         await run_in_threadpool(work)
@@ -1137,6 +1163,8 @@ async def code_review_assist_review(req: CodeReviewRequest) -> JSONResponse:
         return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
 
     device = req.compute_device or _CODE_REVIEW_ASSIST_ENGINE_DEFAULTS[engine]["compute_device"]
+    if device is None:
+        device = preferred_large_model_device()
 
     try:
         result = await run_in_threadpool(
@@ -1183,6 +1211,8 @@ async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
         return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
 
     device = req.compute_device or _HTML_CREATOR_ENGINE_DEFAULTS[engine]["compute_device"]
+    if device is None:
+        device = preferred_large_model_device()
 
     try:
         result = await run_in_threadpool(

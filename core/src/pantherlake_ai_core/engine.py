@@ -91,6 +91,19 @@ def list_gpu_devices() -> list[GpuDevice]:
     return devices
 
 
+def preferred_large_model_device() -> str:
+    """The OpenVINO device to default a *large* model to (one that needs
+    its own VRAM, e.g. a 30B coding LLM): a discrete GPU if the machine has
+    one, otherwise "AUTO" -- so a brick never hardcodes one dev machine's
+    card id (GPU.1) as everyone's default. Empty/unknown GPU list -> "AUTO".
+    """
+    gpus = list_gpu_devices()
+    discrete = [g for g in gpus if "dGPU" in g.full_name]
+    if discrete:
+        return discrete[-1].id
+    return "AUTO"
+
+
 def describe_devices() -> str:
     """Human-readable summary of what each engine can currently target.
 

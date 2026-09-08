@@ -565,6 +565,18 @@ function gpuDeviceLabel(id) {
   return gpu ? gpu.full_name : id;
 }
 
+// The OpenVINO device to default a *large* model to (one that needs its own
+// VRAM, e.g. a 30B coding LLM): the machine's discrete GPU if it has one and
+// it's among the brick's offered devices, else AUTO. Mirrors
+// pantherlake_ai_core.engine.preferred_large_model_device() so the UI's
+// pre-selected option matches what the CLI/launcher would pick on their own.
+function preferredLargeModelDevice(openvinoDevices) {
+  const discrete = GPU_DEVICES.filter(
+    (g) => (g.full_name || "").includes("dGPU") && (openvinoDevices || []).includes(g.id),
+  );
+  return discrete.length ? discrete[discrete.length - 1].id : "AUTO";
+}
+
 // Populates a "try a sample" <select> (samplePickerId) from a brick's
 // /devices response (samples: [{name, description, ...payload}]) and wires
 // it to fill one or more target fields from the picked sample on change,
@@ -2345,10 +2357,10 @@ async function populateCodeReviewDevices() {
       opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
       computeSelect.appendChild(opt);
     }
-    // This brick's default OpenVINO model is picked to run well on the B60 --
-    // prefer GPU.1 when it's present, fall back to AUTO on a machine without it.
-    if (engineSelect.value === "openvino" && data.openvino_devices.includes("GPU.1")) {
-      computeSelect.value = "GPU.1";
+    // This brick's default OpenVINO model is a 30B coder that needs real
+    // VRAM -- pre-select the discrete GPU when there is one, else AUTO.
+    if (engineSelect.value === "openvino") {
+      computeSelect.value = preferredLargeModelDevice(data.openvino_devices);
     }
   };
   engineSelect.onchange = fillComputeDevices;
@@ -2483,10 +2495,10 @@ async function populateHtmlCreatorDevices() {
       opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
       computeSelect.appendChild(opt);
     }
-    // This brick's default OpenVINO model is picked to run well on the B60 --
-    // prefer GPU.1 when it's present, fall back to AUTO on a machine without it.
-    if (engineSelect.value === "openvino" && data.openvino_devices.includes("GPU.1")) {
-      computeSelect.value = "GPU.1";
+    // This brick's default OpenVINO model is a 30B coder that needs real
+    // VRAM -- pre-select the discrete GPU when there is one, else AUTO.
+    if (engineSelect.value === "openvino") {
+      computeSelect.value = preferredLargeModelDevice(data.openvino_devices);
     }
   };
   engineSelect.onchange = fillComputeDevices;

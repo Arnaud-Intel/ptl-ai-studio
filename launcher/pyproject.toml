@@ -17,9 +17,15 @@ dependencies = [
     "smart-recall",
     "code-review-assist",
     "html-creator",
+    "smart-city-monitor",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
+    # Imported directly by the runners/routes (cv2 for JPEG encoding,
+    # soundfile for WAV responses) -- declared here rather than relied on
+    # transitively through core/the bricks.
+    "opencv-python>=4.9",
+    "soundfile>=0.12",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +44,7 @@ openvino = [
     "smart-recall[openvino]",
     "code-review-assist[openvino]",
     "html-creator[openvino]",
+    "smart-city-monitor[openvino]",
 ]
 
 [project.scripts]
@@ -64,3 +71,4 @@ expense-extract = { workspace = true }
 smart-recall = { workspace = true }
 code-review-assist = { workspace = true }
 html-creator = { workspace = true }
+smart-city-monitor = { workspace = true }

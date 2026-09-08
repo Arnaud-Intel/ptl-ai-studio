@@ -64,13 +64,12 @@ class VoiceCloneStudioRunner:
                     self._engine = engine
                     self._device = device
                 events.set_phase(_DEMO_ID, "running", "Enrolling voice...")
-                try:
-                    self._session.enroll(reference_path)
-                except Exception as exc:
-                    events.set_phase(_DEMO_ID, "error", str(exc))
-                    raise
+                self._session.enroll(reference_path)
                 self._enrolled = True
                 events.clear_phase(_DEMO_ID)
+            except Exception as exc:  # covers the session build too, so a failed load can't stick at "loading"
+                events.set_phase(_DEMO_ID, "error", str(exc))
+                raise
             finally:
                 activity.clear_active(_DEMO_ID)
 

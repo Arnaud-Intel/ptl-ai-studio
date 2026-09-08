@@ -1407,6 +1407,7 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "onnxruntime" },
+    { name = "opencv-python" },
     { name = "pantherlake-ai-core" },
 ]
 
@@ -1421,6 +1422,7 @@ requires-dist = [
     { name = "huggingface-hub", specifier = ">=0.24" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "onnxruntime", specifier = ">=1.18" },
+    { name = "opencv-python", specifier = ">=4.9" },
     { name = "openvino", marker = "extra == 'openvino'", specifier = ">=2024.4" },
     { name = "openvino-model-api", extras = ["huggingface"], marker = "extra == 'openvino'", specifier = ">=0.4" },
     { name = "pantherlake-ai-core", editable = "core" },
@@ -1664,10 +1666,13 @@ dependencies = [
     { name = "live-translation" },
     { name = "meeting-notes" },
     { name = "object-detection" },
+    { name = "opencv-python" },
     { name = "pantherlake-ai-core" },
     { name = "python-multipart" },
     { name = "screen-ocr" },
+    { name = "smart-city-monitor" },
     { name = "smart-recall" },
+    { name = "soundfile" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "voice-assistant" },
     { name = "voice-clone-studio" },
@@ -1684,6 +1689,7 @@ openvino = [
     { name = "meeting-notes", extra = ["openvino"] },
     { name = "object-detection", extra = ["openvino"] },
     { name = "screen-ocr", extra = ["openvino"] },
+    { name = "smart-city-monitor", extra = ["openvino"] },
     { name = "smart-recall", extra = ["openvino"] },
     { name = "voice-assistant", extra = ["openvino"] },
     { name = "voice-clone-studio", extra = ["openvino"] },
@@ -1707,12 +1713,16 @@ requires-dist = [
     { name = "meeting-notes", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/meeting-notes" },
     { name = "object-detection", editable = "bricks/object-detection" },
     { name = "object-detection", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/object-detection" },
+    { name = "opencv-python", specifier = ">=4.9" },
     { name = "pantherlake-ai-core", editable = "core" },
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "screen-ocr", editable = "bricks/screen-ocr" },
     { name = "screen-ocr", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/screen-ocr" },
+    { name = "smart-city-monitor", editable = "bricks/smart-city-monitor" },
+    { name = "smart-city-monitor", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/smart-city-monitor" },
     { name = "smart-recall", editable = "bricks/smart-recall" },
     { name = "smart-recall", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/smart-recall" },
+    { name = "soundfile", specifier = ">=0.12" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
     { name = "voice-assistant", editable = "bricks/voice-assistant" },
     { name = "voice-assistant", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/voice-assistant" },
@@ -1728,6 +1738,7 @@ name = "pantherlake-ai-core"
 version = "0.1.0"
 source = { editable = "core" }
 dependencies = [
+    { name = "huggingface-hub" },
     { name = "mss" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -1738,6 +1749,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "huggingface-hub", specifier = ">=0.24" },
     { name = "mss", specifier = ">=9.0" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "opencv-python", specifier = ">=4.9" },
@@ -2388,6 +2400,7 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "onnxruntime" },
+    { name = "opencv-python" },
     { name = "pantherlake-ai-core" },
     { name = "rapidocr" },
 ]
@@ -2404,6 +2417,7 @@ requires-dist = [
     { name = "huggingface-hub", marker = "extra == 'openvino'", specifier = ">=0.24" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "onnxruntime", specifier = ">=1.18" },
+    { name = "opencv-python", specifier = ">=4.9" },
     { name = "openvino", marker = "extra == 'openvino'", specifier = ">=2024.4" },
     { name = "openvino-genai", marker = "extra == 'openvino'", specifier = ">=2024.4" },
     { name = "pantherlake-ai-core", editable = "core" },
@@ -2497,6 +2511,7 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "object-detection" },
+    { name = "opencv-python" },
     { name = "pantherlake-ai-core" },
 ]
 
@@ -2510,6 +2525,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26" },
     { name = "object-detection", editable = "bricks/object-detection" },
     { name = "object-detection", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/object-detection" },
+    { name = "opencv-python", specifier = ">=4.9" },
     { name = "pantherlake-ai-core", editable = "core" },
 ]
 provides-extras = ["openvino"]
@@ -3136,6 +3152,7 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "onnxruntime" },
+    { name = "opencv-python" },
     { name = "pantherlake-ai-core" },
 ]
 
@@ -3149,6 +3166,7 @@ requires-dist = [
     { name = "huggingface-hub", specifier = ">=0.24" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "onnxruntime", specifier = ">=1.18" },
+    { name = "opencv-python", specifier = ">=4.9" },
     { name = "openvino", marker = "extra == 'openvino'", specifier = ">=2024.4" },
     { name = "pantherlake-ai-core", editable = "core" },
 ]

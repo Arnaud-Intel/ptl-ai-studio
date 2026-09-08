@@ -49,9 +49,15 @@ class VoiceAssistantRunner:
         def emit(message: dict) -> None:
             asyncio.run_coroutine_threadsafe(queue.put(message), loop)
 
+        def on_ready() -> None:
+            events.set_phase(_DEMO_ID, "running", "Listening for the wake word...")
+            emit({"type": "ready"})
+
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
-            events.set_phase(_DEMO_ID, "running", "Listening for the wake word...")
+            # Four models load before the mic even opens -- say so, rather
+            # than claiming to be listening from the very first millisecond.
+            events.set_phase(_DEMO_ID, "loading", f"Loading models (engine={engine.value}, device={compute_device})...")
             try:
                 session.run(
                     audio_device=audio_device,
@@ -63,6 +69,7 @@ class VoiceAssistantRunner:
                     on_wake=lambda: emit({"type": "wake"}),
                     on_heard=lambda text: emit({"type": "heard", "text": text}),
                     on_reply=lambda text: emit({"type": "reply", "text": text}),
+                    on_ready=on_ready,
                     speak_replies=speak_replies,
                     stop_event=stop_event,
                 )
@@ -82,4 +89,13 @@ class VoiceAssistantRunner:
     def stop(self) -> None:
         if self._stop_event is not None:
             self._stop_event.set()
+        thread = self._thread
+        if thread is not None:
+            # Wait for the loop to actually exit, so `running` only turns
+            # false once it has -- otherwise a quick Stop -> Start overlaps two
+            # threads on the same mic/queue. A thread still inside a long
+            # model load keeps `running` true until it gets out.
+            thread.join(timeout=3.0)
+            if thread.is_alive():
+                return
         self._thread = None

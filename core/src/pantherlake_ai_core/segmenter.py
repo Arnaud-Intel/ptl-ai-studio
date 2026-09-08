@@ -32,13 +32,14 @@ def _rms(block: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square(block))))
 
 
-def segment_stream(blocks, config: VADConfig = VADConfig()):
+def segment_stream(blocks, config: VADConfig | None = None):
     """Consume an iterator of mono float32 blocks; yield complete speech
     segments as concatenated float32 numpy arrays.
 
     The first `calibration_seconds` of audio are used to estimate the
     ambient noise floor and set a speech-detection threshold from it.
     """
+    config = config or VADConfig()  # a fresh default per call, not one shared mutable instance
     pre_roll_blocks = max(1, int(config.pre_roll / config.block_duration))
     hangover_blocks = max(1, int(config.silence_hangover / config.block_duration))
     min_speech_blocks = max(1, int(config.min_speech_duration / config.block_duration))
@@ -90,3 +91,11 @@ def segment_stream(blocks, config: VADConfig = VADConfig()):
             silence_run = 0
             pre_roll.clear()
             pre_roll.append(block)
+
+    # The stream ended (stop requested, or the source ran out) mid-utterance:
+    # flush what was captured rather than silently dropping the last thing
+    # said -- trimming any trailing silence the same way a normal cut does.
+    if in_speech and silence_run > 0:
+        speech_blocks = speech_blocks[: len(speech_blocks) - silence_run]
+    if in_speech and len(speech_blocks) >= min_speech_blocks:
+        yield np.concatenate(speech_blocks).astype(np.float32)

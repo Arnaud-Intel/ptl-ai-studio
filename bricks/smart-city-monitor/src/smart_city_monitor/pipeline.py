@@ -106,6 +106,7 @@ def run(
     model_path: str | None = None,
     loop: bool = True,
     on_ready: Callable[[str], None] | None = None,
+    on_feed_error: Callable[[str, str], None] | None = None,
     on_frame: Callable[[str, np.ndarray, list[TrackedDetection]], None],
     on_counts: Callable[[CountSnapshot], None],
     stop_event: threading.Event | None = None,
@@ -117,9 +118,13 @@ def run(
     a device's model loads exactly once) -- feeds on different devices
     therefore run, and load, genuinely in parallel.
 
-    `on_ready(feed_id)` fires once per feed, as soon as that feed's own
-    device has finished loading its detector -- the real loading->running
-    boundary, independent of how long other devices take.
+    `on_ready(feed_id)` fires once per feed, as its first frame is
+    processed -- i.e. once that feed's own device has finished loading its
+    detector *and* the file opened, independent of how long other devices
+    take. `on_feed_error(feed_id, message)` fires the moment a feed fails
+    (its device couldn't load, its file couldn't be read, ...); the other
+    feeds keep running. The call itself only raises if no feed ever got
+    going at all.
     """
     if not feeds:
         raise ValueError("No feeds given.")
@@ -129,25 +134,36 @@ def run(
 
     state = _SharedState(feeds)
     errors: dict[str, Exception] = {}
-    errors_lock = threading.Lock()
+    ready_feeds: set[str] = set()
+    bookkeeping_lock = threading.Lock()
 
-    def record_error(key: str, exc: Exception) -> None:
-        with errors_lock:
-            errors.setdefault(key, exc)
+    def fail(feed_id: str, exc: Exception) -> None:
+        with bookkeeping_lock:
+            errors.setdefault(feed_id, exc)
+        if on_feed_error is not None:
+            on_feed_error(feed_id, str(exc))
 
     def device_worker(device: str, device_feeds: list[FeedSpec]) -> None:
         try:
             detector = create_detector(engine, device=device, model_path=model_path)
         except Exception as exc:
-            record_error(device, exc)
+            for feed in device_feeds:
+                fail(feed.feed_id, exc)
             return
         detect_lock = threading.Lock()
 
         def feed_worker(feed: FeedSpec) -> None:
             tracker = Tracker()
             counters = FeedCounters()
+            ready = False
             try:
                 for frame in video.stream_video_file_frames(feed.path, loop=loop, stop_event=stop_event):
+                    if not ready:
+                        ready = True
+                        with bookkeeping_lock:
+                            ready_feeds.add(feed.feed_id)
+                        if on_ready is not None:
+                            on_ready(feed.feed_id)
                     now = time.monotonic()
                     with detect_lock:
                         detections = detector.detect(frame)
@@ -158,14 +174,10 @@ def run(
                     last_60s, total = counters.snapshot(now)
                     on_counts(state.update_and_snapshot(feed.feed_id, last_60s, total))
             except Exception as exc:
-                record_error(feed.feed_id, exc)
+                fail(feed.feed_id, exc)
 
-        feed_threads = []
-        for feed in device_feeds:
-            if on_ready is not None:
-                on_ready(feed.feed_id)
-            t = threading.Thread(target=feed_worker, args=(feed,), daemon=True)
-            feed_threads.append(t)
+        feed_threads = [threading.Thread(target=feed_worker, args=(feed,), daemon=True) for feed in device_feeds]
+        for t in feed_threads:
             t.start()
         for t in feed_threads:
             t.join()
@@ -180,8 +192,9 @@ def run(
     for t in device_threads:
         t.join()
 
-    if errors:
+    if errors and not ready_feeds:
         # Threads don't propagate exceptions to the caller on their own --
-        # surface at least the first one rather than silently going dark.
+        # if nothing ever ran, surface the first failure rather than
+        # returning as if the run had simply finished.
         key, exc = next(iter(errors.items()))
         raise RuntimeError(f"'{key}' failed: {exc}") from exc

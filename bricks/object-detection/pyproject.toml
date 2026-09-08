@@ -8,6 +8,7 @@ dependencies = [
     "numpy>=1.26",
     "onnxruntime>=1.18",
     "huggingface_hub>=0.24",
+    "opencv-python>=4.9",  # imported directly (detector_portable.py, draw.py), not just via core
 ]
 
 [project.optional-dependencies]

@@ -13,7 +13,7 @@ class OpenVINOCloner:
     several seconds and only needs to happen once per machine."""
 
     def __init__(self, device="CPU", model_path=None):
-        self.tts, self.converter, self.source_se = voice_model.load_models()
+        self.tts, self.converter, self.source_se = voice_model.load_models(local_dir=model_path)
 
         cache_dir = voice_model.ir_cache_dir()
         tts_ir_path = cache_dir / "openvoice_en_tts.xml"

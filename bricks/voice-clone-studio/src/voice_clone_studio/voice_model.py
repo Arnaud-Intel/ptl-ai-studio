@@ -28,15 +28,26 @@ _CHECKPOINT_FILES = {
 }
 
 
-def resolve_checkpoints() -> dict:
+def resolve_checkpoints(local_dir: str | None = None) -> dict:
+    """Paths to the five OpenVoice checkpoint files: from `local_dir` (a
+    folder laid out like the upstream repo, i.e. containing `checkpoints/`)
+    if given -- what `--model-path` means -- else downloaded from the Hub
+    and cached."""
+    if local_dir:
+        root = Path(local_dir)
+        paths = {key: root / rel for key, rel in _CHECKPOINT_FILES.items()}
+        missing = [str(p) for p in paths.values() if not p.is_file()]
+        if missing:
+            raise FileNotFoundError(f"Checkpoint file(s) not found under {local_dir}: {', '.join(missing)}")
+        return {key: str(p) for key, p in paths.items()}
     return {key: hf_hub_download(REPO_ID, rel) for key, rel in _CHECKPOINT_FILES.items()}
 
 
-def load_models():
+def load_models(local_dir: str | None = None):
     """Loads the base speaker TTS, the tone converter, and the TTS's own
     default-voice embedding (the fixed 'source' tone every clone starts
     from) -- pure PyTorch, CPU. Both engine backends load through this."""
-    paths = resolve_checkpoints()
+    paths = resolve_checkpoints(local_dir)
 
     tts = BaseSpeakerTTS(paths["en_config"], device="cpu")
     tts.load_ckpt(paths["en_ckpt"])
@@ -48,12 +59,12 @@ def load_models():
     return tts, converter, source_se
 
 
-def load_tts_only() -> BaseSpeakerTTS:
+def load_tts_only(local_dir: str | None = None) -> BaseSpeakerTTS:
     """Loads just BaseSpeakerTTS -- for consumers that only need speech in
     the base voice, with no cloning stage at all (e.g. voice-assistant's
     generic spoken-reply voice). Skips loading ToneColorConverter entirely,
     since it would otherwise sit there unused."""
-    paths = resolve_checkpoints()
+    paths = resolve_checkpoints(local_dir)
     tts = BaseSpeakerTTS(paths["en_config"], device="cpu")
     tts.load_ckpt(paths["en_ckpt"])
     return tts

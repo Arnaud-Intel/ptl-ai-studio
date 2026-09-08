@@ -70,6 +70,12 @@ class SmartCityMonitorRunner:
         def on_ready(feed_id: str) -> None:
             events.set_phase(f"{_DEMO_ID}:{feed_id}", "running", "Monitoring...")
 
+        def on_feed_error(feed_id: str, message: str) -> None:
+            # One feed failing (bad device id, unreadable file) must be visible
+            # right away on that feed's tile -- the others keep running.
+            events.set_phase(f"{_DEMO_ID}:{feed_id}", "error", message)
+            activity.clear_active(_DEMO_ID, stage=feed_id)
+
         def target() -> None:
             for feed in feeds:
                 activity.set_active(
@@ -86,6 +92,7 @@ class SmartCityMonitorRunner:
                     engine=engine,
                     loop=loop,
                     on_ready=on_ready,
+                    on_feed_error=on_feed_error,
                     on_frame=on_frame,
                     on_counts=on_counts,
                     stop_event=stop_event,
@@ -107,7 +114,17 @@ class SmartCityMonitorRunner:
     def stop(self) -> None:
         if self._stop_event is not None:
             self._stop_event.set()
+        thread = self._thread
+        if thread is not None:
+            # Wait for every feed thread to actually exit, so `running` only
+            # turns false once they have -- otherwise a quick Stop -> Start
+            # overlaps two runs on the same files/devices. Feeds still inside
+            # a long model load keep `running` true until they get out.
+            thread.join(timeout=3.0)
+            if thread.is_alive():
+                return
         self._thread = None
+        self._feeds = []
         with self._frame_lock:
             self._latest_jpeg = {}
             self._latest_snapshot = None

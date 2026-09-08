@@ -6,7 +6,7 @@ class PortableCloner:
     engine, run through their native torch forward passes untouched."""
 
     def __init__(self, model_path=None):
-        self.tts, self.converter, self.source_se = voice_model.load_models()
+        self.tts, self.converter, self.source_se = voice_model.load_models(local_dir=model_path)
 
     def enroll(self, reference_audio_path):
         return voice_model.enroll(self.converter, reference_audio_path)

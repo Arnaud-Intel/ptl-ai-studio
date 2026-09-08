@@ -39,12 +39,11 @@ class ScreenOcrRunner:
                     self._engine = engine
                     self._device = device
                 events.set_phase(_DEMO_ID, "running", "Extracting text...")
-                try:
-                    result = self._session.extract(image, translate=translate)
-                except Exception as exc:
-                    events.set_phase(_DEMO_ID, "error", str(exc))
-                    raise
+                result = self._session.extract(image, translate=translate)
                 events.clear_phase(_DEMO_ID)
                 return result
+            except Exception as exc:  # covers the session build too, so a failed load can't stick at "loading"
+                events.set_phase(_DEMO_ID, "error", str(exc))
+                raise
             finally:
                 activity.clear_active(_DEMO_ID)

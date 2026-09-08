@@ -8,6 +8,7 @@ dependencies = [
     "numpy>=1.26",
     "rapidocr>=3.0",
     "onnxruntime>=1.18",
+    "opencv-python>=4.9",  # imported directly (extractor_openvino.py, cli.py), not just via core
 ]
 
 [project.optional-dependencies]

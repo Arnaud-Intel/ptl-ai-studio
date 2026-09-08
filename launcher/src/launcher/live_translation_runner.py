@@ -85,4 +85,13 @@ class LiveTranslationRunner:
     def stop(self) -> None:
         if self._stop_event is not None:
             self._stop_event.set()
+        thread = self._thread
+        if thread is not None:
+            # Wait for the loop to actually exit, so `running` only turns
+            # false once it has -- otherwise a quick Stop -> Start overlaps two
+            # threads on the same mic/queue. A thread still inside a long
+            # model load keeps `running` true until it gets out.
+            thread.join(timeout=3.0)
+            if thread.is_alive():
+                return
         self._thread = None

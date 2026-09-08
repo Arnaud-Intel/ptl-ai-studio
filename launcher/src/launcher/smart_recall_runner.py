@@ -96,6 +96,15 @@ class SmartRecallRunner:
     def stop(self) -> None:
         if self._stop_event is not None:
             self._stop_event.set()
+        thread = self._thread
+        if thread is not None:
+            # Wait for the loop to actually exit, so `running` only turns
+            # false once it has -- otherwise a quick Stop -> Start overlaps two
+            # threads on the same queue/index. A thread still inside a long
+            # model load keeps `running` true until it gets out.
+            thread.join(timeout=3.0)
+            if thread.is_alive():
+                return
         self._thread = None
 
     def reset(self) -> None:
@@ -110,21 +119,22 @@ class SmartRecallRunner:
         """Blocking -- loads (or reuses) the search-side index, which only
         needs the embedder the index was actually built with, not OCR."""
         with self._search_lock:
-            if self._search_index is None or self._search_device != device:
-                events.set_phase(f"{_DEMO_ID}:search", "loading", f"Loading search index (device={device})...")
-                self._search_index = pipeline.RecallIndex(device=device)
-                self._search_device = device
-            activity.set_active(
-                _DEMO_ID, engine=self._search_index.embed_engine.value, device=device,
-                stage="search", stage_label="Search",
-            )
-            events.set_phase(f"{_DEMO_ID}:search", "running", "Searching...")
             try:
-                results = self._search_index.search(question, top_k=top_k)
-            except Exception as exc:
+                if self._search_index is None or self._search_device != device:
+                    events.set_phase(f"{_DEMO_ID}:search", "loading", f"Loading search index (device={device})...")
+                    self._search_index = pipeline.RecallIndex(device=device)
+                    self._search_device = device
+                activity.set_active(
+                    _DEMO_ID, engine=self._search_index.embed_engine.value, device=device,
+                    stage="search", stage_label="Search",
+                )
+                events.set_phase(f"{_DEMO_ID}:search", "running", "Searching...")
+                try:
+                    results = self._search_index.search(question, top_k=top_k)
+                finally:
+                    activity.clear_active(_DEMO_ID, stage="search")
+                events.clear_phase(f"{_DEMO_ID}:search")
+                return results
+            except Exception as exc:  # covers the index load too (e.g. "nothing recorded yet"), not just the search
                 events.set_phase(f"{_DEMO_ID}:search", "error", str(exc))
                 raise
-            finally:
-                activity.clear_active(_DEMO_ID, stage="search")
-            events.clear_phase(f"{_DEMO_ID}:search")
-            return results

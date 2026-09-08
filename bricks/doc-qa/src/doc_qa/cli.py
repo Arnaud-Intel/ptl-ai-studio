@@ -42,12 +42,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--list-samples", action="store_true",
         help="List available example questions, then exit.",
     )
+    p.add_argument(
+        "--list-devices", action="store_true",
+        help="List available inference devices, then exit.",
+    )
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.list_devices:
+        print("Inference devices (--compute-device):")
+        print(engine_mod.describe_devices())
+        return 0
 
     if args.list_samples:
         for s in SAMPLES:

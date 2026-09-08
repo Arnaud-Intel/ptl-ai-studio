@@ -25,12 +25,17 @@ def run(
     compute_device: str,
     model_path: str | None = None,
     on_frame: Callable[[np.ndarray, list[Detection]], None],
+    on_ready: Callable[[], None] | None = None,
     stop_event: threading.Event | None = None,
 ) -> None:
     """Blocks the calling thread, calling `on_frame(frame, detections)` for
     each captured frame, until `stop_event` is set (or forever if none is
-    given)."""
+    given). `on_ready`, if given, fires once the model is loaded and capture
+    is about to start -- the real "loading -> running" boundary (a first-run
+    download plus compile can take a while)."""
     detector = create_detector(engine, device=compute_device, model_path=model_path)
+    if on_ready is not None:
+        on_ready()
 
     if source == "webcam":
         frames = video.stream_camera_frames(camera_index, stop_event=stop_event)

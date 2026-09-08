@@ -63,9 +63,12 @@ class ObjectDetectionRunner:
                 self._latest_jpeg = buf.tobytes()
                 self._latest_detections = [asdict(d) for d in detections]
 
+        def on_ready() -> None:
+            events.set_phase(_DEMO_ID, "running", "Detecting objects...")
+
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
-            events.set_phase(_DEMO_ID, "running", "Detecting objects...")
+            events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine.value}, device={compute_device})...")
             try:
                 pipeline.run(
                     source=source,
@@ -74,6 +77,7 @@ class ObjectDetectionRunner:
                     engine=engine,
                     compute_device=compute_device,
                     on_frame=on_frame,
+                    on_ready=on_ready,
                     stop_event=stop_event,
                 )
             except Exception as exc:  # surfaced to the UI, not silently dropped
@@ -90,6 +94,15 @@ class ObjectDetectionRunner:
     def stop(self) -> None:
         if self._stop_event is not None:
             self._stop_event.set()
+        thread = self._thread
+        if thread is not None:
+            # Wait for the loop to actually exit, so `running` only turns
+            # false once it has -- otherwise a quick Stop -> Start overlaps two
+            # threads on the same camera. A thread still inside a long model
+            # load keeps `running` true (and its buffers) until it gets out.
+            thread.join(timeout=3.0)
+            if thread.is_alive():
+                return
         self._thread = None
         with self._frame_lock:
             self._latest_jpeg = None

@@ -80,17 +80,22 @@ class WebcamEffectsRunner:
                 return
             with self._frame_lock:
                 self._latest_jpeg = buf.tobytes()
-                self._person_coverage = matte.person_coverage(mask)
+                # round() keeps float noise like 6e-15 out of the API/UI
+                self._person_coverage = round(float(matte.person_coverage(mask)), 4)
+
+        def on_ready() -> None:
+            events.set_phase(_DEMO_ID, "running", "Applying webcam effect...")
 
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
-            events.set_phase(_DEMO_ID, "running", "Applying webcam effect...")
+            events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine.value}, device={compute_device})...")
             try:
                 pipeline.run(
                     camera_index=camera_index,
                     engine=engine,
                     compute_device=compute_device,
                     on_frame=on_frame,
+                    on_ready=on_ready,
                     stop_event=stop_event,
                 )
             except Exception as exc:  # surfaced to the UI, not silently dropped
@@ -107,6 +112,15 @@ class WebcamEffectsRunner:
     def stop(self) -> None:
         if self._stop_event is not None:
             self._stop_event.set()
+        thread = self._thread
+        if thread is not None:
+            # Wait for the loop to actually exit, so `running` only turns
+            # false once it has -- otherwise a quick Stop -> Start overlaps two
+            # threads on the same camera ("Could not open camera 0"). A thread
+            # still inside a long model load keeps `running` true until it gets out.
+            thread.join(timeout=3.0)
+            if thread.is_alive():
+                return
         self._thread = None
         with self._frame_lock:
             self._latest_jpeg = None

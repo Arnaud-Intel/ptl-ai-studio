@@ -38,13 +38,12 @@ class DocQARunner:
                     self._engine = engine
                     self._device = device
                 events.set_phase(_DEMO_ID, "running", "Indexing documents...")
-                try:
-                    count = self._session.ingest(folder, force=reindex)
-                except Exception as exc:
-                    events.set_phase(_DEMO_ID, "error", str(exc))
-                    raise
+                count = self._session.ingest(folder, force=reindex)
                 events.clear_phase(_DEMO_ID)
                 return count, str(self._session.folder)
+            except Exception as exc:  # covers the session build too, so a failed load can't stick at "loading"
+                events.set_phase(_DEMO_ID, "error", str(exc))
+                raise
             finally:
                 activity.clear_active(_DEMO_ID)
 

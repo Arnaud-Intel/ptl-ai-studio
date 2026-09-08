@@ -7,6 +7,7 @@ dependencies = [
     "pantherlake-ai-core",
     "object-detection",
     "numpy>=1.26",
+    "opencv-python>=4.9",  # imported directly (draw.py, cli.py), not just via core
 ]
 
 [project.optional-dependencies]

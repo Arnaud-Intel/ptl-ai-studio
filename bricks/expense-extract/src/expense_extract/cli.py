@@ -30,7 +30,9 @@ def build_parser() -> argparse.ArgumentParser:
             "the other."
         ),
     )
-    p.add_argument("folder", help="Folder of receipt image files (.png/.jpg/.jpeg/.bmp/.tif/.webp).")
+    # Optional at parse time only so --list-devices works on its own; main()
+    # enforces it for an actual run.
+    p.add_argument("folder", nargs="?", default=None, help="Folder of receipt image files (.png/.jpg/.jpeg/.bmp/.tif/.webp).")
     p.add_argument("--output", default="expenses.csv", help="Output CSV path. Default: expenses.csv")
     p.add_argument(
         "--ocr-engine", choices=[e.value for e in engine_mod.Engine], default=None,
@@ -59,11 +61,15 @@ def list_devices() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     if args.list_devices:
         list_devices()
         return 0
+
+    if not args.folder:
+        parser.error("the following arguments are required: folder")
 
     from pantherlake_ai_core.engine import list_openvino_devices
 

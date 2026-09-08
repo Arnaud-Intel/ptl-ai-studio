@@ -9,6 +9,7 @@ dependencies = [
     "psutil>=5.9",
     "opencv-python>=4.9",
     "mss>=9.0",
+    "huggingface_hub>=0.24",  # model_cache.py
 ]
 
 [build-system]

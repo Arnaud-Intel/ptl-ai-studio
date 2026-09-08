@@ -71,6 +71,7 @@ def run(
     on_wake: Callable[[], None] = lambda: None,
     on_heard: Callable[[str], None] = lambda text: None,
     on_reply: Callable[[str], None] = lambda text: None,
+    on_ready: Callable[[], None] | None = None,
     speak_replies: bool = True,
     stop_event: threading.Event | None = None,
 ) -> None:
@@ -80,7 +81,10 @@ def run(
     pause briefly after the wake word, the same way you would with any
     wake-word assistant, rather than running straight into your request),
     asks the LLM, and (optionally) speaks the reply out loud before going
-    back to listening.
+    back to listening. `on_ready`, if given, fires once all four models
+    (wake word, Whisper, LLM, TTS) are loaded and the mic is about to be
+    opened -- the real "loading -> listening" boundary, which can be a
+    minute or more on a cold cache.
     """
     session = VoiceAssistantSession(
         engine,
@@ -89,6 +93,8 @@ def run(
         wake_word=wake_word,
         wake_threshold=wake_threshold,
     )
+    if on_ready is not None:
+        on_ready()
 
     blocks = audio.stream_blocks("mic", audio_device, stop_event=stop_event)
 

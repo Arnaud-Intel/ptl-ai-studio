@@ -12,10 +12,11 @@ from .session import CodeReviewSession
 
 _ENGINE_DEFAULTS = {
     engine_mod.Engine.PORTABLE: {"device": "cpu"},
-    # GPU.1 is this dev machine's Arc B60 card id, not a portable default the
-    # way "AUTO" is for every other brick -- override with --compute-device
-    # on a machine without that exact device.
-    engine_mod.Engine.OPENVINO: {"device": "GPU.1"},
+    # None: resolved at run time by pantherlake_ai_core.engine's
+    # preferred_large_model_device() -- the machine's discrete GPU if it has
+    # one (this brick's 30B coding model needs real VRAM), else AUTO. Never a
+    # hardcoded card id from one dev machine.
+    engine_mod.Engine.OPENVINO: {"device": None},
 }
 
 
@@ -77,6 +78,10 @@ def main(argv: list[str] | None = None) -> int:
 
         engine = engine_mod.Engine.OPENVINO if list_openvino_devices() else engine_mod.Engine.PORTABLE
     compute_device = args.compute_device or _ENGINE_DEFAULTS[engine]["device"]
+    if compute_device is None:
+        from pantherlake_ai_core.engine import preferred_large_model_device
+
+        compute_device = preferred_large_model_device()
 
     if args.diff_file:
         diff_text = Path(args.diff_file).read_text()

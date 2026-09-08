@@ -28,6 +28,12 @@ class TelemetryPoller:
 
     def stop(self) -> None:
         self._stop_event.set()
+        thread = self._thread
+        if thread is not None:
+            # The loop wakes from its wait() immediately on the event, but a
+            # telemetry.read() already in flight (~1-3s) has to finish first.
+            thread.join(timeout=5.0)
+        self._thread = None  # so a later start() actually starts again
 
     def snapshot(self) -> dict:
         with self._lock:
