@@ -268,7 +268,11 @@ function rememberPath(inputId) {
 
 // --- Status pills ------------------------------------------------------------------
 
-const PHASE_ICON = { loading: "", running: "▶", error: "⚠" };
+const PHASE_ICON = { loading: "", running: "▶", stopping: "", error: "⚠" };
+// "stopping" borrows the loading look -- a pulsing amber dot -- because it
+// is the same kind of state: something is in flight and the user waits.
+const PHASE_KIND = { loading: "loading", running: "live", stopping: "loading", error: "error" };
+const PHASE_LABEL = { loading: "Loading…", running: "Running", stopping: "Stopping…" };
 
 function paintStatus(target, text, kind) {
   target.textContent = text;
@@ -277,9 +281,8 @@ function paintStatus(target, text, kind) {
 }
 
 function reflectStatus(target, status) {
-  const kind = status.phase === "running" ? "live" : status.phase === "error" ? "error" : "loading";
   const icon = PHASE_ICON[status.phase] || "";
-  paintStatus(target, `${icon} ${status.message || status.phase}`.trim(), kind);
+  paintStatus(target, `${icon} ${status.message || status.phase}`.trim(), PHASE_KIND[status.phase] || "loading");
 }
 
 // --- Panels -------------------------------------------------------------------
@@ -424,7 +427,11 @@ class StreamPanel extends Panel {
     el(`${this.prefix}-stop`).disabled = !isRunning;
     for (const id of this.controls) el(id).disabled = isRunning;
     if (isRunning) {
-      if (!STATUS.snapshot[this.statusKey]) this.setStatus("Starting…", "loading");
+      // Whether this run has ever shown up in /api/status yet. Until it
+      // has, a missing entry means "the thread hasn't reported in", not
+      // "it finished" -- see onStatus().
+      this.sawPhase = Boolean(STATUS.snapshot[this.statusKey]);
+      if (!this.sawPhase) this.setStatus("Starting…", "loading");
       this.watch(this.statusKey);
       if (this.img) this.attachVideo();
       if (this.onRunning) this.onRunning(true);
@@ -435,6 +442,16 @@ class StreamPanel extends Panel {
       if (this.img) this.detachVideo();
       if (this.onRunning) this.onRunning(false);
     }
+  }
+
+  // A run can end without this panel asking it to: a batch finishing, a
+  // video reaching its end, or a stop the brick was too busy to honour
+  // right away. The phase vanishing from /api/status is what says so.
+  onStatus() {
+    super.onStatus();
+    if (!this.isOpen || !this.running) return;
+    if (STATUS.snapshot[this.statusKey]) this.sawPhase = true;
+    else if (this.sawPhase) this.setRunning(false);
   }
 
   streamUrl() {
@@ -478,6 +495,18 @@ class StreamPanel extends Panel {
       await postJSON(`/api/${this.id}/stop`);
     } catch (err) {
       this.setStatus(`Error: ${err.message}`, "error");
+      this.setRunning(false);
+      return;
+    }
+    // A stop event is cooperative: a brick inside a model load or one long
+    // inference keeps going until that returns. When it does, say so and
+    // leave the run's controls locked -- it really is still running --
+    // rather than showing Idle over a brick that is still working.
+    // onStatus() flips to idle once the phase clears.
+    await pollStatus();
+    if (STATUS.snapshot[this.statusKey]?.phase === "stopping") {
+      this.watch(this.statusKey);
+      return;
     }
     this.setRunning(false);
   }
@@ -1538,10 +1567,13 @@ function showHome() {
 // --- Now running strip + card states ------------------------------------------------
 
 // A brick with several stages (expense-extract's OCR/LLM, smart-city's feeds)
-// has one entry per stage: loading beats running (it says more), and an
-// error is shown only briefly after it happened -- the status snapshot keeps
-// errors until the next run, and a chip that never goes away would just be noise.
+// has one entry per stage: stopping beats loading beats running (each says
+// more than the next), and an error is shown only briefly after it happened
+// -- the status snapshot keeps errors until the next run, and a chip that
+// never goes away would just be noise.
 function summarizeStatus(entries) {
+  const stopping = entries.find((e) => e.phase === "stopping");
+  if (stopping) return stopping;
   const loading = entries.find((e) => e.phase === "loading");
   if (loading) return loading;
   const running = entries.find((e) => e.phase === "running");
@@ -1589,8 +1621,8 @@ function renderRunningStrip() {
   for (const card of document.querySelectorAll(".card[data-id]")) {
     const phase = phases.get(card.dataset.id);
     card.classList.toggle("is-running", phase === "running");
-    card.classList.toggle("is-loading", phase === "loading");
-    card.querySelector(".card-state").textContent = phase === "running" ? "Running" : phase === "loading" ? "Loading…" : "";
+    card.classList.toggle("is-loading", phase === "loading" || phase === "stopping");
+    card.querySelector(".card-state").textContent = PHASE_LABEL[phase] || "";
   }
 }
 

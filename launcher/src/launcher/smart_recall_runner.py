@@ -13,10 +13,11 @@ from dataclasses import asdict
 from pantherlake_ai_core.engine import Engine
 from smart_recall import pipeline
 
-from . import activity, events
+from . import activity, events, worker
 from .errors import Conflict
 
 _DEMO_ID = "smart-recall"
+_STAGES = ("ocr", "embed")
 
 
 class SmartRecallRunner:
@@ -44,8 +45,7 @@ class SmartRecallRunner:
         embed_engine: Engine,
         embed_device: str,
     ) -> None:
-        if self.running:
-            raise Conflict("smart-recall is already running")
+        worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
         self.error = None
         self._stop_event = threading.Event()
@@ -95,17 +95,8 @@ class SmartRecallRunner:
         self._thread.start()
 
     def stop(self) -> None:
-        if self._stop_event is not None:
-            self._stop_event.set()
-        thread = self._thread
-        if thread is not None:
-            # Wait for the loop to actually exit, so `running` only turns
-            # false once it has -- otherwise a quick Stop -> Start overlaps two
-            # threads on the same queue/index. A thread still inside a long
-            # model load keeps `running` true until it gets out.
-            thread.join(timeout=3.0)
-            if thread.is_alive():
-                return
+        if not worker.request_stop(_DEMO_ID, self._thread, self._stop_event, stages=_STAGES):
+            return
         self._thread = None
 
     def reset(self) -> None:

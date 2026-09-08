@@ -305,7 +305,8 @@ body {
   flex-shrink: 0;
 }
 
-.phase-loading .chip-dot {
+.phase-loading .chip-dot,
+.phase-stopping .chip-dot {
   background: var(--warning);
   animation: pulse 1.2s ease-in-out infinite;
 }

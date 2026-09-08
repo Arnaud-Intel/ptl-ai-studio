@@ -11,8 +11,7 @@ import threading
 from pantherlake_ai_core.engine import Engine
 from voice_assistant import session
 
-from . import activity, events
-from .errors import Conflict
+from . import activity, events, worker
 
 _DEMO_ID = "voice-assistant"
 
@@ -40,8 +39,7 @@ class VoiceAssistantRunner:
         wake_threshold: float,
         speak_replies: bool,
     ) -> None:
-        if self.running:
-            raise Conflict("voice-assistant is already running")
+        worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
         self.error = None
         self._stop_event = threading.Event()
@@ -88,15 +86,6 @@ class VoiceAssistantRunner:
         self._thread.start()
 
     def stop(self) -> None:
-        if self._stop_event is not None:
-            self._stop_event.set()
-        thread = self._thread
-        if thread is not None:
-            # Wait for the loop to actually exit, so `running` only turns
-            # false once it has -- otherwise a quick Stop -> Start overlaps two
-            # threads on the same mic/queue. A thread still inside a long
-            # model load keeps `running` true until it gets out.
-            thread.join(timeout=3.0)
-            if thread.is_alive():
-                return
+        if not worker.request_stop(_DEMO_ID, self._thread, self._stop_event):
+            return
         self._thread = None

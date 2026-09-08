@@ -16,8 +16,7 @@ from object_detection.draw import draw_detections
 from object_detection.types import Detection
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, events
-from .errors import Conflict
+from . import activity, events, worker
 
 _DEMO_ID = "object-detection"
 _JPEG_QUALITY = 80
@@ -45,8 +44,7 @@ class ObjectDetectionRunner:
         engine: Engine,
         compute_device: str,
     ) -> None:
-        if self.running:
-            raise Conflict("object-detection is already running")
+        worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
         self.error = None
         with self._frame_lock:
@@ -97,17 +95,8 @@ class ObjectDetectionRunner:
         self._thread.start()
 
     def stop(self) -> None:
-        if self._stop_event is not None:
-            self._stop_event.set()
-        thread = self._thread
-        if thread is not None:
-            # Wait for the loop to actually exit, so `running` only turns
-            # false once it has -- otherwise a quick Stop -> Start overlaps two
-            # threads on the same camera. A thread still inside a long model
-            # load keeps `running` true (and its buffers) until it gets out.
-            thread.join(timeout=3.0)
-            if thread.is_alive():
-                return
+        if not worker.request_stop(_DEMO_ID, self._thread, self._stop_event):
+            return
         self._thread = None
         with self._frame_lock:
             self._latest_jpeg = None

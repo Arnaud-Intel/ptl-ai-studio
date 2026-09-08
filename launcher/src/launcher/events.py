@@ -28,9 +28,14 @@ def _key(demo_id: str, stage: str | None) -> str:
 
 
 def set_phase(demo_id: str, phase: str, message: str = "", *, stage: str | None = None) -> None:
-    """phase is "loading", "running", or "error". Errors are NOT cleared by
-    clear_phase -- they stay visible until the next loading/running call
-    overwrites them, so a failed run doesn't silently look idle again.
+    """phase is "loading", "running", "stopping", or "error". Errors are NOT
+    cleared by clear_phase -- they stay visible until the next
+    loading/running call overwrites them, so a failed run doesn't silently
+    look idle again.
+
+    "stopping" is set by worker.request_stop() when a stop was asked for but
+    the worker is still inside a call it can't be interrupted from; the
+    worker clears it itself on the way out.
 
     `stage`, for a demo running several things at once (expense-extract's
     OCR and LLM stages, smart-city-monitor's feeds), tracks each one's

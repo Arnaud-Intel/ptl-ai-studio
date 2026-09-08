@@ -3,8 +3,12 @@ this runs on a machine (or a CI runner) with no microphone, camera, or
 OpenVINO device -- and no model is ever loaded."""
 from __future__ import annotations
 
+import threading
+import time
+
 import pytest
 from fastapi.testclient import TestClient
+from object_detection import pipeline as object_detection_pipeline
 from pantherlake_ai_core.engine import Engine
 
 from launcher import app as launcher_app
@@ -150,6 +154,46 @@ class FakeStreamRunner:
 
     def latest_detections(self) -> list:
         return []
+
+
+def test_a_brick_too_busy_to_stop_says_stopping_until_it_actually_does(client, monkeypatch):
+    """The real runner, with a pipeline that ignores the stop event -- the
+    shape of a brick inside a model load or one long inference. Until it
+    returns, the launcher has to say "stopping" rather than go on
+    reporting the brick's normal running message."""
+    release = threading.Event()
+
+    def stuck_pipeline(**kwargs):
+        release.wait(timeout=10)
+
+    # The runner calls pipeline.run() on the shared module object, so
+    # patching it here is what its thread will actually execute.
+    monkeypatch.setattr(object_detection_pipeline, "run", stuck_pipeline)
+
+    try:
+        assert client.post(
+            "/api/object-detection/start",
+            json={"source": "screen", "engine": "portable", "compute_device": "cpu"},
+        ).status_code == 200
+
+        assert client.post("/api/object-detection/stop").status_code == 200
+        assert client.get("/api/status").json()["object-detection"]["phase"] == "stopping"
+        # It genuinely is still running, so a Start now is refused -- and
+        # says which kind of busy it is, since this one clears on its own.
+        refused = client.post(
+            "/api/object-detection/start",
+            json={"source": "screen", "engine": "portable", "compute_device": "cpu"},
+        )
+        assert refused.status_code == 409
+        assert "still stopping" in refused.json()["error"]
+    finally:
+        release.set()
+
+    deadline = time.time() + 5
+    while time.time() < deadline and "object-detection" in client.get("/api/status").json():
+        time.sleep(0.05)
+    assert "object-detection" not in client.get("/api/status").json()
+    assert not launcher_app.object_detection_runner.running
 
 
 def test_starting_twice_is_a_409_and_stop_resets(client, monkeypatch):

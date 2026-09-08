@@ -17,8 +17,7 @@ from smart_city_monitor import pipeline
 from smart_city_monitor.draw import draw_tracks
 from smart_city_monitor.types import CountSnapshot, FeedSpec, TrackedDetection
 
-from . import activity, events
-from .errors import Conflict
+from . import activity, events, worker
 
 _DEMO_ID = "smart-city-monitor"
 _JPEG_QUALITY = 80
@@ -45,8 +44,7 @@ class SmartCityMonitorRunner:
         engine: Engine,
         loop: bool,
     ) -> None:
-        if self.running:
-            raise Conflict("smart-city-monitor is already running")
+        worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
         self.error = None
         with self._frame_lock:
@@ -114,17 +112,11 @@ class SmartCityMonitorRunner:
         self._thread.start()
 
     def stop(self) -> None:
-        if self._stop_event is not None:
-            self._stop_event.set()
-        thread = self._thread
-        if thread is not None:
-            # Wait for every feed thread to actually exit, so `running` only
-            # turns false once they have -- otherwise a quick Stop -> Start
-            # overlaps two runs on the same files/devices. Feeds still inside
-            # a long model load keep `running` true until they get out.
-            thread.join(timeout=3.0)
-            if thread.is_alive():
-                return
+        # One "stopping" phase per feed, since that is how this brick reports
+        # every other phase -- each feed has its own tile in the UI.
+        stages = [feed.feed_id for feed in self._feeds] or [None]
+        if not worker.request_stop(_DEMO_ID, self._thread, self._stop_event, stages=stages):
+            return
         self._thread = None
         self._feeds = []
         with self._frame_lock:

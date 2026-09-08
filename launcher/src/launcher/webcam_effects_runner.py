@@ -17,8 +17,7 @@ import numpy as np
 from pantherlake_ai_core.engine import Engine
 from webcam_effects import matte, pipeline
 
-from . import activity, events
-from .errors import Conflict
+from . import activity, events, worker
 
 _DEMO_ID = "webcam-effects"
 _JPEG_QUALITY = 80
@@ -54,8 +53,7 @@ class WebcamEffectsRunner:
         effect: str = "blur",
         color: tuple[int, int, int] = (181, 104, 0),
     ) -> None:
-        if self.running:
-            raise Conflict("webcam-effects is already running")
+        worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
         self.error = None
         with self._frame_lock:
@@ -115,17 +113,8 @@ class WebcamEffectsRunner:
         self._thread.start()
 
     def stop(self) -> None:
-        if self._stop_event is not None:
-            self._stop_event.set()
-        thread = self._thread
-        if thread is not None:
-            # Wait for the loop to actually exit, so `running` only turns
-            # false once it has -- otherwise a quick Stop -> Start overlaps two
-            # threads on the same camera ("Could not open camera 0"). A thread
-            # still inside a long model load keeps `running` true until it gets out.
-            thread.join(timeout=3.0)
-            if thread.is_alive():
-                return
+        if not worker.request_stop(_DEMO_ID, self._thread, self._stop_event):
+            return
         self._thread = None
         with self._frame_lock:
             self._latest_jpeg = None

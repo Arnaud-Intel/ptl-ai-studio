@@ -48,8 +48,21 @@ and `--no-browser` do what they say. Leave it running in a terminal;
   predates the visit (or a page reload).
 - **The status pill** next to each Start/Run button mirrors the brick's
   real backend phase while something is in flight: "Downloading model
-  (first run only)", "Loading model", the running message, or the error --
-  never an optimistic "Running..." before the model is actually up.
+  (first run only)", "Loading model", the running message, "Stopping", or
+  the error -- never an optimistic "Running..." before the model is
+  actually up, and never the running message after you pressed Stop.
+- **Stopping is honest about taking a while.** A stop event is
+  cooperative: a worker only sees it between steps, so a brick inside a
+  model load or one long inference (screen-ocr's 7B vision-language model
+  is minutes on CPU) keeps going until that call returns.
+  `worker.request_stop()` waits a moment, and if the worker hasn't come
+  back it sets a `"stopping"` phase -- so the pill, the chip, and the card
+  all say "Stopping" and the run's controls stay locked, instead of the
+  UI claiming the brick is still doing its normal work. The worker clears
+  that phase itself on the way out, and the panel flips to idle when it
+  does. A Start during that window is refused with "still stopping --
+  try again in a moment", which is a different thing from "already
+  running": only one of them clears on its own.
 - **The header gauges** (CPU, one per GPU, NPU) are the only gauges; each
   is labeled with whichever brick -- and stage -- is driving that device.
 
@@ -176,4 +189,7 @@ polls that route every 2s.
    around the inference and `events.set_phase(...)` at the loading ->
    running -> done boundaries (with `stage=` if the brick runs several
    things at once) -- that is what the gauges, the status pill, and the
-   running strip are all reading.
+   running strip are all reading. For a threaded brick, guard `start()`
+   with `worker.refuse_if_busy(...)` and make `stop()`
+   `if not worker.request_stop(...): return` before clearing state, so it
+   gets the shared "already running" / "still stopping" handling for free.

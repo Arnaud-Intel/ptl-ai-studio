@@ -14,7 +14,7 @@ from meeting_notes.session import MeetingSession
 from meeting_notes.types import MeetingNotes, TranscriptLine
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, events
+from . import activity, events, worker
 from .errors import Conflict
 
 _DEMO_ID = "meeting-notes"
@@ -52,8 +52,7 @@ class MeetingNotesRunner:
         whisper_model_size: str,
     ) -> None:
         with self._state_lock:
-            if self.running:
-                raise Conflict("meeting-notes is already running")
+            worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
             self.error = None
             self._engine = engine
@@ -99,17 +98,8 @@ class MeetingNotesRunner:
 
     def stop(self) -> None:
         with self._state_lock:
-            if self._stop_event is not None:
-                self._stop_event.set()
-            thread = self._thread
-            if thread is not None:
-                # Wait for the loop to actually exit, so `running` only turns
-                # false once it has -- otherwise a quick Stop -> Start overlaps
-                # two threads on the same mic/queue. A thread still inside a
-                # long model load keeps `running` true until it gets out.
-                thread.join(timeout=3.0)
-                if thread.is_alive():
-                    return
+            if not worker.request_stop(_DEMO_ID, self._thread, self._stop_event):
+                return
             self._thread = None
 
     def generate_notes(self) -> MeetingNotes:

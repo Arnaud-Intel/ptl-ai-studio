@@ -88,7 +88,9 @@ local_demo/
       app.py                <- FastAPI app (REST + WebSocket): one route set per brick on top of
                                shared helpers (resolve(), error_response(), mjpeg_stream(), ws_drain())
       *_runner.py            <- one per brick: owns its thread/session, reports phases + devices
-      errors.py               <- Conflict: the "not in a state to do that" error (-> HTTP 409)
+      worker.py               <- the start/stop bookkeeping every threaded runner shares,
+                                 including reporting "stopping" when a worker is mid-call
+      errors.py                <- Conflict: the "not in a state to do that" error (-> HTTP 409)
       events.py / activity.py <- per-brick lifecycle phase (for /api/status) / device in use (for gauges)
       static/                  <- vanilla HTML/CSS/JS front end, no build step
 ```
