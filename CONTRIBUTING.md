@@ -218,6 +218,13 @@ entry in `test_launcher_api.py`'s expectations. Anything that needs a
 device or a model stays a manual check (see each brick's README for what
 was verified and on what).
 
+One platform quirk worth knowing before you bump a Python version: on
+**Linux**, `voice-assistant` -> `openwakeword` -> `tflite-runtime`, and
+that package publishes no wheels past **cp311**, so the workspace can't
+install on Linux with 3.12+ (which is why CI pins 3.11). Windows never
+installs `tflite-runtime` at all -- it's a `sys_platform == 'linux'`
+dependency -- so a Windows dev machine is free to run 3.12 or later.
+
 ## Versioning
 
 The whole workspace shares one version number, in the [`VERSION`](VERSION)

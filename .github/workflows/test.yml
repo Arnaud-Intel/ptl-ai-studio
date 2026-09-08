@@ -21,10 +21,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libpulse0 libgl1 libglib2.0-0
 
+      # 3.11, not something newer: voice-assistant's wake-word model pulls
+      # openwakeword, which on Linux (only) depends on tflite-runtime, whose
+      # newest release ships no wheels past cp311. Windows never installs
+      # that package, so a dev machine is free to run 3.12+.
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
           enable-cache: true
 
       - name: Install the workspace (portable engines + the dev group)
