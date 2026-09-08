@@ -3,3 +3,15 @@ members = ["core", "bricks/*", "launcher"]
 
 [tool.uv]
 package = false
+
+# Installed by a plain `uv sync` (the "dev" group is on by default), so the
+# tests run with nothing more than the same sync every contributor does.
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",  # FastAPI's TestClient transport
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

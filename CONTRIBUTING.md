@@ -189,6 +189,35 @@ not just one.
    since it depends on every available brick) `requires-python` -- no need
    to raise it workspace-wide.
 
+## Tests
+
+```bash
+uv sync --extra openvino   # the dev group (pytest, httpx) comes with any sync
+uv run pytest
+```
+
+(`uv sync` makes the environment match exactly what you ask for, so a
+plain `uv sync` on a machine that had the `openvino` extra removes it
+again -- keep passing `--extra openvino` when you have Intel hardware.)
+
+`tests/` at the repo root covers what can be checked without hardware or a
+model: the pure logic in `core` (the voice-activity segmenter, the
+engine/device rules, telemetry's LUID attribution), each brick's small
+deterministic helpers (expense JSON parsing, diff truncation, code-fence
+stripping, the smart-city tracker and counters), and the launcher's API
+contract through FastAPI's `TestClient` with every hardware probe
+monkeypatched (`/api/demos`, every `/devices` route, the 400/409/500 error
+policy, the 409-on-double-start contract). The same suite runs on every
+push and pull request via
+[`.github/workflows/test.yml`](.github/workflows/test.yml), on a plain
+Ubuntu runner with no Intel hardware.
+
+A new brick should bring a test for its pure parts -- a parser, a
+post-processing step, a CLI argument helper -- and, if it adds routes, an
+entry in `test_launcher_api.py`'s expectations. Anything that needs a
+device or a model stays a manual check (see each brick's README for what
+was verified and on what).
+
 ## Versioning
 
 The whole workspace shares one version number, in the [`VERSION`](VERSION)

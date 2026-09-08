@@ -148,8 +148,19 @@ class OVWrapConverter(_OVWrapBase):
 def enroll(converter: ToneColorConverter, reference_audio_path: str):
     """Extracts a target speaker/tone embedding from a short reference
     clip -- zero-shot: this is inference over the clip, not a training
-    step, so it takes seconds, not minutes."""
-    target_se, _ = se_extractor.get_se(reference_audio_path, converter)
+    step, so it takes seconds, not minutes.
+
+    Raises ValueError if the clip can't be used (e.g. no speech in it).
+    """
+    try:
+        target_se, _ = se_extractor.get_se(reference_audio_path, converter)
+    except AssertionError as exc:
+        # The vendored extractor states its input preconditions as asserts
+        # (e.g. "no speech detected in the reference clip"). Those are
+        # bad-input conditions, not crashes -- re-raise them as such, so a
+        # caller can tell them apart (the launcher answers 400, not 500)
+        # and so they survive `python -O`, which strips asserts entirely.
+        raise ValueError(str(exc) or "The reference clip can't be used -- try a clearer recording.") from exc
     return target_se
 
 

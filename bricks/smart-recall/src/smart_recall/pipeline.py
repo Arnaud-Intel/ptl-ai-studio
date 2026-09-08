@@ -150,10 +150,25 @@ def run(
     handoff: queue.Queue = queue.Queue(maxsize=_QUEUE_SIZE)
     _DONE = object()
 
+    def stopped() -> bool:
+        return stop_event is not None and stop_event.is_set()
+
+    def put_unless_stopped(item) -> bool:
+        # Bounded queue: never block forever on put(), or a stop requested
+        # while the embedding stage is busy could never be honored. Same
+        # shape as expense-extract's, for the same reason.
+        while not stopped():
+            try:
+                handoff.put(item, timeout=0.2)
+                return True
+            except queue.Full:
+                continue
+        return False
+
     def capture_and_ocr_worker() -> None:
         previous_frame = None
         try:
-            while stop_event is None or not stop_event.is_set():
+            while not stopped():
                 frame = video.capture_screen_frame(screen_index)
                 if not frame_changed(previous_frame, frame):
                     on_event(CaptureEvent(kind="skipped", reason="no change since last capture"))
@@ -161,13 +176,14 @@ def run(
                     previous_frame = frame
                     text = ocr_session.extract(frame).text
                     if text and len(text.strip()) >= MIN_TEXT_LENGTH:
-                        handoff.put((frame, text))
+                        if not put_unless_stopped((frame, text)):
+                            break
                     else:
                         on_event(CaptureEvent(kind="skipped", reason="no readable text"))
 
                 waited = 0.0
                 while waited < interval_seconds:
-                    if stop_event is not None and stop_event.is_set():
+                    if stopped():
                         break
                     time.sleep(0.1)
                     waited += 0.1
@@ -180,6 +196,8 @@ def run(
             item = handoff.get()
             if item is _DONE:
                 return
+            if stopped():
+                continue  # drain without embedding so the capture side can finish and stop promptly
             frame, text = item
 
             # Per-item, not per-thread: a bad frame (or a callback that

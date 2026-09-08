@@ -11,8 +11,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .audio import SAMPLE_RATE
-
 
 @dataclass
 class VADConfig:

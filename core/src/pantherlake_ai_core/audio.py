@@ -9,20 +9,44 @@ from __future__ import annotations
 import threading
 
 import numpy as np
-import soundcard as sc
+
+# soundcard binds to the platform's audio service when imported (WASAPI,
+# CoreAudio, PulseAudio) and fails outright where there is none -- a
+# headless CI runner, a container. Importing *this* module must still work
+# there (the segmenter, the launcher's registry and routes, and the tests
+# all import through it); only actually capturing or playing audio needs
+# the backend, so that is where the failure is raised, with the reason.
+try:
+    import soundcard as _soundcard
+except (ImportError, OSError) as exc:  # pragma: no cover - depends on the host
+    _soundcard = None
+    _SOUNDCARD_ERROR: Exception | None = exc
+else:
+    _SOUNDCARD_ERROR = None
 
 SAMPLE_RATE = 16000
 
 
+def _backend():
+    if _soundcard is None:
+        raise RuntimeError(f"Audio capture isn't available on this machine: {_SOUNDCARD_ERROR}")
+    return _soundcard
+
+
 def list_microphones() -> list[str]:
-    return [m.name for m in sc.all_microphones(include_loopback=False)]
+    if _soundcard is None:
+        return []
+    return [m.name for m in _soundcard.all_microphones(include_loopback=False)]
 
 
 def list_speakers() -> list[str]:
-    return [s.name for s in sc.all_speakers()]
+    if _soundcard is None:
+        return []
+    return [s.name for s in _soundcard.all_speakers()]
 
 
 def _find_microphone(name_filter: str | None):
+    sc = _backend()
     mics = sc.all_microphones(include_loopback=False)
     if not mics:
         raise RuntimeError("No microphone found.")
@@ -37,6 +61,7 @@ def _find_microphone(name_filter: str | None):
 
 
 def _find_loopback(name_filter: str | None):
+    sc = _backend()
     speakers = sc.all_speakers()
     if not speakers:
         raise RuntimeError("No output/speaker device found.")
@@ -52,6 +77,7 @@ def _find_loopback(name_filter: str | None):
 
 
 def _find_speaker(name_filter: str | None):
+    sc = _backend()
     speakers = sc.all_speakers()
     if not speakers:
         raise RuntimeError("No output/speaker device found.")

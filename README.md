@@ -190,9 +190,10 @@ See each brick's own README for its full set of options.
 One [`uv` workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/),
 one shared `.venv`, every brick and the launcher installed together so
 they can depend on each other freely. Full layout, the pattern for adding
-a new brick, and the auto-versioning mechanism (the badge at the top of
-this page updates itself on every merge to `main`) are in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+a new brick, the test suite (`uv run pytest` -- pure logic and the
+launcher's API contract, run on every push), and the auto-versioning
+mechanism (the badge at the top of this page updates itself on every
+merge to `main`) are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

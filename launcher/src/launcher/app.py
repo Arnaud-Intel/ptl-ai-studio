@@ -284,11 +284,13 @@ def _wake_words() -> list[str]:
     return list(AVAILABLE_WAKE_WORDS)
 
 
+# Looked up at call time (not bound here) so the probes can be swapped --
+# the tests replace them with fakes; nothing should probe a camera on import.
 _DEVICE_SOURCES: dict[str, Callable[[], Any]] = {
-    "microphones": audio.list_microphones,
-    "speakers": audio.list_speakers,
-    "cameras": video.list_cameras,
-    "screens": video.list_screens,
+    "microphones": lambda: audio.list_microphones(),
+    "speakers": lambda: audio.list_speakers(),
+    "cameras": lambda: video.list_cameras(),
+    "screens": lambda: video.list_screens(),
     "wake_words": _wake_words,
 }
 
