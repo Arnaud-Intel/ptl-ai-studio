@@ -28,6 +28,10 @@ class OcrSession:
     ):
         self.engine = engine
         self.extractor = create_extractor(engine, device=device, model_path=model_path, on_downloading=on_downloading)
+        # What the extractor settled on, which can differ from what was
+        # asked for -- the openvino engine resolves "AUTO" to a concrete
+        # device, since its model can't run on AUTO (see extractor_openvino).
+        self.device = getattr(self.extractor, "device", device)
 
     def extract(self, image: np.ndarray, translate: bool = False) -> ExtractionResult:
         return self.extractor.extract(image, translate=translate)

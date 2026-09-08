@@ -140,12 +140,18 @@ function preferredLargeModelDevice(openvinoDevices) {
 
 // --- Control wiring ---------------------------------------------------------------
 
+// Every brick whose OCR stage is screen-ocr's OpenVINO engine runs the same
+// 7B vision-language model, and that model's NPU compile fails on this
+// hardware -- reliably, with a compiler error from deep inside OpenVINO
+// (see screen-ocr's README). Offer the device, but not silently.
+const OCR_MODEL_UNSUPPORTED = { NPU: "this OCR model doesn't compile for the NPU" };
+
 // One engine <select> + one compute-device <select>, kept consistent: the
 // OpenVINO option is only enabled when this brick actually has a device, the
 // device list follows the chosen engine (AUTO + every OpenVINO device, or the
 // portable engine's fixed choices), and GPU ids get their friendly names.
 function wireEngineAndDevice(engineSelect, deviceSelect, data, options = {}) {
-  const { portableDevices = ["cpu"], preferLargeModel = false, onChange = null } = options;
+  const { portableDevices = ["cpu"], preferLargeModel = false, onChange = null, unsupported = {} } = options;
   const openvinoDevices = data.openvino_devices || [];
   const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
   const hasOpenvino = openvinoDevices.length > 0;
@@ -153,11 +159,37 @@ function wireEngineAndDevice(engineSelect, deviceSelect, data, options = {}) {
   if (!hasOpenvino) openvinoOption.textContent = `${openvinoOption.textContent} -- not installed for this brick`;
   if (hasOpenvino) engineSelect.value = "openvino";
 
+  // What the user last chose, per engine. Switching engine rebuilds the
+  // list (the two engines offer different devices), and without this a
+  // deliberate "run it on the NPU" silently became AUTO on the way back --
+  // which then picks its own device, and the run lands somewhere the user
+  // never asked for.
+  const chosenPerEngine = {};
+  deviceSelect.addEventListener("change", () => {
+    chosenPerEngine[engineSelect.value] = deviceSelect.value;
+  });
+
   const fill = () => {
     const isOpenvino = engineSelect.value === "openvino";
     const values = isOpenvino ? ["AUTO", ...openvinoDevices] : portableDevices;
     fillSelect(deviceSelect, values.map((value) => ({ value, label: deviceLabel(value) })));
+    // A device this brick's model provably can't use is shown but disabled,
+    // with the reason in the label -- offering it silently is how someone
+    // ends up staring at a compiler error from deep inside OpenVINO.
+    if (isOpenvino) {
+      for (const opt of deviceSelect.options) {
+        const reason = unsupported[opt.value];
+        if (!reason) continue;
+        opt.disabled = true;
+        opt.textContent = `${opt.textContent} -- ${reason}`;
+      }
+      if (deviceSelect.selectedOptions[0]?.disabled) deviceSelect.value = "AUTO";
+    }
     if (isOpenvino && preferLargeModel) deviceSelect.value = preferredLargeModelDevice(openvinoDevices);
+    const chosen = chosenPerEngine[engineSelect.value];
+    if (chosen && [...deviceSelect.options].some((o) => o.value === chosen && !o.disabled)) {
+      deviceSelect.value = chosen;
+    }
     if (onChange) onChange(isOpenvino);
   };
   engineSelect.addEventListener("change", fill);
@@ -670,7 +702,7 @@ const PANELS = {
     controls: ["expx-folder", "expx-sample", "expx-ocr-engine", "expx-ocr-device", "expx-llm-engine", "expx-llm-device"],
     populate(data) {
       attachRecents("expx-folder");
-      wireEngineAndDevice(el("expx-ocr-engine"), el("expx-ocr-device"), data);
+      wireEngineAndDevice(el("expx-ocr-engine"), el("expx-ocr-device"), data, { unsupported: OCR_MODEL_UNSUPPORTED });
       wireEngineAndDevice(el("expx-llm-engine"), el("expx-llm-device"), data);
       // Nudge the demo toward its actual point: OCR on a GPU, LLM structuring
       // on the NPU, at once -- if this machine has both. GPU for OCR, not the
@@ -727,7 +759,7 @@ const PANELS = {
     controls: ["recall-screen", "recall-interval", "recall-ocr-engine", "recall-ocr-device", "recall-embed-device"],
     populate(data) {
       fillSelect(el("recall-screen"), (data.screens || []).map((s) => ({ value: String(s.index), label: `Screen ${s.index} (${s.width}x${s.height})` })));
-      wireEngineAndDevice(el("recall-ocr-engine"), el("recall-ocr-device"), data);
+      wireEngineAndDevice(el("recall-ocr-engine"), el("recall-ocr-device"), data, { unsupported: OCR_MODEL_UNSUPPORTED });
       wireEngineAndDevice(el("recall-embed-engine"), el("recall-embed-device"), data);
       wireSamplePicker("recall-sample", data.samples, { "recall-question": "question" });
     },
@@ -1131,6 +1163,7 @@ const PANELS = {
       sync();
       const translate = el("ocr-translate");
       wireEngineAndDevice(el("ocr-engine"), el("ocr-compute-device"), data, {
+        unsupported: OCR_MODEL_UNSUPPORTED,
         onChange: (isOpenvino) => {
           translate.disabled = !isOpenvino;
           if (!isOpenvino) translate.checked = false;

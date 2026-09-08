@@ -38,6 +38,11 @@ class ScreenOcrRunner:
                     self._session = OcrSession(Engine(engine), device=device, on_downloading=on_downloading)
                     self._engine = engine
                     self._device = device
+                # The session may have resolved the request ("AUTO" isn't
+                # usable for the openvino engine's model): report the device
+                # it actually runs on, so the gauge that lights up is the
+                # one doing the work.
+                activity.set_active(_DEMO_ID, engine=engine, device=self._session.device)
                 events.set_phase(_DEMO_ID, "running", "Extracting text...")
                 result = self._session.extract(image, translate=translate)
                 events.clear_phase(_DEMO_ID)

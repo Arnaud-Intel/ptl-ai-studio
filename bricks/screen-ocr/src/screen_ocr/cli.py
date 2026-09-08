@@ -79,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Loading extractor (engine={engine.value}, device={compute_device})... this may download a model on first use.")
     session = OcrSession(engine, device=compute_device, model_path=args.model_path)
+    if session.device != compute_device:
+        print(f"(the openvino engine's model can't run on '{compute_device}' -- using {session.device} instead)")
 
     try:
         result = session.extract(image, translate=args.translate)

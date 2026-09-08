@@ -32,12 +32,39 @@ _TRANSLATE_PROMPT = (
 )
 
 
+def resolve_device(device: str) -> str:
+    """Turn "AUTO" into a device this model can actually run on.
+
+    OpenVINO's AUTO plugin loads this VLM happily and then fails on every
+    single generate() with "Exception from src/core/src/shape_util.cpp:66:
+    Accessing out-of-range dimension". Reproduced on openvino-genai
+    2026.3.0 with an image that succeeds byte-for-byte on GPU.0 and GPU.1,
+    so it is AUTO itself, not the image, the size, or the tensor rank.
+    AUTO is the launcher's and the CLI's default device, which made the
+    OpenVINO engine of this brick fail out of the box.
+
+    A GPU is preferred (the discrete one if the machine has both, matching
+    core.engine.preferred_large_model_device -- this is a 7B model), else
+    CPU. The NPU is never chosen automatically: this model's NPU compile
+    fails on this hardware, which is documented in this brick's README.
+    """
+    if device.upper() != "AUTO":
+        return device
+    from pantherlake_ai_core.engine import list_gpu_devices
+
+    gpus = list_gpu_devices()
+    return gpus[-1].id if gpus else "CPU"
+
+
 class OpenVINOExtractor:
     def __init__(self, device: str = "AUTO", model_dir: str | None = None, on_downloading: Callable[[], None] | None = None):
         import openvino_genai as ov_genai
 
         resolved_dir = resolve_snapshot(_DEFAULT_REPO, local_dir=model_dir, on_downloading=on_downloading)
-        self.pipeline = ov_genai.VLMPipeline(resolved_dir, device, **ov_config_for(device))
+        # The device actually used, which a caller can read back to report
+        # honestly (the launcher labels its telemetry gauge from it).
+        self.device = resolve_device(device)
+        self.pipeline = ov_genai.VLMPipeline(resolved_dir, self.device, **ov_config_for(self.device))
 
     def extract(self, image: np.ndarray, translate: bool = False) -> ExtractionResult:
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
