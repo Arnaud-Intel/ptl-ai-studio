@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/Arnaud-Intel/ptl-ai-studio/tags"><img src="https://img.shields.io/github/v/tag/Arnaud-Intel/ptl-ai-studio?label=version&color=0068B5" alt="Version" /></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.10%2B-0068B5" alt="Python" /></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.11%2B-0068B5" alt="Python" /></a>
   <a href="https://docs.openvino.ai/"><img src="https://img.shields.io/badge/runtime-OpenVINO-8A2BE2" alt="OpenVINO" /></a>
   <img src="https://img.shields.io/badge/cloud%20calls-zero-4ade80" alt="Cloud calls: zero" />
   <img src="https://img.shields.io/badge/platform-Windows-0078D6" alt="Platform: Windows" />
@@ -25,6 +25,10 @@ This isn't a slide deck about on-device AI. It's twelve working
 applications that prove it.
 
 ## See it in 60 seconds
+
+Only real prerequisite is [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+itself -- it fetches a compatible Python automatically, no separate
+Python install needed:
 
 ```bash
 git clone https://github.com/Arnaud-Intel/ptl-ai-studio.git

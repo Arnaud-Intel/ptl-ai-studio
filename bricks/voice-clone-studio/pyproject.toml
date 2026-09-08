@@ -10,6 +10,14 @@ dependencies = [
     "torchaudio>=2.2",
     "librosa>=0.10",
     "pydub>=0.25",
+    # pydub imports the stdlib `audioop` module, removed in Python 3.13
+    # (PEP 594) -- without this, importing this brick (and anything that
+    # composes it, e.g. voice-assistant) crashes on 3.13+ with
+    # "ModuleNotFoundError: No module named 'audioop'". audioop-lts is the
+    # official backport, published by the CPython maintainers for exactly
+    # this migration; it only installs where it's actually needed since
+    # audioop is still stdlib below 3.13.
+    "audioop-lts>=0.2; python_version >= '3.13'",
     "soundfile>=0.12",
     "anyascii>=0.3",
     "inflect>=7.0",
