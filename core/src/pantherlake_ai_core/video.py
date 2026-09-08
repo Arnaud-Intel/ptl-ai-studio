@@ -1,16 +1,19 @@
-"""Video frame capture from a webcam or the screen.
+"""Video frame capture from a webcam, the screen, or a local video file.
 
 Mirrors audio.py's shape: list what's available, then stream BGR uint8
 frames (OpenCV's native order) until a stop_event is set.
 """
 from __future__ import annotations
 
+import os
 import platform
 import threading
+import time
 
 import numpy as np
 
 _IS_WINDOWS = platform.system() == "Windows"
+_DEFAULT_FILE_FPS = 25.0  # fallback when a file doesn't report CAP_PROP_FPS
 
 
 def list_cameras(max_index: int = 4) -> list[int]:
@@ -109,3 +112,42 @@ def stream_screen_frames(monitor: int = 1, stop_event: threading.Event | None = 
             shot = sct.grab(region)
             # mss gives BGRA; drop alpha to match the BGR frames camera capture yields.
             yield np.asarray(shot)[:, :, :3]
+
+
+def stream_video_file_frames(path: str, *, loop: bool = True, stop_event: threading.Event | None = None):
+    """Yield BGR uint8 frames from a local video file, paced to the file's
+    own frame rate so playback simulates a real-time feed -- a demo
+    reading counts/rates off this stream (e.g. "N per minute") needs one
+    processed second to correspond to one second of footage, not to
+    however fast the CPU/GPU can chew through frames.
+
+    If `loop`, restarts from frame 0 at EOF so a short clip can stand in
+    for a continuous camera feed; otherwise the generator ends at EOF.
+    """
+    import cv2
+
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Not a file: {path}")
+
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        raise RuntimeError(f"Could not open video file: {path}")
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_interval = 1.0 / fps if fps and fps > 0 else 1.0 / _DEFAULT_FILE_FPS
+        next_frame_at = time.monotonic()
+        while stop_event is None or not stop_event.is_set():
+            ok, frame = cap.read()
+            if not ok:
+                if not loop:
+                    break
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                next_frame_at = time.monotonic()
+                continue
+            now = time.monotonic()
+            if next_frame_at > now:
+                time.sleep(next_frame_at - now)
+            next_frame_at = max(next_frame_at, now) + frame_interval
+            yield frame
+    finally:
+        cap.release()

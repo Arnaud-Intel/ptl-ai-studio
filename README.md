@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/platform-Windows-0078D6" alt="Platform: Windows" />
 </p>
 
-**A local AI Studio for Intel Panther Lake -- a dozen on-device AI demos,
+**A local AI Studio for Intel Panther Lake -- thirteen on-device AI demos,
 one launcher, zero cloud calls.**
 
 Speech translation. A voice assistant that talks back in your own voice.
@@ -21,7 +21,7 @@ no data that leaves the device -- and every one of them can point
 directly at your Intel CPU, integrated GPU, or NPU and show you, on a
 live gauge, exactly which chip is doing the work.
 
-This isn't a slide deck about on-device AI. It's twelve working
+This isn't a slide deck about on-device AI. It's thirteen working
 applications that prove it.
 
 ## See it in 60 seconds
@@ -72,6 +72,7 @@ handed the inference runtime, not a guess.
 | **Webcam Background Effects** | Real-time background blur or replacement, no video ever leaves the machine | CPU / NPU / GPU |
 | **Object Detection Overlay** | Live labeled bounding boxes over a webcam or screen feed | CPU / NPU / GPU |
 | **Screen / Image Text Extraction** | Pull text out of a screenshot or photo, with optional on-device translation | CPU / GPU |
+| **Smart City Monitor** | Count pedestrians/cars/bikes per minute across multiple video files -- each pinnable to its own chip | CPU / NPU / GPU **each**, at once |
 
 ### Text
 
@@ -93,7 +94,10 @@ sheet claim. `expense-extract` and `smart-recall` are the showcase: each
 runs OCR on one chip while a second model (an LLM, or an embedder) works
 on a *different* chip at the same time -- both gauges lit simultaneously,
 proof captured live from the telemetry API during testing, not claimed
-from a spec sheet. \*These two ask for a 30B-parameter coding model on
+from a spec sheet. `smart-city-monitor` generalizes the same idea to N:
+pin each video feed to its own chip (say, one feed on the NPU, another on
+a GPU) and every one it's using lights up at once, correctly attributed
+per feed. \*These two ask for a 30B-parameter coding model on
 the OpenVINO engine (~15GB) -- too large for an iGPU's or NPU's memory
 budget, so that path needs a real **discrete** GPU with its own VRAM
 (flagged with an amber "Discrete GPU" tag in the launcher). The portable
@@ -124,14 +128,17 @@ ships.
   selectable devices on a chip like Panther Lake, which is the entire
   point of demonstrating *local* AI *on this hardware*, not just on a
   laptop.
-- **Composable, not copy-pasted.** Twelve demos, and the newest ones
+- **Composable, not copy-pasted.** Thirteen demos, and the newest ones
   barely add code: `meeting-notes` has no transcriber or LLM of its own
   -- it composes `live-translation` and `doc-qa` directly.
   `code-review-assist` and `html-creator` add zero new model code either,
-  each composing `doc-qa`'s LLM for a different task. `voice-assistant`
-  composes three bricks and adds exactly one new model (wake-word
-  detection). Shared capture, VAD, and device-discovery code lives in one
-  `core` package every brick depends on.
+  each composing `doc-qa`'s LLM for a different task. `smart-city-monitor`
+  has no detection model of its own either -- it composes
+  `object-detection`'s, adding only tracking, counting, and the ability to
+  run several feeds at once. `voice-assistant` composes three bricks and
+  adds exactly one new model (wake-word detection). Shared capture, VAD,
+  and device-discovery code lives in one `core` package every brick
+  depends on.
 - **Verified against real hardware, not assumed.** This suite was built
   and tested against an actual Intel NPU and Arc GPU, end to end, down to
   finding (and routing around) a real OpenVINO NPU compiler limitation on
@@ -162,6 +169,7 @@ uv run expense-extract ./receipts --ocr-engine openvino --ocr-device GPU --llm-e
 uv run smart-recall record --ocr-engine openvino --ocr-device GPU --embed-engine openvino --embed-device NPU
 uv run code-review-assist --folder . --engine openvino --compute-device GPU
 uv run html-creator --prompt "a landing page for a small coffee shop" --engine openvino --compute-device GPU
+uv run smart-city-monitor --source "intersection.mp4|GPU.0" --source "crosswalk.mp4|NPU" --engine openvino
 ```
 
 See each brick's own README for its full set of options.

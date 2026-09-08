@@ -1,0 +1,125 @@
+# smart-city-monitor
+
+Counts pedestrians, bicycles, cars, motorcycles, buses, and trucks across
+one or more local video feeds at once — fully on-device. Each feed can be
+pinned to its own compute device (e.g. one feed on the NPU, another on a
+GPU), so N feeds genuinely run in parallel, correctly attributed on the
+telemetry gauges.
+
+This brick has **no detection model of its own**: it composes
+[`object-detection`](../object-detection/README.md)'s
+`engine_factory.create_detector` directly, the same way `meeting-notes`
+composes `live-translation` and `doc-qa` rather than wrapping Whisper or
+an LLM a third time. What it adds on top:
+
+- **Tracking** ([`tracker.py`](src/smart_city_monitor/tracker.py)) — a
+  small IoU-based greedy tracker, one instance per feed, so an object is
+  counted once as it moves through frame instead of once per detection.
+- **Counting** ([`pipeline.py`](src/smart_city_monitor/pipeline.py)) — a
+  trailing-60-second count per class, continuously refreshed, plus a
+  running total, combined across every feed and broken down per feed.
+- **Real-time-paced file playback**
+  ([`pantherlake_ai_core.video.stream_video_file_frames`](../../core/src/pantherlake_ai_core/video.py)) —
+  a video file is played back at its own frame rate rather than as fast
+  as the CPU/GPU can chew through it, so "N per minute" reflects one
+  real minute of footage, not processing speed.
+- **N feeds, each on its own device** ([`pipeline.py`](src/smart_city_monitor/pipeline.py)) —
+  one detector per distinct device among the feeds (shared by every feed
+  pinned to it, so a device's model loads exactly once), each device's
+  feeds running on their own threads. Feeds on different devices run, and
+  load, genuinely in parallel.
+
+## Setup
+
+From the workspace root:
+
+```bash
+uv sync                    # portable engine only
+uv sync --extra openvino   # also installs the OpenVINO engine
+```
+
+This brick requires **Python >= 3.11** (inherited from `object-detection`,
+which needs it for `openvino-model-api`), same as `object-detection`
+itself.
+
+## Usage
+
+List available inference devices:
+
+```bash
+uv run smart-city-monitor --list-devices
+```
+
+Monitor one video file:
+
+```bash
+uv run smart-city-monitor --source intersection.mp4 --engine openvino
+```
+
+Monitor two feeds at once, each pinned to a different chip, with a live
+annotated window per feed:
+
+```bash
+uv run smart-city-monitor \
+    --source "intersection.mp4|GPU.0" --source "crosswalk.mp4|NPU" \
+    --engine openvino --show
+```
+
+Press `Ctrl+C` to stop.
+
+## Options
+
+| Flag | Description |
+| --- | --- |
+| `--source PATH[\|DEVICE]` | A video file to monitor, repeatable for multiple feeds. Optional `\|DEVICE` suffix pins that one feed to a specific device (e.g. `clip.mp4\|GPU.0`); omitted, it uses `--compute-device`. Required (at least one). |
+| `--engine {portable,openvino}` | Inference backend for every feed. Default: `openvino` if installed and a device is available, otherwise `portable`. |
+| `--compute-device NAME` | `openvino` engine only: default device for any `--source` without its own `\|DEVICE`. |
+| `--model-path PATH` | Use a local model file/dir instead of downloading the default. |
+| `--no-loop` | Stop each feed at end-of-file instead of restarting it from the beginning. |
+| `--show` | Also open one live annotated window per feed (`cv2.imshow`) — off by default so this works headlessly. |
+| `--list-devices` | List inference devices, then exit. |
+
+## How it works
+
+1. **Capture** — `pantherlake_ai_core.video.stream_video_file_frames`
+   plays a video file back paced to its own `CAP_PROP_FPS`, looping from
+   frame 0 at EOF by default (so a short clip can stand in for a
+   continuous camera feed).
+2. **Detect** — one `object_detection.engine_factory.create_detector`
+   instance per distinct device among the running feeds, guarded by one
+   lock per device so feeds sharing a device serialize their inference
+   calls safely while feeds on different devices run truly concurrently.
+3. **Track** — each feed's own `Tracker` matches this frame's detections
+   (filtered to the classes below) against its live tracks by IoU,
+   assigning a persistent id; an unmatched detection becomes a new track
+   — the actual "count" event.
+4. **Count** — each new track increments that feed's per-class trailing-
+   60-second window and running total; the launcher/CLI read a combined
+   snapshot summed across every active feed, plus each feed's own numbers.
+
+Relevant classes (present in both engines' vocabularies with matching
+label strings — see `object-detection`'s own README for the COCO-91 vs
+COCO-80 caveat): `person` → Pedestrians, `bicycle` → Bicycles, `car` →
+Cars, `motorcycle` → Motorcycles, `bus` → Buses, `truck` → Trucks.
+Anything else the detector reports is dropped before tracking, so neither
+the drawn boxes nor the counts are cluttered with irrelevant classes.
+
+## Notes / current limitations
+
+- **The tracker is a pragmatic heuristic, not real multi-object-tracking
+  or re-identification** — no appearance embedding, no motion model, just
+  IoU-overlap matching between consecutive frames (same spirit as
+  `smart-recall`'s `change_detection.py`). An object that leaves the
+  frame and re-enters, or is fully occluded for more than ~1 second, gets
+  a new id and is counted again. Good enough to stop massively
+  over-counting a slow/stationary object; not a claim to solve MOT.
+- **"Per minute" is a trailing 60-second count**, continuously refreshed
+  — not an extrapolated instantaneous rate. It's only meaningful because
+  playback is paced to the source video's own frame rate (see above); a
+  video file played back faster than real time would inflate it.
+- **No per-feed engine choice**, only per-feed *device* — every feed uses
+  the same model family (`portable` or `openvino`); mixing DETR and
+  YOLO11n per feed would add complexity for no real benefit, since the
+  interesting axis here is which chip a feed runs on, not which model.
+- Inherits `object-detection`'s own label-vocabulary and performance
+  caveats (see its README) for whichever engine is selected.

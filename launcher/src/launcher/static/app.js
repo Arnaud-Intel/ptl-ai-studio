@@ -96,6 +96,8 @@ function openDemo(demo) {
     openDocQA();
   } else if (demo.id === "object-detection") {
     openObjectDetection();
+  } else if (demo.id === "smart-city-monitor") {
+    openSmartCityMonitor();
   } else if (demo.id === "screen-ocr") {
     openScreenOcr();
   } else if (demo.id === "meeting-notes") {
@@ -834,6 +836,195 @@ async function stopObjectDetection() {
 function closeObjectDetection() {
   el("objdet-modal-overlay").classList.add("hidden");
   if (objdetRunning) stopObjectDetection();
+}
+
+// --- Smart City Monitor demo ---
+
+let smartcityRunning = false;
+let smartcityCountsTimer = null;
+let smartcityActiveFeeds = []; // [{feed_id, name, compute_device}], from the last successful start
+
+async function openSmartCityMonitor() {
+  el("smartcity-modal-overlay").classList.remove("hidden");
+  await populateSmartCityMonitorDevices();
+}
+
+async function populateSmartCityMonitorDevices() {
+  const data = await fetchJSON("/api/smart-city-monitor/devices");
+
+  const engineSelect = el("smartcity-engine");
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  openvinoOption.textContent = hasOpenvino
+    ? `OpenVINO (YOLO11n, ${data.openvino_devices.join(", ")})`
+    : "OpenVINO (install this brick's `openvino` extra to enable)";
+  if (hasOpenvino) engineSelect.value = "openvino";
+
+  const computeSelect = el("smartcity-compute-device");
+  const fillComputeDevices = () => {
+    computeSelect.innerHTML = "";
+    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
+    for (const value of options) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
+      computeSelect.appendChild(opt);
+    }
+  };
+  engineSelect.onchange = fillComputeDevices;
+  fillComputeDevices();
+}
+
+function setSmartcityStatus(text, kind) {
+  const status = el("smartcity-status");
+  status.textContent = text;
+  status.classList.remove("live", "error");
+  if (kind) status.classList.add(kind);
+}
+
+// "path" or "path|device" per line -> [{path, compute_device}]; a blank
+// compute_device means "use the shared Compute device select".
+function parseSmartcityFeeds() {
+  return el("smartcity-feeds")
+    .value.split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const pipeIndex = line.lastIndexOf("|");
+      if (pipeIndex === -1) return { path: line, compute_device: null };
+      return { path: line.slice(0, pipeIndex), compute_device: line.slice(pipeIndex + 1).trim() || null };
+    });
+}
+
+function setSmartcityRunning(isRunning) {
+  smartcityRunning = isRunning;
+  el("smartcity-start").disabled = isRunning;
+  el("smartcity-stop").disabled = !isRunning;
+  for (const id of ["smartcity-feeds", "smartcity-engine", "smartcity-compute-device", "smartcity-loop"]) {
+    el(id).disabled = isRunning;
+  }
+
+  const img = el("smartcity-video");
+  if (isRunning) {
+    setSmartcityStatus("Starting...", "live");
+    startStatusPoll("smart-city-monitor", "smart-city-monitor:feed-1", "smartcity-status");
+    smartcityCountsTimer = setInterval(pollSmartcityCounts, 1000);
+  } else {
+    stopStatusPoll("smart-city-monitor");
+    setSmartcityStatus("Idle");
+    img.removeAttribute("src");
+    img.classList.remove("visible");
+    el("smartcity-picker-row").hidden = true;
+    el("smartcity-feed-picker").innerHTML = "";
+    el("smartcity-combined-counts").innerHTML =
+      '<p class="transcript-placeholder">Combined per-minute counts will appear here once running.</p>';
+    el("smartcity-per-feed").innerHTML = "";
+    smartcityActiveFeeds = [];
+    if (smartcityCountsTimer) {
+      clearInterval(smartcityCountsTimer);
+      smartcityCountsTimer = null;
+    }
+  }
+}
+
+function showSmartcityFeed(feedId) {
+  const img = el("smartcity-video");
+  img.src = `/api/smart-city-monitor/stream?feed=${encodeURIComponent(feedId)}&t=${Date.now()}`;
+  img.classList.add("visible");
+}
+
+function populateSmartcityFeedPicker(feeds) {
+  smartcityActiveFeeds = feeds;
+  const picker = el("smartcity-feed-picker");
+  picker.innerHTML = "";
+  for (const feed of feeds) {
+    const opt = document.createElement("option");
+    opt.value = feed.feed_id;
+    opt.textContent = `${feed.name} -- ${feed.compute_device}`;
+    picker.appendChild(opt);
+  }
+  picker.onchange = () => showSmartcityFeed(picker.value);
+  el("smartcity-picker-row").hidden = feeds.length === 0;
+  if (feeds.length) showSmartcityFeed(feeds[0].feed_id);
+}
+
+function renderSmartcityCountRow(label, count) {
+  return `<div class="objdet-detection-row"><span class="objdet-detection-label">${escapeHtml(label)}</span><span class="objdet-detection-score">${count}/min</span></div>`;
+}
+
+function renderSmartcityCounts(snapshot) {
+  const combined = el("smartcity-combined-counts");
+  const entries = Object.entries(snapshot.combined_last_60s || {});
+  combined.innerHTML = entries.length
+    ? entries.map(([label, count]) => renderSmartcityCountRow(label, count)).join("")
+    : '<p class="transcript-placeholder">No relevant objects counted yet.</p>';
+
+  const perFeed = el("smartcity-per-feed");
+  perFeed.innerHTML = smartcityActiveFeeds
+    .map((feed) => {
+      const counts = (snapshot.per_feed_last_60s || {})[feed.feed_id] || {};
+      const parts = Object.entries(counts)
+        .map(([label, count]) => `${escapeHtml(label)}: ${count}/min`)
+        .join(", ") || "nothing counted yet";
+      return `<p class="card-description"><strong>${escapeHtml(feed.name)}</strong> (${escapeHtml(feed.compute_device)}): ${parts}</p>`;
+    })
+    .join("");
+}
+
+async function pollSmartcityCounts() {
+  try {
+    const data = await fetchJSON("/api/smart-city-monitor/counts");
+    if (data.error) {
+      setSmartcityStatus(`Error: ${data.error}`, "error");
+      setSmartcityRunning(false);
+      return;
+    }
+    if (data.snapshot) renderSmartcityCounts(data.snapshot);
+  } catch {
+    // Best-effort -- a transient failure here shouldn't interrupt the video stream.
+  }
+}
+
+async function startSmartCityMonitor() {
+  const feeds = parseSmartcityFeeds();
+  if (!feeds.length) {
+    setSmartcityStatus("Error: enter at least one video file path", "error");
+    return;
+  }
+  setSmartcityStatus("Starting...");
+  try {
+    const data = await fetchJSON("/api/smart-city-monitor/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        feeds,
+        engine: el("smartcity-engine").value,
+        compute_device: el("smartcity-compute-device").value,
+        loop: el("smartcity-loop").checked,
+      }),
+    });
+    setSmartcityRunning(true);
+    populateSmartcityFeedPicker(data.feeds || []);
+  } catch (err) {
+    setSmartcityStatus(`Error: ${err.message}`, "error");
+  }
+}
+
+async function stopSmartCityMonitor() {
+  el("smartcity-stop").disabled = true;
+  setSmartcityStatus("Stopping...");
+  try {
+    await fetchJSON("/api/smart-city-monitor/stop", { method: "POST" });
+  } catch (err) {
+    setSmartcityStatus(`Error: ${err.message}`, "error");
+  }
+  setSmartcityRunning(false);
+}
+
+function closeSmartCityMonitor() {
+  el("smartcity-modal-overlay").classList.add("hidden");
+  if (smartcityRunning) stopSmartCityMonitor();
 }
 
 // --- Screen / image text extraction demo ---
@@ -2472,6 +2663,10 @@ async function init() {
   el("objdet-modal-close").addEventListener("click", closeObjectDetection);
   el("objdet-start").addEventListener("click", startObjectDetection);
   el("objdet-stop").addEventListener("click", stopObjectDetection);
+
+  el("smartcity-modal-close").addEventListener("click", closeSmartCityMonitor);
+  el("smartcity-start").addEventListener("click", startSmartCityMonitor);
+  el("smartcity-stop").addEventListener("click", stopSmartCityMonitor);
 
   el("ocr-modal-close").addEventListener("click", closeScreenOcr);
   el("ocr-extract").addEventListener("click", runScreenOcrExtract);

@@ -259,6 +259,71 @@
     </div>
   </div>
 
+  <div id="smartcity-modal-overlay" class="modal-overlay hidden">
+    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="smartcity-modal-title">
+      <div class="modal-header">
+        <h2 id="smartcity-modal-title">Smart City Monitor</h2>
+        <button id="smartcity-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="controls">
+          <label class="field docqa-folder-field">
+            <span>Video feeds (one per line, local file paths)</span>
+            <textarea id="smartcity-feeds" rows="3" placeholder="C:\videos\intersection.mp4
+C:\videos\crosswalk.mp4|NPU"></textarea>
+          </label>
+          <p class="card-description" style="margin-top: -8px; margin-bottom: 0;">
+            Optionally suffix a line with <code>|DEVICE</code> (e.g. <code>|GPU.0</code>) to pin
+            that one feed to a specific chip -- otherwise it uses the Compute device below. Pin
+            different feeds to different chips and watch the telemetry gauges light up at once,
+            each correctly attributed to its own feed.
+          </p>
+
+          <label class="field">
+            <span>Engine</span>
+            <select id="smartcity-engine">
+              <option value="portable">Portable (DETR, ONNX Runtime, CPU)</option>
+              <option value="openvino">OpenVINO (YOLO11n, Intel CPU/GPU/NPU)</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Compute device (default for feeds without |DEVICE)</span>
+            <select id="smartcity-compute-device"></select>
+          </label>
+
+          <label class="reindex-field"><input id="smartcity-loop" type="checkbox" checked /> Loop feeds at end-of-file</label>
+        </div>
+
+        <div class="run-row">
+          <button id="smartcity-start" class="primary-btn" type="button">Start</button>
+          <button id="smartcity-stop" class="secondary-btn" type="button" disabled>Stop</button>
+          <span id="smartcity-status" class="run-status">Idle</span>
+        </div>
+
+        <div class="controls" id="smartcity-picker-row" hidden>
+          <label class="field">
+            <span>Viewing feed</span>
+            <select id="smartcity-feed-picker"></select>
+          </label>
+        </div>
+
+        <div class="objdet-layout">
+          <div class="objdet-video-frame">
+            <img id="smartcity-video" alt="Live annotated video feed for the selected monitor feed" />
+            <p id="smartcity-video-placeholder" class="transcript-placeholder">Press Start to see the annotated feed here.</p>
+          </div>
+          <div id="smartcity-combined-counts" class="objdet-detections" aria-live="polite">
+            <p class="transcript-placeholder">Combined per-minute counts will appear here once running.</p>
+          </div>
+        </div>
+
+        <div id="smartcity-per-feed" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="ocr-modal-overlay" class="modal-overlay hidden">
     <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="ocr-modal-title">
       <div class="modal-header">

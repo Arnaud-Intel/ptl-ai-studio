@@ -23,6 +23,7 @@ from html_creator.samples import SAMPLES as HTML_CREATOR_SAMPLES
 from pantherlake_ai_core import audio, video
 from pantherlake_ai_core.engine import Engine, list_gpu_devices, list_openvino_devices
 from pydantic import BaseModel
+from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
 from smart_recall.samples import SAMPLES as SMART_RECALL_SAMPLES
 from voice_clone_studio.samples import SAMPLES as VOICE_CLONE_STUDIO_SAMPLES
 
@@ -34,6 +35,7 @@ from .live_translation_runner import LiveTranslationRunner
 from .meeting_notes_runner import MeetingNotesRunner
 from .object_detection_runner import ObjectDetectionRunner
 from .screen_ocr_runner import ScreenOcrRunner
+from .smart_city_monitor_runner import SmartCityMonitorRunner
 from .telemetry_poller import TelemetryPoller
 from .expense_extract_runner import ExpenseExtractRunner
 from .smart_recall_runner import SmartRecallRunner
@@ -62,6 +64,11 @@ _DOC_QA_ENGINE_DEFAULTS = {
 }
 
 _OBJECT_DETECTION_ENGINE_DEFAULTS = {
+    Engine.PORTABLE: {"compute_device": "cpu"},
+    Engine.OPENVINO: {"compute_device": "AUTO"},
+}
+
+_SMART_CITY_MONITOR_ENGINE_DEFAULTS = {
     Engine.PORTABLE: {"compute_device": "cpu"},
     Engine.OPENVINO: {"compute_device": "AUTO"},
 }
@@ -133,6 +140,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 runner = LiveTranslationRunner()
 doc_qa_runner = DocQARunner()
 object_detection_runner = ObjectDetectionRunner()
+smart_city_monitor_runner = SmartCityMonitorRunner()
 screen_ocr_runner = ScreenOcrRunner()
 meeting_notes_runner = MeetingNotesRunner()
 webcam_effects_runner = WebcamEffectsRunner()
@@ -390,6 +398,85 @@ def object_detection_stream() -> StreamingResponse:
         # nothing to gain from buffering ones the client hasn't seen yet.
         while object_detection_runner.running:
             jpeg = object_detection_runner.latest_jpeg()
+            if jpeg is not None and jpeg is not last_sent:
+                yield (
+                    b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                )
+                last_sent = jpeg
+            time.sleep(0.05)
+
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+@app.get("/api/smart-city-monitor/devices")
+def smart_city_monitor_devices() -> JSONResponse:
+    return JSONResponse({"openvino_devices": list_openvino_devices()})
+
+
+class SmartCityFeedInput(BaseModel):
+    path: str
+    compute_device: str | None = None
+
+
+class SmartCityMonitorStartRequest(BaseModel):
+    feeds: list[SmartCityFeedInput]
+    engine: str = "portable"
+    compute_device: str | None = None
+    loop: bool = True
+
+
+@app.post("/api/smart-city-monitor/start")
+async def start_smart_city_monitor(req: SmartCityMonitorStartRequest) -> JSONResponse:
+    if smart_city_monitor_runner.running:
+        return JSONResponse({"error": "smart-city-monitor is already running"}, status_code=409)
+
+    if not req.feeds:
+        return JSONResponse({"error": "at least one feed is required"}, status_code=400)
+
+    try:
+        engine = Engine(req.engine)
+    except ValueError:
+        return JSONResponse({"error": f"unknown engine '{req.engine}'"}, status_code=400)
+
+    default_device = req.compute_device or _SMART_CITY_MONITOR_ENGINE_DEFAULTS[engine]["compute_device"]
+    feeds = [
+        SmartCityFeedSpec(
+            feed_id=f"feed-{i}",
+            path=f.path,
+            compute_device=f.compute_device or default_device,
+            name=Path(f.path).name,
+        )
+        for i, f in enumerate(req.feeds, start=1)
+    ]
+
+    try:
+        smart_city_monitor_runner.start(feeds=feeds, engine=engine, loop=req.loop)
+    except RuntimeError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409)
+
+    return JSONResponse(
+        {"status": "started", "feeds": [{"feed_id": f.feed_id, "name": f.name, "compute_device": f.compute_device} for f in feeds]}
+    )
+
+
+@app.post("/api/smart-city-monitor/stop")
+async def stop_smart_city_monitor() -> JSONResponse:
+    smart_city_monitor_runner.stop()
+    return JSONResponse({"status": "stopped"})
+
+
+@app.get("/api/smart-city-monitor/counts")
+def smart_city_monitor_counts() -> JSONResponse:
+    snapshot = smart_city_monitor_runner.latest_snapshot()
+    return JSONResponse({"snapshot": asdict(snapshot) if snapshot else None, "error": smart_city_monitor_runner.error})
+
+
+@app.get("/api/smart-city-monitor/stream")
+def smart_city_monitor_stream(feed: str) -> StreamingResponse:
+    def generate():
+        last_sent = None
+        while smart_city_monitor_runner.running:
+            jpeg = smart_city_monitor_runner.latest_jpeg(feed)
             if jpeg is not None and jpeg is not last_sent:
                 yield (
                     b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
