@@ -48,6 +48,15 @@ class DocQARunner:
             finally:
                 activity.clear_active(_DEMO_ID)
 
+    def status(self) -> dict:
+        """What the UI needs to pick up an index built on an earlier visit:
+        cheap, lock-free reads (a long ingest holding the lock must not
+        stall a status request)."""
+        session = self._session
+        if session is None or session.folder is None:
+            return {"indexed": False, "folder": None, "chunks": 0}
+        return {"indexed": session.store.size > 0, "folder": str(session.folder), "chunks": session.store.size}
+
     def ask(self, *, question: str, top_k: int) -> Answer:
         """Blocking."""
         with self._lock:

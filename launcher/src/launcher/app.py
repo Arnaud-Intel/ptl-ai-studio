@@ -38,7 +38,7 @@ import uvicorn
 from fastapi import FastAPI, Form, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pantherlake_ai_core import audio, video
 from pantherlake_ai_core.engine import (
@@ -216,8 +216,21 @@ async def on_validation_error(_: Request, exc: RequestValidationError) -> JSONRe
 
 
 @app.get("/")
-def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+def index() -> HTMLResponse:
+    """The page, with its script/stylesheet URLs stamped by their files'
+    modification time -- so a browser that cached the previous version's
+    app.js picks up the new one on a plain reload after an update, instead
+    of running stale code against new markup."""
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    for asset in ("style.css", "app.js"):
+        try:
+            stamp = int((STATIC_DIR / asset).stat().st_mtime)
+        except OSError:
+            continue
+        html = html.replace(f"/static/{asset}", f"/static/{asset}?v={stamp}")
+    # The page itself must be re-fetched on every navigation (it is tiny),
+    # otherwise a cached copy keeps pointing at the previous asset stamps.
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/api/demos")
@@ -359,6 +372,14 @@ async def doc_qa_ingest(req: DocQAIngestRequest) -> JSONResponse:
     return JSONResponse({"chunks": count, "folder": folder})
 
 
+@app.get("/api/doc-qa/status")
+def doc_qa_status() -> JSONResponse:
+    """Whether an index is loaded (and from where) -- so reopening the panel
+    or reloading the page picks up an index built earlier instead of
+    asking to build it again."""
+    return JSONResponse(doc_qa_runner.status())
+
+
 class DocQAAskRequest(BaseModel):
     question: str
     top_k: int = 4
@@ -476,7 +497,18 @@ async def stop_smart_city_monitor() -> JSONResponse:
 @app.get("/api/smart-city-monitor/counts")
 def smart_city_monitor_counts() -> JSONResponse:
     snapshot = smart_city_monitor_runner.latest_snapshot()
-    return JSONResponse({"snapshot": asdict(snapshot) if snapshot else None, "error": smart_city_monitor_runner.error})
+    return JSONResponse(
+        {
+            "snapshot": asdict(snapshot) if snapshot else None,
+            # The feed list too, so a panel opened after the run started (or
+            # after a reload) can rebuild its feed picker.
+            "feeds": [
+                {"feed_id": f.feed_id, "name": f.name, "compute_device": f.compute_device}
+                for f in smart_city_monitor_runner.feeds()
+            ],
+            "error": smart_city_monitor_runner.error,
+        }
+    )
 
 
 @app.get("/api/smart-city-monitor/stream")

@@ -167,13 +167,17 @@ not just one.
    `error_response()` for errors; a runner raises `launcher.errors.Conflict`
    for "already running" / "do X first" (a 409), `ValueError` /
    `FileNotFoundError` for bad input (a 400), and lets a real failure
-   propagate (a 500 carrying the message). Three templates to follow,
-   depending on the demo's shape (see [launcher/README.md](launcher/README.md)
-   for the detail): `live-translation`'s WebSocket/background-thread routes
-   for a stream where every result matters, `doc-qa`'s (and `screen-ocr`'s)
-   plain `run_in_threadpool` routes for a one-call-in-one-result-out demo,
-   or `object-detection`'s single-overwritten-buffer routes for a
-   continuous feed where only the newest result matters (e.g. more video).
+   propagate (a 500 carrying the message). The panel itself is one
+   `<section>` in `static/index.html` plus one entry in `static/app.js`'s
+   `PANELS` table (a `StreamPanel` or a `Panel` config -- opening,
+   rehydrating, the status pill, Start/Stop and the "Now running" strip are
+   all inherited). Three server-side shapes to follow, depending on the
+   demo's (see [launcher/README.md](launcher/README.md) for the detail):
+   `live-translation`'s WebSocket/background-thread routes for a stream
+   where every result matters, `doc-qa`'s (and `screen-ocr`'s) plain
+   `run_in_threadpool` routes for a one-call-in-one-result-out demo, or
+   `object-detection`'s single-overwritten-buffer routes for a continuous
+   feed where only the newest result matters (e.g. more video).
    Prefer request/response unless the demo is genuinely a live feed --
    OCR, for instance, could have been built as a continuous per-frame
    stream like object detection, but a discrete "capture, get text back"

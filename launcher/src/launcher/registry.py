@@ -177,6 +177,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        samples="expense_extract.samples",
     ),
     Demo(
         id="smart-inbox",

@@ -12,3 +12,7 @@ invented for demo purposes.
   issue and safety incident show up in the roadmap, the meeting notes,
   and the board update) so multi-document questions have something to
   actually connect.
+- `receipts/` -- three synthetic till receipts (a cafe, a taxi ride, an
+  office-supply store) rendered as PNGs for `expense-extract`'s "Try a
+  sample" picker. Fictional vendors and amounts; generated, not
+  photographed, so there is no real card, address, or person in them.

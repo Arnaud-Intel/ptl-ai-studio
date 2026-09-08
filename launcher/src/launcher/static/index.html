@@ -9,130 +9,99 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+  <a class="skip-link" href="#app">Skip to content</a>
+
   <header class="topbar">
     <div class="topbar-inner">
-      <div class="brand">
-        <h1 class="brand-logo-wrap">
-          <img class="brand-logo" src="/static/panther_lake_ai_studio_darkbg.png" alt="Panther Lake AI Studio" />
-        </h1>
+      <a class="brand" href="#/" aria-label="Panther Lake AI Studio -- all demos">
+        <img class="brand-logo" src="/static/panther_lake_ai_studio_darkbg.png" alt="Panther Lake AI Studio" />
+      </a>
+      <div class="topbar-side">
+        <span id="device-summary" class="device-summary"></span>
+        <button id="log-open" class="link-btn" type="button">Activity Log</button>
       </div>
-      <div id="device-summary" class="device-summary" aria-live="polite"></div>
     </div>
-    <div class="hardware-strip" id="hardware-strip">
-      <span class="hw-label">Running on</span>
-      <span class="hw-badge">Dell</span>
-      <span class="hw-badge">Intel&reg; Core&trade; Ultra 3</span>
-      <span class="hw-badge">Panther Lake NPU</span>
-    </div>
-
-    <div class="telemetry-strip" id="telemetry-strip" aria-live="polite">
-      <div class="telemetry-gauge" data-device="cpu">
-        <div class="telemetry-gauge-head">
-          <span class="telemetry-gauge-label">CPU</span>
-          <span class="telemetry-gauge-value">--</span>
-        </div>
-        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
-        <span class="telemetry-gauge-note"></span>
+    <div class="hardware-row">
+      <div class="hardware-strip">
+        <span class="hw-label">Running on</span>
+        <span class="hw-badge">Dell</span>
+        <span class="hw-badge">Intel&reg; Core&trade; Ultra 3</span>
+        <span class="hw-badge">Panther Lake NPU</span>
       </div>
-      <div class="telemetry-gpu-gauges" data-device="gpu-group"></div>
-      <div class="telemetry-gauge" data-device="npu">
-        <div class="telemetry-gauge-head">
-          <span class="telemetry-gauge-label">NPU</span>
-          <span class="telemetry-gauge-value">--</span>
+      <div class="telemetry-strip" id="telemetry-strip">
+        <div class="telemetry-gauge" data-device="cpu">
+          <div class="telemetry-gauge-head">
+            <span class="telemetry-gauge-label">CPU</span>
+            <span class="telemetry-gauge-value">--</span>
+          </div>
+          <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
+          <span class="telemetry-gauge-note"></span>
         </div>
-        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
-        <span class="telemetry-gauge-note"></span>
+        <div class="telemetry-gpu-gauges" data-device="gpu-group"></div>
+        <div class="telemetry-gauge" data-device="npu">
+          <div class="telemetry-gauge-head">
+            <span class="telemetry-gauge-label">NPU</span>
+            <span class="telemetry-gauge-value">--</span>
+          </div>
+          <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
+          <span class="telemetry-gauge-note"></span>
+        </div>
       </div>
     </div>
   </header>
 
-  <main id="categories" class="categories"></main>
-
-  <template id="telemetry-footer-template">
-    <div class="modal-footer telemetry-footer" aria-live="polite">
-      <div class="telemetry-gauge" data-device="cpu">
-        <div class="telemetry-gauge-head">
-          <span class="telemetry-gauge-label">CPU</span>
-          <span class="telemetry-gauge-value">--</span>
-        </div>
-        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
-        <span class="telemetry-gauge-note"></span>
-      </div>
-      <div class="telemetry-gpu-gauges" data-device="gpu-group"></div>
-      <div class="telemetry-gauge" data-device="npu">
-        <div class="telemetry-gauge-head">
-          <span class="telemetry-gauge-label">NPU</span>
-          <span class="telemetry-gauge-value">--</span>
-        </div>
-        <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
-        <span class="telemetry-gauge-note"></span>
-      </div>
+  <div id="running-strip" class="running-strip" hidden>
+    <div class="running-inner">
+      <span class="running-label">Now running</span>
+      <div id="running-chips" class="running-chips"></div>
     </div>
-  </template>
+  </div>
 
-  <template id="telemetry-gpu-gauge-template">
-    <div class="telemetry-gauge" data-gpu-id="">
-      <div class="telemetry-gauge-head">
-        <span class="telemetry-gauge-label">GPU</span>
-        <span class="telemetry-gauge-value">--</span>
-      </div>
-      <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
-      <span class="telemetry-gauge-note"></span>
-    </div>
-  </template>
+  <main id="app" class="app">
+    <section id="view-home" class="view">
+      <div id="categories"></div>
+    </section>
 
-  <template id="card-template">
-    <article class="card">
-      <div class="card-top">
-        <span class="category-tag"></span>
-        <span class="status-pill"></span>
-      </div>
-      <h3 class="card-name"></h3>
-      <p class="card-tagline"></p>
-      <p class="card-description"></p>
-      <div class="engine-badges"></div>
-      <button class="launch-btn" type="button">Launch</button>
-    </article>
-  </template>
+    <section id="view-brick" class="view" hidden>
+      <nav class="panel-nav">
+        <button id="panel-back" class="link-btn" type="button">&larr; All demos</button>
+      </nav>
+      <header class="panel-header">
+        <div class="panel-heading">
+          <h2 id="panel-title" class="panel-title" tabindex="-1"></h2>
+          <div id="panel-badges" class="badges"></div>
+        </div>
+        <p id="panel-description" class="panel-description"></p>
+      </header>
 
-  <div id="modal-overlay" class="modal-overlay hidden">
-    <div class="modal demo-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <div class="modal-header">
-        <h2 id="modal-title">Live Speech Translation</h2>
-        <button id="modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- live-translation -->
+      <section id="lt-panel" class="brick-panel" hidden>
         <div class="controls">
           <label class="field">
             <span>Audio source</span>
-            <select id="ctl-source">
+            <select id="lt-source">
               <option value="mic">Microphone</option>
-              <option value="system">System audio (loopback)</option>
+              <option value="system">System audio (whatever is playing)</option>
             </select>
           </label>
-
           <label class="field">
             <span>Audio device</span>
-            <select id="ctl-audio-device"></select>
+            <select id="lt-audio-device"></select>
           </label>
-
           <label class="field">
             <span>Engine</span>
-            <select id="ctl-engine">
-              <option value="portable">Portable (faster-whisper, CPU/CUDA)</option>
-              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+            <select id="lt-engine">
+              <option value="portable">Portable (faster-whisper)</option>
+              <option value="openvino">OpenVINO</option>
             </select>
           </label>
-
           <label class="field">
             <span>Compute device</span>
-            <select id="ctl-compute-device"></select>
+            <select id="lt-compute-device"></select>
           </label>
-
           <label class="field">
             <span>Model size</span>
-            <select id="ctl-model">
+            <select id="lt-model">
               <option value="tiny">tiny</option>
               <option value="base">base</option>
               <option value="small">small</option>
@@ -141,77 +110,54 @@
             </select>
           </label>
         </div>
-
         <div class="run-row">
-          <button id="ctl-start" class="primary-btn" type="button">Start</button>
-          <button id="ctl-stop" class="secondary-btn" type="button" disabled>Stop</button>
-          <span id="run-status" class="run-status">Idle</span>
+          <button id="lt-start" class="btn btn-primary" type="button">Start</button>
+          <button id="lt-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
+          <span id="lt-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
-        <div id="transcript" class="transcript" aria-live="polite">
-          <p class="transcript-placeholder">Translated speech will appear here once you press Start.</p>
+        <div id="lt-transcript" class="output">
+          <p class="placeholder">Translated speech will appear here once you press Start.</p>
         </div>
-      </div>
-    </div>
-  </div>
+      </section>
 
-  <div id="docqa-modal-overlay" class="modal-overlay hidden">
-    <div class="modal demo-modal" role="dialog" aria-modal="true" aria-labelledby="docqa-modal-title">
-      <div class="modal-header">
-        <h2 id="docqa-modal-title">Local Document Q&amp;A</h2>
-        <button id="docqa-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
-        <select id="docqa-sample" class="sample-picker">
-          <option value="">Try a sample (fills a demo folder + question)...</option>
-        </select>
+      <!-- doc-qa -->
+      <section id="docqa-panel" class="brick-panel" hidden>
         <div class="controls">
-          <label class="field docqa-folder-field">
-            <span>Folder to index (local path, on this machine)</span>
-            <input id="docqa-folder" type="text" placeholder="C:\Users\you\Documents\notes" />
+          <label class="field field-wide">
+            <span>Folder to index (a local path on this machine)</span>
+            <select id="docqa-sample" class="sample-picker">
+              <option value="">Try a sample (fills a demo folder and a question)...</option>
+            </select>
+            <input id="docqa-folder" type="text" placeholder="C:\Users\you\Documents\notes" autocomplete="off" />
           </label>
-
           <label class="field">
             <span>Engine</span>
             <select id="docqa-engine">
-              <option value="portable">Portable (llama.cpp, CPU)</option>
-              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (llama.cpp)</option>
+              <option value="openvino">OpenVINO</option>
             </select>
           </label>
-
           <label class="field">
             <span>Compute device</span>
             <select id="docqa-compute-device"></select>
           </label>
         </div>
-
         <div class="run-row">
-          <button id="docqa-ingest" class="primary-btn" type="button">Ingest folder</button>
-          <label class="reindex-field"><input id="docqa-reindex" type="checkbox" /> Rebuild index</label>
-          <span id="docqa-ingest-status" class="run-status">Not indexed</span>
+          <button id="docqa-ingest" class="btn btn-primary" type="button">Index folder</button>
+          <label class="check"><input id="docqa-reindex" type="checkbox" /><span>Rebuild the index</span></label>
+          <span id="docqa-status" class="run-status" role="status" aria-live="polite">Not indexed</span>
         </div>
-
-        <div id="docqa-transcript" class="transcript" aria-live="polite">
-          <p class="transcript-placeholder">Ingest a folder of .txt/.md/.pdf files, then ask a question below.</p>
+        <div id="docqa-transcript" class="output">
+          <p class="placeholder">Index a folder of .txt, .md, or .pdf files, then ask a question below.</p>
         </div>
-
         <div class="ask-row">
           <input id="docqa-question" type="text" placeholder="Ask a question about the indexed documents..." disabled />
-          <button id="docqa-ask" class="primary-btn" type="button" disabled>Ask</button>
+          <button id="docqa-ask" class="btn btn-primary" type="button" disabled>Ask</button>
         </div>
-      </div>
-    </div>
-  </div>
+      </section>
 
-  <div id="objdet-modal-overlay" class="modal-overlay hidden">
-    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="objdet-modal-title">
-      <div class="modal-header">
-        <h2 id="objdet-modal-title">Object Detection Overlay</h2>
-        <button id="objdet-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- object-detection -->
+      <section id="objdet-panel" class="brick-panel" hidden>
         <div class="controls">
           <label class="field">
             <span>Video source</span>
@@ -220,118 +166,89 @@
               <option value="webcam">Webcam</option>
             </select>
           </label>
-
           <label class="field">
             <span>Source device</span>
             <select id="objdet-source-device"></select>
           </label>
-
           <label class="field">
             <span>Engine</span>
             <select id="objdet-engine">
-              <option value="portable">Portable (DETR, ONNX Runtime, CPU)</option>
-              <option value="openvino">OpenVINO (YOLO11n, Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (DETR, ONNX Runtime)</option>
+              <option value="openvino">OpenVINO (YOLO11n)</option>
             </select>
           </label>
-
           <label class="field">
             <span>Compute device</span>
             <select id="objdet-compute-device"></select>
           </label>
         </div>
-
         <div class="run-row">
-          <button id="objdet-start" class="primary-btn" type="button">Start</button>
-          <button id="objdet-stop" class="secondary-btn" type="button" disabled>Stop</button>
-          <span id="objdet-status" class="run-status">Idle</span>
+          <button id="objdet-start" class="btn btn-primary" type="button">Start</button>
+          <button id="objdet-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
+          <span id="objdet-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
-        <div class="objdet-layout">
-          <div class="objdet-video-frame">
+        <div class="media-layout">
+          <div class="video-frame">
             <img id="objdet-video" alt="Live annotated video feed" />
-            <p id="objdet-video-placeholder" class="transcript-placeholder">Press Start to see the annotated feed here.</p>
+            <p class="placeholder">Press Start to see the annotated feed here.</p>
           </div>
-          <div id="objdet-detections" class="objdet-detections" aria-live="polite">
-            <p class="transcript-placeholder">Detected objects will be listed here.</p>
+          <div id="objdet-detections" class="output">
+            <p class="placeholder">Detected objects will be listed here.</p>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
+      </section>
 
-  <div id="smartcity-modal-overlay" class="modal-overlay hidden">
-    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="smartcity-modal-title">
-      <div class="modal-header">
-        <h2 id="smartcity-modal-title">Smart City Monitor</h2>
-        <button id="smartcity-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- smart-city-monitor -->
+      <section id="smartcity-panel" class="brick-panel" hidden>
         <div class="controls">
-          <label class="field docqa-folder-field">
-            <span>Video feeds (one per line, local file paths)</span>
+          <label class="field field-wide">
+            <span>Video feeds (one local file path per line)</span>
             <textarea id="smartcity-feeds" rows="3" placeholder="C:\videos\intersection.mp4
 C:\videos\crosswalk.mp4|NPU"></textarea>
           </label>
-          <p class="card-description" style="margin-top: -8px; margin-bottom: 0;">
-            Optionally suffix a line with <code>|DEVICE</code> (e.g. <code>|GPU.0</code>) to pin
-            that one feed to a specific chip -- otherwise it uses the Compute device below. Pin
-            different feeds to different chips and watch the telemetry gauges light up at once,
-            each correctly attributed to its own feed.
+          <p class="field-help">
+            Add <code>|DEVICE</code> after a path (for example <code>|GPU.0</code> or <code>|NPU</code>) to pin
+            that feed to one chip; otherwise it uses the compute device below. Pin different feeds to different
+            chips and every gauge they use lights up at once, each attributed to its own feed.
           </p>
-
           <label class="field">
             <span>Engine</span>
             <select id="smartcity-engine">
-              <option value="portable">Portable (DETR, ONNX Runtime, CPU)</option>
-              <option value="openvino">OpenVINO (YOLO11n, Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (DETR, ONNX Runtime)</option>
+              <option value="openvino">OpenVINO (YOLO11n)</option>
             </select>
           </label>
-
           <label class="field">
-            <span>Compute device (default for feeds without |DEVICE)</span>
+            <span>Compute device (for feeds without their own)</span>
             <select id="smartcity-compute-device"></select>
           </label>
-
-          <label class="reindex-field"><input id="smartcity-loop" type="checkbox" checked /> Loop feeds at end-of-file</label>
+          <label class="check"><input id="smartcity-loop" type="checkbox" checked /><span>Loop each feed at the end of the file</span></label>
         </div>
-
         <div class="run-row">
-          <button id="smartcity-start" class="primary-btn" type="button">Start</button>
-          <button id="smartcity-stop" class="secondary-btn" type="button" disabled>Stop</button>
-          <span id="smartcity-status" class="run-status">Idle</span>
+          <button id="smartcity-start" class="btn btn-primary" type="button">Start</button>
+          <button id="smartcity-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
+          <span id="smartcity-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
         <div class="controls" id="smartcity-picker-row" hidden>
           <label class="field">
             <span>Viewing feed</span>
             <select id="smartcity-feed-picker"></select>
           </label>
         </div>
-
-        <div class="objdet-layout">
-          <div class="objdet-video-frame">
-            <img id="smartcity-video" alt="Live annotated video feed for the selected monitor feed" />
-            <p id="smartcity-video-placeholder" class="transcript-placeholder">Press Start to see the annotated feed here.</p>
+        <div class="media-layout">
+          <div class="video-frame">
+            <img id="smartcity-video" alt="Live annotated video for the selected feed" />
+            <p class="placeholder">Press Start to see the annotated feed here.</p>
           </div>
-          <div id="smartcity-combined-counts" class="objdet-detections" aria-live="polite">
-            <p class="transcript-placeholder">Combined per-minute counts will appear here once running.</p>
+          <div id="smartcity-combined-counts" class="output">
+            <p class="placeholder">Combined per-minute counts will appear here once running.</p>
           </div>
         </div>
+        <div id="smartcity-per-feed"></div>
+      </section>
 
-        <div id="smartcity-per-feed" aria-live="polite"></div>
-      </div>
-    </div>
-  </div>
-
-  <div id="ocr-modal-overlay" class="modal-overlay hidden">
-    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="ocr-modal-title">
-      <div class="modal-header">
-        <h2 id="ocr-modal-title">Screen / Image Text Extraction</h2>
-        <button id="ocr-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- screen-ocr -->
+      <section id="ocr-panel" class="brick-panel" hidden>
         <div class="controls">
           <label class="field">
             <span>Source</span>
@@ -341,269 +258,203 @@ C:\videos\crosswalk.mp4|NPU"></textarea>
               <option value="upload">Upload a photo</option>
             </select>
           </label>
-
           <label class="field" id="ocr-source-device-field">
             <span>Source device</span>
             <select id="ocr-source-device"></select>
           </label>
-
           <label class="field" id="ocr-upload-field" hidden>
             <span>Image file</span>
             <input id="ocr-upload" type="file" accept="image/*" />
           </label>
-
           <label class="field">
             <span>Engine</span>
             <select id="ocr-engine">
-              <option value="portable">Portable (RapidOCR, ONNX Runtime, CPU)</option>
-              <option value="openvino">OpenVINO (vision-language model, Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (RapidOCR)</option>
+              <option value="openvino">OpenVINO (vision-language model)</option>
             </select>
           </label>
-
           <label class="field">
             <span>Compute device</span>
             <select id="ocr-compute-device"></select>
           </label>
         </div>
-
         <div class="run-row">
-          <button id="ocr-extract" class="primary-btn" type="button">Extract text</button>
-          <label class="reindex-field">
-            <input id="ocr-translate" type="checkbox" disabled /> Translate to English (openvino only)
-          </label>
-          <span id="ocr-status" class="run-status">Idle</span>
+          <button id="ocr-extract" class="btn btn-primary" type="button">Extract text</button>
+          <label class="check"><input id="ocr-translate" type="checkbox" disabled /><span>Translate to English (OpenVINO engine only)</span></label>
+          <span id="ocr-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
-        <div id="ocr-result" class="transcript" aria-live="polite">
-          <p class="transcript-placeholder">Extracted text will appear here.</p>
+        <div id="ocr-result" class="output">
+          <p class="placeholder">Extracted text will appear here.</p>
         </div>
-      </div>
-    </div>
-  </div>
+      </section>
 
-  <div id="mtg-modal-overlay" class="modal-overlay hidden">
-    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="mtg-modal-title">
-      <div class="modal-header">
-        <h2 id="mtg-modal-title">Live Meeting Notes</h2>
-        <button id="mtg-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- meeting-notes -->
+      <section id="mtg-panel" class="brick-panel" hidden>
         <div class="controls">
           <label class="field">
             <span>Audio source</span>
             <select id="mtg-source">
-              <option value="system">System audio (the call/video)</option>
+              <option value="system">System audio (the call or video)</option>
               <option value="mic">Microphone</option>
             </select>
           </label>
-
           <label class="field">
             <span>Audio device</span>
             <select id="mtg-audio-device"></select>
           </label>
-
           <label class="field">
             <span>Engine</span>
             <select id="mtg-engine">
-              <option value="portable">Portable (faster-whisper + llama.cpp, CPU)</option>
-              <option value="openvino">OpenVINO (Whisper + LLM, Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (faster-whisper + llama.cpp)</option>
+              <option value="openvino">OpenVINO (Whisper + LLM)</option>
             </select>
           </label>
-
           <label class="field">
             <span>Compute device</span>
             <select id="mtg-compute-device"></select>
           </label>
         </div>
-
         <div class="run-row">
-          <button id="mtg-start" class="primary-btn" type="button">Start</button>
-          <button id="mtg-stop" class="secondary-btn" type="button" disabled>Stop</button>
-          <span id="mtg-status" class="run-status">Idle</span>
+          <button id="mtg-start" class="btn btn-primary" type="button">Start</button>
+          <button id="mtg-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
+          <span id="mtg-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
-        <div id="mtg-transcript" class="transcript" aria-live="polite">
-          <p class="transcript-placeholder">The live transcript will appear here once you press Start.</p>
+        <div id="mtg-transcript" class="output">
+          <p class="placeholder">The live transcript will appear here once you press Start.</p>
         </div>
-
         <div class="run-row">
-          <button id="mtg-generate" class="primary-btn" type="button">Generate notes</button>
-          <span id="mtg-notes-status" class="run-status"></span>
+          <button id="mtg-generate" class="btn btn-primary" type="button">Generate notes</button>
+          <span id="mtg-notes-status" class="run-status" role="status" aria-live="polite"></span>
         </div>
-
-        <div id="mtg-notes" class="transcript" aria-live="polite">
-          <p class="transcript-placeholder">Running notes and action items will appear here -- generate them any time after some of the meeting has been transcribed.</p>
+        <div id="mtg-notes" class="output">
+          <p class="placeholder">Running notes and action items will appear here -- generate them any time after some of the meeting has been transcribed.</p>
         </div>
-      </div>
-    </div>
-  </div>
+      </section>
 
-  <div id="webcam-modal-overlay" class="modal-overlay hidden">
-    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="webcam-modal-title">
-      <div class="modal-header">
-        <h2 id="webcam-modal-title">Webcam Background Effects</h2>
-        <button id="webcam-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- webcam-effects -->
+      <section id="webcam-panel" class="brick-panel" hidden>
         <div class="controls">
           <label class="field">
             <span>Camera</span>
             <select id="webcam-camera"></select>
           </label>
-
           <label class="field">
             <span>Engine</span>
             <select id="webcam-engine">
-              <option value="portable">Portable (ONNX Runtime, CPU)</option>
-              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (ONNX Runtime)</option>
+              <option value="openvino">OpenVINO</option>
             </select>
           </label>
-
           <label class="field">
             <span>Compute device</span>
             <select id="webcam-compute-device"></select>
           </label>
-
           <label class="field">
-            <span>Effect</span>
+            <span>Effect (changes live)</span>
             <select id="webcam-effect">
-              <option value="blur">Blur background</option>
-              <option value="replace">Replace background</option>
+              <option value="blur">Blur the background</option>
+              <option value="replace">Replace the background</option>
             </select>
           </label>
-
           <label class="field" id="webcam-color-field" hidden>
             <span>Background color</span>
             <input id="webcam-color" type="color" value="#0068B5" />
           </label>
         </div>
-
         <div class="run-row">
-          <button id="webcam-start" class="primary-btn" type="button">Start</button>
-          <button id="webcam-stop" class="secondary-btn" type="button" disabled>Stop</button>
-          <span id="webcam-status" class="run-status">Idle</span>
+          <button id="webcam-start" class="btn btn-primary" type="button">Start</button>
+          <button id="webcam-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
+          <span id="webcam-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
-        <div class="objdet-layout">
-          <div class="objdet-video-frame">
-            <img id="webcam-video" alt="Live webcam feed with background effect applied" />
-            <p id="webcam-video-placeholder" class="transcript-placeholder">Press Start to see your webcam here, with the effect applied.</p>
+        <div class="media-layout">
+          <div class="video-frame">
+            <img id="webcam-video" alt="Live webcam feed with the background effect applied" />
+            <p class="placeholder">Press Start to see your webcam here, with the effect applied.</p>
           </div>
-          <div id="webcam-stats" class="objdet-detections" aria-live="polite">
-            <p class="transcript-placeholder">Person-coverage will be shown here once running.</p>
+          <div id="webcam-stats" class="output">
+            <p class="placeholder">How much of the frame the model sees as a person will be shown here.</p>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
+      </section>
 
-  <div id="va-modal-overlay" class="modal-overlay hidden">
-    <div class="modal demo-modal" role="dialog" aria-modal="true" aria-labelledby="va-modal-title">
-      <div class="modal-header">
-        <h2 id="va-modal-title">Local Voice Assistant</h2>
-        <button id="va-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- voice-assistant -->
+      <section id="va-panel" class="brick-panel" hidden>
         <div class="controls">
           <label class="field">
             <span>Microphone</span>
             <select id="va-audio-device"></select>
           </label>
-
           <label class="field">
             <span>Wake word</span>
             <select id="va-wake-word"></select>
           </label>
-
           <label class="field">
             <span>Engine</span>
             <select id="va-engine">
-              <option value="portable">Portable (CPU)</option>
-              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable</option>
+              <option value="openvino">OpenVINO</option>
             </select>
           </label>
-
           <label class="field">
             <span>Compute device</span>
             <select id="va-compute-device"></select>
           </label>
-
         </div>
-
         <div class="run-row">
-          <button id="va-start" class="primary-btn" type="button">Start listening</button>
-          <button id="va-stop" class="secondary-btn" type="button" disabled>Stop</button>
-          <label class="reindex-field"><input id="va-speak" type="checkbox" checked /> Speak replies out loud</label>
-          <span id="va-status" class="run-status">Idle</span>
+          <button id="va-start" class="btn btn-primary" type="button">Start listening</button>
+          <button id="va-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
+          <label class="check"><input id="va-speak" type="checkbox" checked /><span>Speak replies out loud</span></label>
+          <span id="va-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
-        <div id="va-transcript" class="transcript" aria-live="polite">
-          <p class="transcript-placeholder">Press Start, then say the wake word to begin.</p>
+        <div id="va-transcript" class="output">
+          <p class="placeholder">Press Start, then say the wake word to begin.</p>
         </div>
-      </div>
-    </div>
-  </div>
+      </section>
 
-  <div id="voice-modal-overlay" class="modal-overlay hidden">
-    <div class="modal demo-modal" role="dialog" aria-modal="true" aria-labelledby="voice-modal-title">
-      <div class="modal-header">
-        <h2 id="voice-modal-title">Voice Clone Studio</h2>
-        <button id="voice-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- voice-clone-studio -->
+      <section id="voice-panel" class="brick-panel" hidden>
         <div class="controls">
           <label class="field">
             <span>Reference voice</span>
             <select id="voice-source">
-              <option value="record">Record from microphone</option>
+              <option value="record">Record from the microphone</option>
               <option value="upload">Upload an audio file</option>
             </select>
           </label>
-
           <label class="field" id="voice-record-field">
             <span>Recording length (seconds)</span>
             <input id="voice-record-seconds" type="number" min="5" max="30" step="1" value="10" />
           </label>
-
           <label class="field" id="voice-upload-field" hidden>
             <span>Reference clip</span>
             <input id="voice-upload" type="file" accept="audio/*" />
           </label>
-
           <label class="field">
             <span>Engine</span>
             <select id="voice-engine">
-              <option value="portable">Portable (PyTorch, CPU)</option>
-              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (PyTorch)</option>
+              <option value="openvino">OpenVINO</option>
             </select>
           </label>
-
           <label class="field">
             <span>Compute device</span>
             <select id="voice-compute-device"></select>
           </label>
         </div>
-
         <div class="run-row">
-          <button id="voice-enroll" class="primary-btn" type="button">Enroll voice</button>
-          <span id="voice-enroll-status" class="run-status">No voice enrolled</span>
+          <button id="voice-enroll" class="btn btn-primary" type="button">Enroll voice</button>
+          <span id="voice-enroll-status" class="run-status" role="status" aria-live="polite">No voice enrolled yet</span>
         </div>
-
         <div class="controls">
-          <label class="field voice-text-field">
+          <label class="field field-wide">
             <span>Text to speak in the cloned voice</span>
             <select id="voice-sample" class="sample-picker" disabled>
               <option value="">Try a sample text...</option>
             </select>
             <textarea id="voice-text" rows="3" placeholder="Type anything -- it will be spoken in the voice you just enrolled." disabled></textarea>
           </label>
-
           <label class="field">
-            <span>Style</span>
+            <span>Delivery style</span>
             <select id="voice-style" disabled>
               <option value="default">default</option>
               <option value="whispering">whispering</option>
@@ -616,291 +467,220 @@ C:\videos\crosswalk.mp4|NPU"></textarea>
               <option value="friendly">friendly</option>
             </select>
           </label>
-
           <label class="field">
-            <span>Tone strength (tau)</span>
-            <input id="voice-tau" type="range" min="0.05" max="1" step="0.05" value="0.3" disabled />
+            <span>How closely to match the reference tone</span>
+            <span class="range-row">
+              <input id="voice-tau" type="range" min="0.05" max="1" step="0.05" value="0.3" disabled />
+              <output id="voice-tau-value" for="voice-tau">0.30</output>
+            </span>
           </label>
         </div>
-
         <div class="run-row">
-          <button id="voice-synthesize" class="primary-btn" type="button" disabled>Speak</button>
-          <span id="voice-synthesize-status" class="run-status">Idle</span>
+          <button id="voice-synthesize" class="btn btn-primary" type="button" disabled>Speak</button>
+          <span id="voice-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
         <audio id="voice-player" controls hidden></audio>
-      </div>
-    </div>
-  </div>
+      </section>
 
-  <div id="expx-modal-overlay" class="modal-overlay hidden">
-    <div class="modal demo-modal" role="dialog" aria-modal="true" aria-labelledby="expx-modal-title">
-      <div class="modal-header">
-        <h2 id="expx-modal-title">Expense Report Extractor</h2>
-        <button id="expx-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- expense-extract -->
+      <section id="expx-panel" class="brick-panel" hidden>
         <div class="controls">
-          <label class="field docqa-folder-field">
-            <span>Folder of receipt photos (local path, on this machine)</span>
-            <input id="expx-folder" type="text" placeholder="C:\Users\you\Documents\receipts" />
+          <label class="field field-wide">
+            <span>Folder of receipt photos (a local path on this machine)</span>
+            <select id="expx-sample" class="sample-picker">
+              <option value="">Try a sample (fills a folder of demo receipts)...</option>
+            </select>
+            <input id="expx-folder" type="text" placeholder="C:\Users\you\Documents\receipts" autocomplete="off" />
           </label>
-
           <label class="field">
             <span>OCR engine</span>
             <select id="expx-ocr-engine">
-              <option value="portable">Portable (RapidOCR, CPU)</option>
-              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (RapidOCR)</option>
+              <option value="openvino">OpenVINO</option>
             </select>
           </label>
-
           <label class="field">
             <span>OCR device</span>
             <select id="expx-ocr-device"></select>
           </label>
-
           <label class="field">
             <span>LLM engine</span>
             <select id="expx-llm-engine">
-              <option value="portable">Portable (llama.cpp, CPU)</option>
-              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (llama.cpp)</option>
+              <option value="openvino">OpenVINO</option>
             </select>
           </label>
-
           <label class="field">
             <span>LLM device</span>
             <select id="expx-llm-device"></select>
           </label>
+          <p class="field-help">
+            OCR and the LLM run at the same time, each on the device you pick -- for example OCR on a GPU
+            while the NPU structures the previous receipt -- so both gauges light up at once.
+          </p>
         </div>
-
-        <p class="card-description" style="margin-bottom: 14px;">
-          The OCR and LLM stages run concurrently on separate threads, each pinned to the device
-          you pick above -- e.g. set OCR to GPU and the LLM to NPU to watch both gauges light up
-          at once instead of one after the other.
-        </p>
-
         <div class="run-row">
-          <button id="expx-start" class="primary-btn" type="button">Start</button>
-          <button id="expx-stop" class="secondary-btn" type="button" disabled>Stop</button>
-          <span id="expx-status" class="run-status">Idle</span>
+          <button id="expx-start" class="btn btn-primary" type="button">Start</button>
+          <button id="expx-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
+          <span id="expx-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
-        <div id="expx-transcript" class="transcript" aria-live="polite">
-          <p class="transcript-placeholder">Results will appear here as each receipt is structured.</p>
+        <div id="expx-transcript" class="output">
+          <p class="placeholder">Each receipt's vendor, date, amount, and category will appear here as it is structured.</p>
         </div>
-      </div>
-    </div>
-  </div>
+      </section>
 
-  <div id="recall-modal-overlay" class="modal-overlay hidden">
-    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="recall-modal-title">
-      <div class="modal-header">
-        <h2 id="recall-modal-title">Local Screen Memory</h2>
-        <button id="recall-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- smart-recall -->
+      <section id="recall-panel" class="brick-panel" hidden>
         <div class="controls">
           <label class="field">
             <span>Screen</span>
             <select id="recall-screen"></select>
           </label>
-
           <label class="field">
-            <span>Capture interval (seconds)</span>
+            <span>Capture every (seconds)</span>
             <input id="recall-interval" type="number" min="2" max="60" step="1" value="5" />
           </label>
-
           <label class="field">
             <span>OCR engine</span>
             <select id="recall-ocr-engine">
-              <option value="portable">Portable (RapidOCR, CPU)</option>
-              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (RapidOCR)</option>
+              <option value="openvino">OpenVINO</option>
             </select>
           </label>
-
           <label class="field">
             <span>OCR device</span>
             <select id="recall-ocr-device"></select>
           </label>
-
           <label class="field">
-            <span>Embed engine</span>
+            <span>Embedding engine</span>
             <select id="recall-embed-engine">
-              <option value="portable">Portable (llama.cpp, CPU)</option>
-              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (llama.cpp)</option>
+              <option value="openvino">OpenVINO</option>
             </select>
           </label>
-
           <label class="field">
-            <span>Embed device</span>
+            <span>Embedding device</span>
             <select id="recall-embed-device"></select>
           </label>
+          <p class="field-help">
+            OCR and indexing run at the same time, each on the device you pick. The embedding engine is
+            locked in the first time you record -- mixing engines would make search results meaningless --
+            so use Reset index to switch.
+          </p>
         </div>
-
-        <p class="card-description" style="margin-bottom: 14px;">
-          OCR and indexing run concurrently on separate threads, each pinned to the device you
-          pick above. The embedding engine is locked in the first time you record -- mixing
-          engines would make search results meaningless, since they'd come from different vector
-          spaces -- use Reset to switch.
-        </p>
-
         <div class="run-row">
-          <button id="recall-start" class="primary-btn" type="button">Start recording</button>
-          <button id="recall-stop" class="secondary-btn" type="button" disabled>Stop</button>
-          <button id="recall-reset" class="secondary-btn" type="button">Reset index</button>
-          <span id="recall-status" class="run-status">Idle</span>
+          <button id="recall-start" class="btn btn-primary" type="button">Start recording</button>
+          <button id="recall-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
+          <button id="recall-reset" class="btn btn-danger" type="button">Reset index</button>
+          <span id="recall-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
-        <div id="recall-capture-feed" class="transcript" aria-live="polite">
-          <p class="transcript-placeholder">Capture events will appear here while recording.</p>
+        <div id="recall-capture-feed" class="output">
+          <p class="placeholder">Capture events will appear here while recording.</p>
         </div>
-
+        <p class="section-label" style="margin-top: 16px;">Search what you've seen</p>
         <select id="recall-sample" class="sample-picker">
           <option value="">Try a sample search...</option>
         </select>
         <div class="ask-row">
           <input id="recall-question" type="text" placeholder="What are you looking for? e.g. 'that pricing page'" />
-          <button id="recall-search" class="primary-btn" type="button">Search</button>
+          <button id="recall-search" class="btn btn-primary" type="button">Search</button>
         </div>
-
-        <div id="recall-results" aria-live="polite">
-          <p class="transcript-placeholder">Search results, with a screenshot thumbnail, will appear here.</p>
+        <div id="recall-results" class="output" style="margin-top: 12px;">
+          <p class="placeholder">Search results, each with a screenshot thumbnail, will appear here.</p>
         </div>
-      </div>
-    </div>
-  </div>
+      </section>
 
-  <div id="cra-modal-overlay" class="modal-overlay hidden">
-    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="cra-modal-title">
-      <div class="modal-header">
-        <h2 id="cra-modal-title">Commit & Code Review Assistant</h2>
-        <button id="cra-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- code-review-assist -->
+      <section id="cra-panel" class="brick-panel" hidden>
         <div class="controls">
           <label class="field">
             <span>Diff source</span>
             <select id="cra-source">
-              <option value="worktree">Working-tree folder (git diff)</option>
+              <option value="worktree">A git repository on this machine</option>
               <option value="diff_text">Paste a diff</option>
             </select>
           </label>
-
-          <label class="field docqa-folder-field" id="cra-folder-field">
-            <span>Git repo folder (local path, on this machine)</span>
-            <input id="cra-folder" type="text" placeholder="C:\Users\you\Documents\myproject" />
+          <label class="field field-wide" id="cra-folder-field">
+            <span>Repository folder (a local path on this machine)</span>
+            <input id="cra-folder" type="text" placeholder="C:\Users\you\Documents\myproject" autocomplete="off" />
           </label>
-
           <label class="field" id="cra-against-field">
-            <span>Diff against (git ref)</span>
+            <span>Compare against</span>
             <input id="cra-against" type="text" value="HEAD" />
+            <span class="field-help">A commit, branch, or tag. HEAD means everything not committed yet.</span>
           </label>
-
-          <label class="field" id="cra-diff-text-field" hidden>
+          <label class="field field-wide" id="cra-diff-text-field" hidden>
             <span>Diff text</span>
             <select id="cra-sample" class="sample-picker">
               <option value="">Try a sample diff...</option>
             </select>
             <textarea id="cra-diff-text" rows="6" placeholder="Paste the output of 'git diff' here"></textarea>
           </label>
-
           <label class="field">
             <span>Engine</span>
             <select id="cra-engine">
-              <option value="portable">Portable (llama.cpp, CPU)</option>
-              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (llama.cpp)</option>
+              <option value="openvino">OpenVINO (coding model)</option>
             </select>
           </label>
-
           <label class="field">
             <span>Compute device</span>
             <select id="cra-compute-device"></select>
           </label>
         </div>
-
         <div class="run-row">
-          <button id="cra-review" class="primary-btn" type="button">Review</button>
-          <span id="cra-status" class="run-status">Idle</span>
+          <button id="cra-review" class="btn btn-primary" type="button">Review</button>
+          <span id="cra-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
-        <div id="cra-result" class="transcript" aria-live="polite">
-          <p class="transcript-placeholder">Commit message and review notes will appear here.</p>
+        <div id="cra-result" class="output">
+          <p class="placeholder">The commit message and review notes will appear here.</p>
         </div>
-      </div>
-    </div>
-  </div>
+      </section>
 
-  <div id="htmlc-modal-overlay" class="modal-overlay hidden">
-    <div class="modal modal-wide demo-modal" role="dialog" aria-modal="true" aria-labelledby="htmlc-modal-title">
-      <div class="modal-header">
-        <h2 id="htmlc-modal-title">HTML Creator</h2>
-        <button id="htmlc-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
-      </div>
-
-      <div class="modal-body">
+      <!-- html-creator -->
+      <section id="htmlc-panel" class="brick-panel" hidden>
         <div class="controls">
           <label class="field">
-            <span>Mode</span>
+            <span>What to make</span>
             <select id="htmlc-mode">
-              <option value="landing_page">Landing page (from a prompt)</option>
-              <option value="document">Document summary (from a folder)</option>
+              <option value="landing_page">A landing page, from a description</option>
+              <option value="document">A summary report, from a folder of documents</option>
             </select>
           </label>
-
-          <label class="field" id="htmlc-prompt-field">
+          <label class="field field-wide" id="htmlc-prompt-field">
             <span>Describe the page</span>
             <select id="htmlc-sample" class="sample-picker">
               <option value="">Try a sample prompt...</option>
             </select>
-            <textarea id="htmlc-prompt" rows="3" placeholder="e.g. a landing page for a small coffee shop, warm and cozy vibe"></textarea>
+            <textarea id="htmlc-prompt" rows="3" placeholder="e.g. a landing page for a small coffee shop, warm and cozy"></textarea>
           </label>
-
-          <label class="field docqa-folder-field" id="htmlc-folder-field" hidden>
-            <span>Folder of documents (local path, on this machine)</span>
-            <input id="htmlc-folder" type="text" placeholder="C:\Users\you\Documents\myproject" />
+          <label class="field field-wide" id="htmlc-folder-field" hidden>
+            <span>Folder of documents (a local path on this machine)</span>
+            <input id="htmlc-folder" type="text" placeholder="C:\Users\you\Documents\myproject" autocomplete="off" />
           </label>
-
           <label class="field">
             <span>Engine</span>
             <select id="htmlc-engine">
-              <option value="portable">Portable (llama.cpp, CPU)</option>
-              <option value="openvino">OpenVINO (Intel CPU/GPU/NPU)</option>
+              <option value="portable">Portable (llama.cpp)</option>
+              <option value="openvino">OpenVINO (coding model)</option>
             </select>
           </label>
-
           <label class="field">
             <span>Compute device</span>
             <select id="htmlc-compute-device"></select>
           </label>
         </div>
-
         <div class="run-row">
-          <button id="htmlc-generate" class="primary-btn" type="button">Generate</button>
-          <button id="htmlc-download" class="secondary-btn" type="button" hidden>Download .html</button>
-          <span id="htmlc-status" class="run-status">Idle</span>
+          <button id="htmlc-generate" class="btn btn-primary" type="button">Generate</button>
+          <button id="htmlc-download" class="btn btn-secondary" type="button" hidden>Download .html</button>
+          <span id="htmlc-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-
-        <div id="htmlc-result" aria-live="polite">
-          <p class="transcript-placeholder">The generated page will appear here.</p>
+        <div id="htmlc-result" class="output">
+          <p class="placeholder">The generated page will appear here.</p>
         </div>
-      </div>
-    </div>
-  </div>
-
-  <div id="placeholder-overlay" class="modal-overlay hidden">
-    <div class="modal modal-small" role="dialog" aria-modal="true">
-      <div class="modal-header">
-        <h2>Coming soon</h2>
-        <button class="icon-btn placeholder-close" type="button" aria-label="Close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p id="placeholder-text"></p>
-      </div>
-    </div>
-  </div>
+      </section>
+    </section>
+  </main>
 
   <footer class="site-footer">
     <div class="site-footer-inner">
@@ -909,7 +689,6 @@ C:\videos\crosswalk.mp4|NPU"></textarea>
         <img class="footer-logo footer-logo-wordmark" src="/static/dell-logo.png" alt="Dell" />
       </div>
       <span id="app-version" class="footer-version"></span>
-      <button id="log-open" class="footer-link-btn" type="button">Activity Log</button>
       <div class="site-footer-group">
         <img class="footer-logo footer-logo-badge" src="/static/intel-core-ultra.png" alt="Intel Core Ultra" />
         <img class="footer-logo footer-logo-badge" src="/static/intel-arc.png" alt="Intel Arc Graphics" />
@@ -917,23 +696,48 @@ C:\videos\crosswalk.mp4|NPU"></textarea>
     </div>
   </footer>
 
-  <div id="log-modal-overlay" class="modal-overlay hidden">
-    <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="log-modal-title">
+  <div id="log-modal-overlay" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="log-modal-title">
       <div class="modal-header">
         <h2 id="log-modal-title">Activity Log</h2>
         <button id="log-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <p class="card-description" style="margin-bottom: 14px;">
+        <p class="modal-note">
           Recent lifecycle events across every brick -- what loaded, what ran, and what failed.
           Also persisted to <code>logs/events.log</code> at the repo root.
         </p>
-        <div id="log-list" aria-live="polite">
-          <p class="transcript-placeholder">No events yet -- launch a brick to see activity here.</p>
+        <div id="log-list">
+          <p class="placeholder">No events yet -- launch a brick to see activity here.</p>
         </div>
       </div>
     </div>
   </div>
+
+  <template id="card-template">
+    <article class="card">
+      <div class="card-head">
+        <h3 class="card-name"></h3>
+        <div class="badges"></div>
+      </div>
+      <p class="card-tagline"></p>
+      <div class="card-foot">
+        <span class="card-state"></span>
+        <button class="launch-btn" type="button">Open</button>
+      </div>
+    </article>
+  </template>
+
+  <template id="telemetry-gpu-gauge-template">
+    <div class="telemetry-gauge" data-gpu-id="">
+      <div class="telemetry-gauge-head">
+        <span class="telemetry-gauge-label">GPU</span>
+        <span class="telemetry-gauge-value">--</span>
+      </div>
+      <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
+      <span class="telemetry-gauge-note"></span>
+    </div>
+  </template>
 
   <script src="/static/app.js"></script>
 </body>

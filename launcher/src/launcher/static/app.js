@@ -1,6 +1,21 @@
+// Panther Lake AI Studio -- front end.
+//
+// Two views switched by hash routing: the home grid (#/) and one panel per
+// available brick (#/brick/<id>). Leaving a panel never stops the brick --
+// runs live on the server, the "Now running" strip under the header tracks
+// them from /api/status, and reopening a panel rehydrates from that same
+// status (plus a brick's own status route, where it has one).
+//
+// Every brick is a Panel (request/response: one call in, one result out) or a
+// StreamPanel (a background run with Start/Stop -- results over a WebSocket,
+// or an MJPEG video stream plus a polled side channel). The 13 configs at the
+// bottom only carry what is genuinely different per brick.
+
 const CATEGORY_ORDER = ["Speech", "Vision", "Text", "Productivity", "Audio"];
 
 const el = (id) => document.getElementById(id);
+
+// --- Small helpers ------------------------------------------------------------
 
 async function fetchJSON(url, options) {
   const res = await fetch(url, options);
@@ -11,565 +26,111 @@ async function fetchJSON(url, options) {
   return body;
 }
 
-function renderCards(demos) {
-  const root = el("categories");
-  root.innerHTML = "";
-  const template = el("card-template");
-
-  const byCategory = new Map();
-  for (const demo of demos) {
-    if (!byCategory.has(demo.category)) byCategory.set(demo.category, []);
-    byCategory.get(demo.category).push(demo);
-  }
-
-  const orderedCategories = [
-    ...CATEGORY_ORDER.filter((c) => byCategory.has(c)),
-    ...[...byCategory.keys()].filter((c) => !CATEGORY_ORDER.includes(c)),
-  ];
-
-  for (const category of orderedCategories) {
-    const block = document.createElement("section");
-    block.className = "category-block";
-
-    const heading = document.createElement("h2");
-    heading.className = "category-heading";
-    heading.textContent = category;
-    block.appendChild(heading);
-
-    const grid = document.createElement("div");
-    grid.className = "card-grid";
-
-    for (const demo of byCategory.get(category)) {
-      const node = template.content.cloneNode(true);
-      const card = node.querySelector(".card");
-      node.querySelector(".category-tag").textContent = demo.category;
-
-      const pill = node.querySelector(".status-pill");
-      pill.textContent = demo.status === "available" ? "Available" : "Planned";
-      pill.classList.add(demo.status === "available" ? "available" : "planned");
-
-      node.querySelector(".card-name").textContent = demo.name;
-      node.querySelector(".card-tagline").textContent = demo.tagline;
-      node.querySelector(".card-description").textContent = demo.description;
-
-      const badges = node.querySelector(".engine-badges");
-      for (const engine of demo.engines) {
-        const span = document.createElement("span");
-        span.className = "engine-badge";
-        span.textContent = engine;
-        badges.appendChild(span);
-      }
-      if (demo.requires_dgpu) {
-        const span = document.createElement("span");
-        span.className = "engine-badge requires-dgpu";
-        span.textContent = "Discrete GPU";
-        span.title = "The openvino engine's model here needs a real discrete GPU with its own VRAM -- too large for an iGPU's or NPU's memory budget. The portable engine still runs everywhere.";
-        badges.appendChild(span);
-      }
-
-      const btn = node.querySelector(".launch-btn");
-      if (demo.status === "available") {
-        btn.addEventListener("click", () => openDemo(demo));
-      } else {
-        btn.textContent = "Coming soon";
-        btn.disabled = true;
-        card.addEventListener("click", () => openPlaceholder(demo));
-      }
-
-      grid.appendChild(node);
-    }
-
-    block.appendChild(grid);
-    root.appendChild(block);
-  }
-}
-
-function openPlaceholder(demo) {
-  el("placeholder-text").textContent = `${demo.name}: ${demo.description}`;
-  el("placeholder-overlay").classList.remove("hidden");
-}
-
-function openDemo(demo) {
-  if (demo.id === "live-translation") {
-    openLiveTranslation();
-  } else if (demo.id === "doc-qa") {
-    openDocQA();
-  } else if (demo.id === "object-detection") {
-    openObjectDetection();
-  } else if (demo.id === "smart-city-monitor") {
-    openSmartCityMonitor();
-  } else if (demo.id === "screen-ocr") {
-    openScreenOcr();
-  } else if (demo.id === "meeting-notes") {
-    openMeetingNotes();
-  } else if (demo.id === "webcam-effects") {
-    openWebcamEffects();
-  } else if (demo.id === "voice-clone-studio") {
-    openVoiceCloneStudio();
-  } else if (demo.id === "voice-assistant") {
-    openVoiceAssistant();
-  } else if (demo.id === "expense-extract") {
-    openExpenseExtract();
-  } else if (demo.id === "smart-recall") {
-    openRecall();
-  } else if (demo.id === "code-review-assist") {
-    openCodeReviewAssist();
-  } else if (demo.id === "html-creator") {
-    openHtmlCreator();
-  }
-}
-
-// --- Live translation demo ---
-
-let ws = null;
-let running = false;
-
-async function openLiveTranslation() {
-  el("modal-overlay").classList.remove("hidden");
-  await populateLiveTranslationDevices();
-  connectWebSocket();
-}
-
-async function populateLiveTranslationDevices() {
-  const data = await fetchJSON("/api/live-translation/devices");
-
-  const audioSelect = el("ctl-audio-device");
-  audioSelect.innerHTML = "";
-  const defaultOpt = document.createElement("option");
-  defaultOpt.value = "";
-  defaultOpt.textContent = "Default device";
-  audioSelect.appendChild(defaultOpt);
-
-  const sourceSelect = el("ctl-source");
-  const fillAudioDevices = () => {
-    const names = sourceSelect.value === "mic" ? data.microphones : data.speakers;
-    audioSelect.innerHTML = "";
-    audioSelect.appendChild(defaultOpt.cloneNode(true));
-    for (const name of names) {
-      const opt = document.createElement("option");
-      opt.value = name;
-      opt.textContent = name;
-      audioSelect.appendChild(opt);
-    }
-  };
-  sourceSelect.onchange = fillAudioDevices;
-  fillAudioDevices();
-
-  const engineSelect = el("ctl-engine");
-  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  openvinoOption.textContent = hasOpenvino
-    ? `OpenVINO (${data.openvino_devices.join(", ")})`
-    : "OpenVINO (install this brick's `openvino` extra to enable)";
-  if (hasOpenvino) engineSelect.value = "openvino";
-
-  const computeSelect = el("ctl-compute-device");
-  // Intel only publishes pre-converted OpenVINO Whisper repos for
-  // tiny/base/medium/large-v3 -- there's no whisper-small-fp16-ov, so
-  // "small" throws a backend error under the OpenVINO engine. Disable it
-  // in the <select> itself (same pattern as the OpenVINO engine option
-  // being disabled when no device is available) rather than just
-  // resetting the default, since nothing else stops a manual pick.
-  const modelSelect = el("ctl-model");
-  const smallOption = modelSelect.querySelector('option[value="small"]');
-  const fillComputeDevices = () => {
-    computeSelect.innerHTML = "";
-    const options = engineSelect.value === "openvino"
-      ? ["AUTO", ...data.openvino_devices]
-      : ["auto", "cpu", "cuda"];
-    for (const value of options) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-      computeSelect.appendChild(opt);
-    }
-    const isOpenvino = engineSelect.value === "openvino";
-    smallOption.disabled = isOpenvino;
-    smallOption.textContent = isOpenvino ? "small (portable engine only)" : "small";
-    modelSelect.value = isOpenvino ? "base" : "small";
-  };
-  engineSelect.onchange = fillComputeDevices;
-  fillComputeDevices();
-}
-
-function connectWebSocket() {
-  if (ws) return;
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${protocol}://${location.host}/ws/live-translation`);
-  ws.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    if (message.type === "result") {
-      appendTranscriptLine(message);
-    } else if (message.type === "error") {
-      setRunStatus(`Error: ${message.message}`, "error");
-      setRunning(false);
-    } else if (message.type === "stopped") {
-      setRunning(false);
-      if (!el("run-status").classList.contains("error")) {
-        setRunStatus("Idle");
-      }
-    }
-  };
-  ws.onclose = () => { ws = null; };
-}
-
-function appendTranscriptLine(result) {
-  const container = el("transcript");
-  const placeholder = container.querySelector(".transcript-placeholder");
-  if (placeholder) placeholder.remove();
-
-  const line = document.createElement("p");
-  line.className = "transcript-line";
-  const time = new Date().toLocaleTimeString();
-  line.innerHTML = `<span class="transcript-time">${time}</span><span class="transcript-lang">(${(result.detected_language || "auto").toUpperCase()})</span>${escapeHtml(result.text)}`;
-  container.appendChild(line);
-  container.scrollTop = container.scrollHeight;
+function postJSON(url, body) {
+  return fetchJSON(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
 }
 
 function escapeHtml(text) {
   const div = document.createElement("div");
-  div.textContent = text;
+  div.textContent = text == null ? "" : String(text);
   return div.innerHTML;
 }
 
-function setRunStatus(text, kind) {
-  const status = el("run-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
+function option(value, label) {
+  const opt = document.createElement("option");
+  opt.value = value;
+  opt.textContent = label;
+  return opt;
 }
 
-function setRunning(isRunning) {
-  running = isRunning;
-  el("ctl-start").disabled = isRunning;
-  el("ctl-stop").disabled = !isRunning;
-  for (const id of ["ctl-source", "ctl-audio-device", "ctl-engine", "ctl-compute-device", "ctl-model"]) {
-    el(id).disabled = isRunning;
-  }
-  if (isRunning) {
-    // Don't claim "Listening..." yet -- the model may still be loading;
-    // the status poll (started below) will show the real phase within
-    // 1.5s, including the "live" class once it's actually running.
-    setRunStatus("Starting...");
-    startStatusPoll("live-translation", "live-translation", "run-status");
-  } else {
-    stopStatusPoll("live-translation");
-  }
+function fillSelect(select, items) {
+  select.innerHTML = "";
+  for (const item of items) select.appendChild(option(item.value, item.label));
 }
 
-async function startLiveTranslation() {
-  setRunStatus("Starting...");
-  try {
-    await fetchJSON("/api/live-translation/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: el("ctl-source").value,
-        audio_device: el("ctl-audio-device").value || null,
-        engine: el("ctl-engine").value,
-        model_size: el("ctl-model").value,
-        compute_device: el("ctl-compute-device").value,
-      }),
-    });
-    setRunning(true);
-  } catch (err) {
-    setRunStatus(`Error: ${err.message}`, "error");
-  }
+function showPlaceholder(container, text) {
+  container.innerHTML = `<p class="placeholder">${escapeHtml(text)}</p>`;
 }
 
-async function stopLiveTranslation() {
-  el("ctl-stop").disabled = true;
-  setRunStatus("Stopping...");
-  try {
-    await fetchJSON("/api/live-translation/stop", { method: "POST" });
-  } catch (err) {
-    setRunStatus(`Error: ${err.message}`, "error");
-  }
-  setRunning(false);
-}
-
-function closeLiveTranslation() {
-  el("modal-overlay").classList.add("hidden");
-  if (running) stopLiveTranslation();
-}
-
-// --- Document Q&A demo ---
-
-let docQaIndexed = false;
-
-async function openDocQA() {
-  el("docqa-modal-overlay").classList.remove("hidden");
-  await populateDocQaDevices();
-}
-
-async function populateDocQaDevices() {
-  const data = await fetchJSON("/api/doc-qa/devices");
-
-  const engineSelect = el("docqa-engine");
-  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  openvinoOption.textContent = hasOpenvino
-    ? `OpenVINO (${data.openvino_devices.join(", ")})`
-    : "OpenVINO (install this brick's `openvino` extra to enable)";
-  if (hasOpenvino) engineSelect.value = "openvino";
-
-  const computeSelect = el("docqa-compute-device");
-  const fillComputeDevices = () => {
-    computeSelect.innerHTML = "";
-    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
-    for (const value of options) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-      computeSelect.appendChild(opt);
-    }
-  };
-  engineSelect.onchange = fillComputeDevices;
-  fillComputeDevices();
-
-  wireSamplePicker("docqa-sample", data.samples, { "docqa-folder": "folder", "docqa-question": "question" });
-}
-
-function setDocQaIngestStatus(text, kind) {
-  const status = el("docqa-ingest-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function setDocQaBusy(busy) {
-  el("docqa-ingest").disabled = busy;
-  el("docqa-ask").disabled = busy || !docQaIndexed;
-  el("docqa-question").disabled = busy || !docQaIndexed;
-  // Unlike the question field, the sample picker also fills the folder
-  // field -- it needs to be usable *before* ingest to bootstrap a demo
-  // from a cold start, so it's only gated on busy, not on docQaIndexed.
-  for (const id of ["docqa-folder", "docqa-engine", "docqa-compute-device", "docqa-reindex", "docqa-sample"]) {
-    el(id).disabled = busy;
-  }
-}
-
-async function runDocQaIngest() {
-  const folder = el("docqa-folder").value.trim();
-  if (!folder) {
-    setDocQaIngestStatus("Enter a folder path first.", "error");
-    return;
-  }
-
-  docQaIndexed = false;
-  setDocQaBusy(true);
-  setDocQaIngestStatus("Indexing... (first run downloads models)");
-  const stopStatus = pollBrickStatus("doc-qa", "docqa-ingest-status");
-
-  try {
-    const result = await fetchJSON("/api/doc-qa/ingest", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        folder,
-        engine: el("docqa-engine").value,
-        compute_device: el("docqa-compute-device").value,
-        reindex: el("docqa-reindex").checked,
-      }),
-    });
-    docQaIndexed = true;
-    setDocQaIngestStatus(`Indexed ${result.chunks} chunk(s) from ${result.folder}`, "live");
-  } catch (err) {
-    setDocQaIngestStatus(`Error: ${err.message}`, "error");
-  } finally {
-    stopStatus();
-    setDocQaBusy(false);
-  }
-}
-
-async function runDocQaAsk() {
-  const question = el("docqa-question").value.trim();
-  if (!question) return;
-
-  appendDocQaQuestion(question);
-  el("docqa-question").value = "";
-  setDocQaBusy(true);
-
-  try {
-    const answer = await fetchJSON("/api/doc-qa/ask", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
-    });
-    appendDocQaAnswer(answer);
-  } catch (err) {
-    appendDocQaAnswer({ text: `Error: ${err.message}`, sources: [] });
-  } finally {
-    setDocQaBusy(false);
-  }
-}
-
-function appendDocQaQuestion(question) {
-  const container = el("docqa-transcript");
-  const placeholder = container.querySelector(".transcript-placeholder");
+// Append one line to an output box, dropping its placeholder on first use and
+// keeping the newest line in view.
+function appendLine(container, className, content, { html = false } = {}) {
+  const placeholder = container.querySelector(".placeholder");
   if (placeholder) placeholder.remove();
-
   const line = document.createElement("p");
-  line.className = "transcript-question";
-  line.textContent = `Q: ${question}`;
+  line.className = className;
+  if (html) line.innerHTML = content;
+  else line.textContent = content;
   container.appendChild(line);
   container.scrollTop = container.scrollHeight;
 }
 
-function appendDocQaAnswer(answer) {
-  const container = el("docqa-transcript");
-
-  const answerLine = document.createElement("p");
-  answerLine.className = "transcript-answer";
-  answerLine.textContent = answer.text;
-  container.appendChild(answerLine);
-
-  if (answer.sources && answer.sources.length) {
-    const sourcesLine = document.createElement("p");
-    sourcesLine.className = "transcript-sources";
-    sourcesLine.textContent = "Sources: " + answer.sources
-      .map((s) => `${s.source} [${s.score.toFixed(2)}]`)
-      .join(", ");
-    container.appendChild(sourcesLine);
-  }
-
-  container.scrollTop = container.scrollHeight;
+function appendTimedLine(container, time, lang, text) {
+  appendLine(
+    container,
+    "line",
+    `<span class="line-time">${escapeHtml(time)}</span><span class="line-lang">(${escapeHtml((lang || "auto").toUpperCase())})</span>${escapeHtml(text)}`,
+    { html: true },
+  );
 }
 
-function closeDocQA() {
-  el("docqa-modal-overlay").classList.add("hidden");
+function statRow(label, value) {
+  return `<div class="stat-row"><span class="stat-label">${escapeHtml(label)}</span><span class="stat-value">${escapeHtml(value)}</span></div>`;
 }
 
-// --- Hardware telemetry ---
-
-const DEMO_NAMES_BY_ID = {
-  "live-translation": "Live Speech Translation",
-  "doc-qa": "Local Document Q&A",
-  "object-detection": "Object Detection Overlay",
-  "screen-ocr": "Screen / Image Text Extraction",
-  "meeting-notes": "Live Meeting Notes",
-  "webcam-effects": "Webcam Background Effects",
-  "voice-clone-studio": "Voice Clone Studio",
-  "voice-assistant": "Local Voice Assistant",
-  "expense-extract": "Expense Report Extractor",
-  "smart-recall": "Local Screen Memory",
-  "code-review-assist": "Commit & Code Review Assistant",
-  "html-creator": "HTML Creator",
-};
-
-function matchGaugeKind(device) {
-  const d = (device || "").toUpperCase();
-  if (d === "CPU") return "cpu";
-  // A specific GPU id ("GPU.0", "GPU.1", or bare "GPU" on a single-GPU
-  // machine), not a collapsed "gpu" bucket -- so pinning a demo's stage to
-  // one physical GPU lights up only that GPU's gauge, not every GPU's.
-  if (d.startsWith("GPU")) return d;
-  if (d === "NPU") return "npu";
-  return null; // e.g. "AUTO" or "cuda" -- device OpenVINO/faster-whisper picks internally, not pinned to one gauge
+function renderTextBlock(container, text) {
+  container.innerHTML = "";
+  const block = document.createElement("p");
+  block.className = "text-block";
+  block.textContent = text;
+  container.appendChild(block);
 }
 
-function renderTelemetry(data) {
-  // data.active is a list, not a dict keyed by demo id: a demo like
-  // expense-extract can have two entries active at once (one per stage,
-  // pinned to two different devices), so two different gauges can each
-  // carry their own label from the very same demo simultaneously.
-  const activeByKind = {};
-  for (const info of data.active || []) {
-    const kind = matchGaugeKind(info.device);
-    if (!kind) continue;
-    const baseName = DEMO_NAMES_BY_ID[info.demo_id] || info.demo_id;
-    activeByKind[kind] = info.stage_label ? `${baseName} (${info.stage_label})` : baseName;
-  }
+// --- Shared state ---------------------------------------------------------------
 
-  // CPU/NPU are singular gauges (data-device); each GPU gets its own gauge
-  // (data-gpu-id), built dynamically from however many GPUs this machine
-  // reports -- see initGpuGauges(). A gpu id with no matching DOM gauge
-  // (e.g. the OpenVINO-unavailable fallback reading, id "GPU") is simply
-  // skipped below rather than guessed at.
-  const gauges = {
-    cpu: { value: data.cpu_percent, name: null, selector: '.telemetry-gauge[data-device="cpu"]' },
-    npu: { value: data.npu_percent, name: data.npu_name, selector: '.telemetry-gauge[data-device="npu"]' },
-  };
-  for (const gpu of data.gpus || []) {
-    gauges[gpu.id] = { value: gpu.percent, name: gpu.name, selector: `.telemetry-gauge[data-gpu-id="${gpu.id}"]` };
-  }
-
-  for (const [kind, { value, name, selector }] of Object.entries(gauges)) {
-    // querySelectorAll, not querySelector: the same gauges appear once in
-    // the header and once more per demo modal's footer (cloned from
-    // #telemetry-footer-template in initTelemetryFooters), and every copy
-    // needs to stay in sync on each poll.
-    const gaugeInstances = document.querySelectorAll(selector);
-    if (!gaugeInstances.length) continue;
-    const activeLabel = activeByKind[kind];
-
-    for (const gauge of gaugeInstances) {
-      const valueEl = gauge.querySelector(".telemetry-gauge-value");
-      const fillEl = gauge.querySelector(".telemetry-bar-fill");
-      const noteEl = gauge.querySelector(".telemetry-gauge-note");
-
-      if (value === null || value === undefined) {
-        valueEl.textContent = "N/A";
-        fillEl.style.width = "0%";
-        gauge.classList.add("unavailable");
-      } else {
-        valueEl.textContent = `${Math.round(value)}%`;
-        fillEl.style.width = `${Math.min(value, 100)}%`;
-        gauge.classList.remove("unavailable");
-      }
-
-      if (activeLabel) {
-        noteEl.textContent = activeLabel;
-        gauge.classList.add("active-gauge");
-      } else {
-        noteEl.textContent = name || "";
-        gauge.classList.remove("active-gauge");
-      }
-    }
-  }
-}
-
-async function pollTelemetry() {
-  try {
-    renderTelemetry(await fetchJSON("/api/telemetry"));
-  } catch {
-    // Best-effort panel -- ignore a transient failure and try again next tick.
-  }
-}
-
-function initTelemetryFooters() {
-  const template = el("telemetry-footer-template");
-  for (const modal of document.querySelectorAll(".demo-modal")) {
-    modal.appendChild(template.content.cloneNode(true));
-  }
-}
-
-// Every OpenVINO-visible GPU on this machine, fetched once at startup:
-// {id, full_name}[]. Drives both the per-GPU telemetry gauges below and the
-// friendly labels on every brick's compute-device dropdown (via
-// gpuDeviceLabel(), called from each brick's device-select population).
+let DEMOS = [];
+// Every OpenVINO-visible GPU on this machine ({id, full_name}[]), fetched once:
+// drives the per-GPU gauges and the friendly labels in device dropdowns.
 let GPU_DEVICES = [];
+// Latest /api/status snapshot ({"<demo>[:<stage>]": {phase, message, at}})
+// and the telemetry's active list ([{demo_id, device, stage_label}]).
+const STATUS = { snapshot: {}, active: [] };
 
-async function loadGpuDevices() {
-  try {
-    GPU_DEVICES = await fetchJSON("/api/system/gpu-devices");
-  } catch {
-    GPU_DEVICES = [];
-  }
+function demoById(id) {
+  return DEMOS.find((d) => d.id === id);
 }
 
-function gpuDeviceLabel(id) {
-  const gpu = GPU_DEVICES.find((g) => g.id === id);
-  return gpu ? gpu.full_name : id;
+function shortGpuName(fullName) {
+  return fullName
+    .replace(/Intel\(R\)\s*/g, "")
+    .replace(/\(TM\)/g, "")
+    .replace(/\s+Graphics/g, "")
+    .replace(/\s+GPU/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function deviceLabel(id) {
+  const upper = String(id).toUpperCase();
+  if (upper.startsWith("GPU")) {
+    const gpu = GPU_DEVICES.find((g) => g.id === id);
+    return gpu ? gpu.full_name : id;
+  }
+  if (upper === "AUTO") return "AUTO (let OpenVINO choose)";
+  if (upper === "CPU") return "CPU";
+  if (upper === "NPU") return "NPU";
+  if (upper === "CUDA") return "CUDA (NVIDIA GPU)";
+  return id;
 }
 
 // The OpenVINO device to default a *large* model to (one that needs its own
 // VRAM, e.g. a 30B coding LLM): the machine's discrete GPU if it has one and
 // it's among the brick's offered devices, else AUTO. Mirrors
-// pantherlake_ai_core.engine.preferred_large_model_device() so the UI's
-// pre-selected option matches what the CLI/launcher would pick on their own.
+// pantherlake_ai_core.engine.preferred_large_model_device().
 function preferredLargeModelDevice(openvinoDevices) {
   const discrete = GPU_DEVICES.filter(
     (g) => (g.full_name || "").includes("dGPU") && (openvinoDevices || []).includes(g.id),
@@ -577,25 +138,77 @@ function preferredLargeModelDevice(openvinoDevices) {
   return discrete.length ? discrete[discrete.length - 1].id : "AUTO";
 }
 
-// Populates a "try a sample" <select> (samplePickerId) from a brick's
-// /devices response (samples: [{name, description, ...payload}]) and wires
-// it to fill one or more target fields from the picked sample on change,
-// then reset back to the placeholder -- a one-shot insert, not a
-// persistent selection. fieldMap is {targetElementId: sampleFieldName};
-// a sample field that's null/undefined (e.g. html-creator's document-mode
-// sample has no `prompt`) is left alone rather than overwriting the
-// target with "null". A <select> target fires a change event (so mode-
-// toggle show/hide logic reacts), everything else fires input.
-function wireSamplePicker(samplePickerId, samples, fieldMap) {
-  const picker = el(samplePickerId);
+// --- Control wiring ---------------------------------------------------------------
+
+// One engine <select> + one compute-device <select>, kept consistent: the
+// OpenVINO option is only enabled when this brick actually has a device, the
+// device list follows the chosen engine (AUTO + every OpenVINO device, or the
+// portable engine's fixed choices), and GPU ids get their friendly names.
+function wireEngineAndDevice(engineSelect, deviceSelect, data, options = {}) {
+  const { portableDevices = ["cpu"], preferLargeModel = false, onChange = null } = options;
+  const openvinoDevices = data.openvino_devices || [];
+  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
+  const hasOpenvino = openvinoDevices.length > 0;
+  openvinoOption.disabled = !hasOpenvino;
+  if (!hasOpenvino) openvinoOption.textContent = `${openvinoOption.textContent} -- not installed for this brick`;
+  if (hasOpenvino) engineSelect.value = "openvino";
+
+  const fill = () => {
+    const isOpenvino = engineSelect.value === "openvino";
+    const values = isOpenvino ? ["AUTO", ...openvinoDevices] : portableDevices;
+    fillSelect(deviceSelect, values.map((value) => ({ value, label: deviceLabel(value) })));
+    if (isOpenvino && preferLargeModel) deviceSelect.value = preferredLargeModelDevice(openvinoDevices);
+    if (onChange) onChange(isOpenvino);
+  };
+  engineSelect.addEventListener("change", fill);
+  fill();
+}
+
+// Microphone / output-device <select> that follows a mic-vs-system source pick.
+function wireAudioSource(sourceSelect, deviceSelect, data) {
+  const fill = () => {
+    const names = sourceSelect.value === "mic" ? data.microphones || [] : data.speakers || [];
+    fillSelect(deviceSelect, [{ value: "", label: "Default device" }, ...names.map((n) => ({ value: n, label: n }))]);
+  };
+  sourceSelect.addEventListener("change", fill);
+  fill();
+}
+
+// Camera / screen <select> that follows a webcam-vs-screen source pick.
+function wireVideoSource(sourceSelect, deviceSelect, data) {
+  const fill = () => {
+    if (sourceSelect.value === "webcam") {
+      const cameras = data.cameras || [];
+      fillSelect(
+        deviceSelect,
+        cameras.length
+          ? cameras.map((index) => ({ value: String(index), label: `Camera ${index}` }))
+          : [{ value: "", label: "No camera found" }],
+      );
+    } else if (sourceSelect.value === "screen") {
+      fillSelect(
+        deviceSelect,
+        (data.screens || []).map((s) => ({ value: String(s.index), label: `Screen ${s.index} (${s.width}x${s.height})` })),
+      );
+    }
+  };
+  sourceSelect.addEventListener("change", fill);
+  fill();
+}
+
+// "Try a sample" picker: fills one or more fields from the picked sample, then
+// resets to its placeholder -- a one-shot insert, not a persistent choice.
+// fieldMap is {targetElementId: sampleFieldName}; a null sample field leaves
+// the target alone. A <select> target fires change (so show/hide logic runs),
+// everything else fires input.
+function wireSamplePicker(pickerId, samples, fieldMap) {
+  const picker = el(pickerId);
   if (!picker) return;
   while (picker.options.length > 1) picker.remove(1);
   for (const sample of samples || []) {
-    const opt = document.createElement("option");
-    opt.value = sample.name;
-    opt.textContent = `${sample.name} — ${sample.description}`;
-    picker.appendChild(opt);
+    picker.appendChild(option(sample.name, `${sample.name} — ${sample.description}`));
   }
+  picker.disabled = !(samples || []).length;
   picker.onchange = () => {
     const sample = (samples || []).find((s) => s.name === picker.value);
     if (sample) {
@@ -611,1700 +224,1528 @@ function wireSamplePicker(samplePickerId, samples, fieldMap) {
   };
 }
 
-// Polls /api/status while a brick call is in flight and reflects its real
-// backend phase (loading a model vs. actively running) into a status
-// element -- so a slow first-time model download/compile shows *something*
-// moving instead of a static "Generating..." the whole time. Returns a
-// stop() function; call it once the caller's own fetch settles. Falls back
-// to whatever text is already in the element (typically set synchronously
-// by the caller before this starts) until the first poll resolves, so this
-// can only ever add information, never blank something out.
-function pollBrickStatus(demoId, statusElementId) {
-  const target = el(statusElementId);
-  const intervalId = setInterval(async () => {
-    let data;
-    try {
-      data = await fetchJSON("/api/status");
-    } catch {
-      return; // best-effort -- a missed poll just skips this tick
-    }
-    const status = data[demoId];
-    if (!target || !status) return;
-    const icon = status.phase === "loading" ? "⏳" : status.phase === "error" ? "⚠" : "▶";
-    target.textContent = `${icon} ${status.message || status.phase}`;
-    target.classList.toggle("error", status.phase === "error");
-    target.classList.toggle("live", status.phase === "running");
-  }, 1500);
-  return () => clearInterval(intervalId);
-}
+// Recently used paths for a text input, kept per input in localStorage and
+// offered through a <datalist> -- typing the same folder five times is the
+// single most repetitive thing in these demos.
+const RECENT_LIMIT = 6;
 
-// Named-slot registry on top of pollBrickStatus, for the streaming bricks
-// whose "in flight" window is "while running", not "during one fetch" --
-// start alongside setXRunning(true), stop alongside setXRunning(false),
-// keyed by a short string so each streaming brick doesn't need its own
-// module-level stop-function variable.
-const _statusPolls = {};
-function startStatusPoll(key, demoId, statusElementId) {
-  stopStatusPoll(key);
-  _statusPolls[key] = pollBrickStatus(demoId, statusElementId);
-}
-function stopStatusPoll(key) {
-  if (_statusPolls[key]) {
-    _statusPolls[key]();
-    delete _statusPolls[key];
-  }
-}
-
-// Builds one telemetry gauge per detected GPU inside every
-// .telemetry-gpu-gauges placeholder (the header strip plus each modal
-// footer, already present after initTelemetryFooters()). GPU_DEVICES is the
-// source of truth for *which* gauges exist; /api/telemetry polls only fill
-// in their values.
-function initGpuGauges() {
-  const template = el("telemetry-gpu-gauge-template");
-  for (const container of document.querySelectorAll(".telemetry-gpu-gauges")) {
-    for (const gpu of GPU_DEVICES) {
-      const gauge = template.content.cloneNode(true).querySelector(".telemetry-gauge");
-      gauge.dataset.gpuId = gpu.id;
-      if (GPU_DEVICES.length > 1) {
-        gauge.querySelector(".telemetry-gauge-label").textContent = gpu.id;
-      }
-      container.appendChild(gauge);
-    }
-  }
-}
-
-async function initTelemetry() {
-  initTelemetryFooters();
-  await loadGpuDevices();
-  initGpuGauges();
-  pollTelemetry();
-  setInterval(pollTelemetry, 2000);
-}
-
-// --- Object detection demo ---
-
-let objdetRunning = false;
-let objdetDetectionsTimer = null;
-
-async function openObjectDetection() {
-  el("objdet-modal-overlay").classList.remove("hidden");
-  await populateObjectDetectionDevices();
-}
-
-async function populateObjectDetectionDevices() {
-  const data = await fetchJSON("/api/object-detection/devices");
-
-  const sourceSelect = el("objdet-source");
-  const sourceDeviceSelect = el("objdet-source-device");
-  const fillSourceDevices = () => {
-    sourceDeviceSelect.innerHTML = "";
-    if (sourceSelect.value === "webcam") {
-      if (!data.cameras.length) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "No camera found";
-        sourceDeviceSelect.appendChild(opt);
-      }
-      for (const index of data.cameras) {
-        const opt = document.createElement("option");
-        opt.value = index;
-        opt.textContent = `Camera ${index}`;
-        sourceDeviceSelect.appendChild(opt);
-      }
-    } else {
-      for (const screen of data.screens) {
-        const opt = document.createElement("option");
-        opt.value = screen.index;
-        opt.textContent = `Screen ${screen.index} (${screen.width}x${screen.height})`;
-        sourceDeviceSelect.appendChild(opt);
-      }
-    }
-  };
-  sourceSelect.onchange = fillSourceDevices;
-  fillSourceDevices();
-
-  const engineSelect = el("objdet-engine");
-  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  openvinoOption.textContent = hasOpenvino
-    ? `OpenVINO (YOLO11n, ${data.openvino_devices.join(", ")})`
-    : "OpenVINO (install this brick's `openvino` extra to enable)";
-  if (hasOpenvino) engineSelect.value = "openvino";
-
-  const computeSelect = el("objdet-compute-device");
-  const fillComputeDevices = () => {
-    computeSelect.innerHTML = "";
-    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
-    for (const value of options) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-      computeSelect.appendChild(opt);
-    }
-  };
-  engineSelect.onchange = fillComputeDevices;
-  fillComputeDevices();
-}
-
-function setObjdetStatus(text, kind) {
-  const status = el("objdet-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function setObjdetRunning(isRunning) {
-  objdetRunning = isRunning;
-  el("objdet-start").disabled = isRunning;
-  el("objdet-stop").disabled = !isRunning;
-  for (const id of ["objdet-source", "objdet-source-device", "objdet-engine", "objdet-compute-device"]) {
-    el(id).disabled = isRunning;
-  }
-
-  const img = el("objdet-video");
-  if (isRunning) {
-    setObjdetStatus("Running...", "live");
-    startStatusPoll("object-detection", "object-detection", "objdet-status");
-    img.src = `/api/object-detection/stream?t=${Date.now()}`;
-    img.classList.add("visible");
-    objdetDetectionsTimer = setInterval(pollObjectDetections, 700);
-  } else {
-    stopStatusPoll("object-detection");
-    setObjdetStatus("Idle");
-    img.removeAttribute("src");
-    img.classList.remove("visible");
-    el("objdet-detections").innerHTML = '<p class="transcript-placeholder">Detected objects will be listed here.</p>';
-    if (objdetDetectionsTimer) {
-      clearInterval(objdetDetectionsTimer);
-      objdetDetectionsTimer = null;
-    }
-  }
-}
-
-async function pollObjectDetections() {
+function recentPaths(inputId) {
   try {
-    const data = await fetchJSON("/api/object-detection/detections");
-    if (data.error) {
-      setObjdetStatus(`Error: ${data.error}`, "error");
-      setObjdetRunning(false);
-      return;
-    }
-    renderObjectDetections(data.detections || []);
+    return JSON.parse(localStorage.getItem(`ptl.recent.${inputId}`) || "[]");
   } catch {
-    // Best-effort -- a transient failure here shouldn't interrupt the video stream.
+    return [];
   }
 }
 
-function renderObjectDetections(detections) {
-  const container = el("objdet-detections");
-  if (!detections.length) {
-    container.innerHTML = '<p class="transcript-placeholder">Nothing detected right now.</p>';
-    return;
-  }
-  const sorted = [...detections].sort((a, b) => b.confidence - a.confidence);
-  container.innerHTML = sorted
-    .map(
-      (d) =>
-        `<div class="objdet-detection-row"><span class="objdet-detection-label">${escapeHtml(d.label)}</span><span class="objdet-detection-score">${Math.round(d.confidence * 100)}%</span></div>`
-    )
-    .join("");
+function refreshRecents(inputId) {
+  const list = el(`${inputId}-recent`);
+  if (!list) return;
+  list.innerHTML = "";
+  for (const value of recentPaths(inputId)) list.appendChild(option(value, value));
 }
 
-async function startObjectDetection() {
-  setObjdetStatus("Starting...");
-  const source = el("objdet-source").value;
-  const sourceDeviceValue = el("objdet-source-device").value;
+function attachRecents(inputId) {
+  const input = el(inputId);
+  if (!input || el(`${inputId}-recent`)) return;
+  const list = document.createElement("datalist");
+  list.id = `${inputId}-recent`;
+  input.insertAdjacentElement("afterend", list);
+  input.setAttribute("list", list.id);
+  refreshRecents(inputId);
+}
+
+function rememberPath(inputId) {
+  const value = el(inputId).value.trim();
+  if (!value) return;
+  const next = [value, ...recentPaths(inputId).filter((v) => v !== value)].slice(0, RECENT_LIMIT);
   try {
-    await fetchJSON("/api/object-detection/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source,
-        camera_index: source === "webcam" ? Number(sourceDeviceValue || 0) : 0,
-        screen_index: source === "screen" ? Number(sourceDeviceValue || 1) : 1,
-        engine: el("objdet-engine").value,
-        compute_device: el("objdet-compute-device").value,
-      }),
-    });
-    setObjdetRunning(true);
-  } catch (err) {
-    setObjdetStatus(`Error: ${err.message}`, "error");
-  }
-}
-
-async function stopObjectDetection() {
-  el("objdet-stop").disabled = true;
-  setObjdetStatus("Stopping...");
-  try {
-    await fetchJSON("/api/object-detection/stop", { method: "POST" });
-  } catch (err) {
-    setObjdetStatus(`Error: ${err.message}`, "error");
-  }
-  setObjdetRunning(false);
-}
-
-function closeObjectDetection() {
-  el("objdet-modal-overlay").classList.add("hidden");
-  if (objdetRunning) stopObjectDetection();
-}
-
-// --- Smart City Monitor demo ---
-
-let smartcityRunning = false;
-let smartcityCountsTimer = null;
-let smartcityActiveFeeds = []; // [{feed_id, name, compute_device}], from the last successful start
-
-async function openSmartCityMonitor() {
-  el("smartcity-modal-overlay").classList.remove("hidden");
-  await populateSmartCityMonitorDevices();
-}
-
-async function populateSmartCityMonitorDevices() {
-  const data = await fetchJSON("/api/smart-city-monitor/devices");
-
-  const engineSelect = el("smartcity-engine");
-  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  openvinoOption.textContent = hasOpenvino
-    ? `OpenVINO (YOLO11n, ${data.openvino_devices.join(", ")})`
-    : "OpenVINO (install this brick's `openvino` extra to enable)";
-  if (hasOpenvino) engineSelect.value = "openvino";
-
-  const computeSelect = el("smartcity-compute-device");
-  const fillComputeDevices = () => {
-    computeSelect.innerHTML = "";
-    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
-    for (const value of options) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-      computeSelect.appendChild(opt);
-    }
-  };
-  engineSelect.onchange = fillComputeDevices;
-  fillComputeDevices();
-}
-
-function setSmartcityStatus(text, kind) {
-  const status = el("smartcity-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-// "path" or "path|device" per line -> [{path, compute_device}]; a blank
-// compute_device means "use the shared Compute device select".
-function parseSmartcityFeeds() {
-  return el("smartcity-feeds")
-    .value.split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const pipeIndex = line.lastIndexOf("|");
-      if (pipeIndex === -1) return { path: line, compute_device: null };
-      return { path: line.slice(0, pipeIndex), compute_device: line.slice(pipeIndex + 1).trim() || null };
-    });
-}
-
-function setSmartcityRunning(isRunning) {
-  smartcityRunning = isRunning;
-  el("smartcity-start").disabled = isRunning;
-  el("smartcity-stop").disabled = !isRunning;
-  for (const id of ["smartcity-feeds", "smartcity-engine", "smartcity-compute-device", "smartcity-loop"]) {
-    el(id).disabled = isRunning;
-  }
-
-  const img = el("smartcity-video");
-  if (isRunning) {
-    setSmartcityStatus("Starting...", "live");
-    startStatusPoll("smart-city-monitor", "smart-city-monitor:feed-1", "smartcity-status");
-    smartcityCountsTimer = setInterval(pollSmartcityCounts, 1000);
-  } else {
-    stopStatusPoll("smart-city-monitor");
-    setSmartcityStatus("Idle");
-    img.removeAttribute("src");
-    img.classList.remove("visible");
-    el("smartcity-picker-row").hidden = true;
-    el("smartcity-feed-picker").innerHTML = "";
-    el("smartcity-combined-counts").innerHTML =
-      '<p class="transcript-placeholder">Combined per-minute counts will appear here once running.</p>';
-    el("smartcity-per-feed").innerHTML = "";
-    smartcityActiveFeeds = [];
-    if (smartcityCountsTimer) {
-      clearInterval(smartcityCountsTimer);
-      smartcityCountsTimer = null;
-    }
-  }
-}
-
-function showSmartcityFeed(feedId) {
-  const img = el("smartcity-video");
-  img.src = `/api/smart-city-monitor/stream?feed=${encodeURIComponent(feedId)}&t=${Date.now()}`;
-  img.classList.add("visible");
-}
-
-function populateSmartcityFeedPicker(feeds) {
-  smartcityActiveFeeds = feeds;
-  const picker = el("smartcity-feed-picker");
-  picker.innerHTML = "";
-  for (const feed of feeds) {
-    const opt = document.createElement("option");
-    opt.value = feed.feed_id;
-    opt.textContent = `${feed.name} -- ${feed.compute_device}`;
-    picker.appendChild(opt);
-  }
-  picker.onchange = () => showSmartcityFeed(picker.value);
-  el("smartcity-picker-row").hidden = feeds.length === 0;
-  if (feeds.length) showSmartcityFeed(feeds[0].feed_id);
-}
-
-function renderSmartcityCountRow(label, count) {
-  return `<div class="objdet-detection-row"><span class="objdet-detection-label">${escapeHtml(label)}</span><span class="objdet-detection-score">${count}/min</span></div>`;
-}
-
-function renderSmartcityCounts(snapshot) {
-  const combined = el("smartcity-combined-counts");
-  const entries = Object.entries(snapshot.combined_last_60s || {});
-  combined.innerHTML = entries.length
-    ? entries.map(([label, count]) => renderSmartcityCountRow(label, count)).join("")
-    : '<p class="transcript-placeholder">No relevant objects counted yet.</p>';
-
-  const perFeed = el("smartcity-per-feed");
-  perFeed.innerHTML = smartcityActiveFeeds
-    .map((feed) => {
-      const counts = (snapshot.per_feed_last_60s || {})[feed.feed_id] || {};
-      const parts = Object.entries(counts)
-        .map(([label, count]) => `${escapeHtml(label)}: ${count}/min`)
-        .join(", ") || "nothing counted yet";
-      return `<p class="card-description"><strong>${escapeHtml(feed.name)}</strong> (${escapeHtml(feed.compute_device)}): ${parts}</p>`;
-    })
-    .join("");
-}
-
-async function pollSmartcityCounts() {
-  try {
-    const data = await fetchJSON("/api/smart-city-monitor/counts");
-    if (data.error) {
-      setSmartcityStatus(`Error: ${data.error}`, "error");
-      setSmartcityRunning(false);
-      return;
-    }
-    if (data.snapshot) renderSmartcityCounts(data.snapshot);
+    localStorage.setItem(`ptl.recent.${inputId}`, JSON.stringify(next));
   } catch {
-    // Best-effort -- a transient failure here shouldn't interrupt the video stream.
+    // Storage unavailable (private mode, quota) -- the convenience just doesn't persist.
   }
+  refreshRecents(inputId);
 }
 
-async function startSmartCityMonitor() {
-  const feeds = parseSmartcityFeeds();
-  if (!feeds.length) {
-    setSmartcityStatus("Error: enter at least one video file path", "error");
-    return;
+// --- Status pills ------------------------------------------------------------------
+
+const PHASE_ICON = { loading: "", running: "▶", error: "⚠" };
+
+function paintStatus(target, text, kind) {
+  target.textContent = text;
+  target.classList.remove("live", "error", "loading");
+  if (kind) target.classList.add(kind);
+}
+
+function reflectStatus(target, status) {
+  const kind = status.phase === "running" ? "live" : status.phase === "error" ? "error" : "loading";
+  const icon = PHASE_ICON[status.phase] || "";
+  paintStatus(target, `${icon} ${status.message || status.phase}`.trim(), kind);
+}
+
+// --- Panels -------------------------------------------------------------------
+
+class Panel {
+  constructor(config) {
+    Object.assign(this, { controls: [], portableDevices: ["cpu"] }, config);
+    this.populated = false;
+    this.isOpen = false;
+    this.watchKey = null;
+    this.watchTarget = null;
+    this.timers = [];
   }
-  setSmartcityStatus("Starting...");
-  try {
-    const data = await fetchJSON("/api/smart-city-monitor/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        feeds,
-        engine: el("smartcity-engine").value,
-        compute_device: el("smartcity-compute-device").value,
-        loop: el("smartcity-loop").checked,
-      }),
-    });
-    setSmartcityRunning(true);
-    populateSmartcityFeedPicker(data.feeds || []);
-  } catch (err) {
-    setSmartcityStatus(`Error: ${err.message}`, "error");
+
+  get statusEl() {
+    return el(`${this.prefix}-status`);
   }
-}
 
-async function stopSmartCityMonitor() {
-  el("smartcity-stop").disabled = true;
-  setSmartcityStatus("Stopping...");
-  try {
-    await fetchJSON("/api/smart-city-monitor/stop", { method: "POST" });
-  } catch (err) {
-    setSmartcityStatus(`Error: ${err.message}`, "error");
+  setStatus(text, kind) {
+    paintStatus(this.statusEl, text, kind);
   }
-  setSmartcityRunning(false);
-}
 
-function closeSmartCityMonitor() {
-  el("smartcity-modal-overlay").classList.add("hidden");
-  if (smartcityRunning) stopSmartCityMonitor();
-}
-
-// --- Screen / image text extraction demo ---
-
-async function openScreenOcr() {
-  el("ocr-modal-overlay").classList.remove("hidden");
-  await populateOcrDevices();
-}
-
-async function populateOcrDevices() {
-  const data = await fetchJSON("/api/screen-ocr/devices");
-
-  const sourceSelect = el("ocr-source");
-  const sourceDeviceSelect = el("ocr-source-device");
-  const sourceDeviceField = el("ocr-source-device-field");
-  const uploadField = el("ocr-upload-field");
-
-  const fillSourceDevices = () => {
-    const isUpload = sourceSelect.value === "upload";
-    sourceDeviceField.hidden = isUpload;
-    uploadField.hidden = !isUpload;
-    if (isUpload) return;
-
-    sourceDeviceSelect.innerHTML = "";
-    if (sourceSelect.value === "webcam") {
-      if (!data.cameras.length) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "No camera found";
-        sourceDeviceSelect.appendChild(opt);
-      }
-      for (const index of data.cameras) {
-        const opt = document.createElement("option");
-        opt.value = index;
-        opt.textContent = `Camera ${index}`;
-        sourceDeviceSelect.appendChild(opt);
-      }
-    } else {
-      for (const screen of data.screens) {
-        const opt = document.createElement("option");
-        opt.value = screen.index;
-        opt.textContent = `Screen ${screen.index} (${screen.width}x${screen.height})`;
-        sourceDeviceSelect.appendChild(opt);
-      }
-    }
-  };
-  sourceSelect.onchange = fillSourceDevices;
-  fillSourceDevices();
-
-  const engineSelect = el("ocr-engine");
-  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  openvinoOption.textContent = hasOpenvino
-    ? `OpenVINO (vision-language model, ${data.openvino_devices.join(", ")})`
-    : "OpenVINO (install this brick's `openvino` extra to enable)";
-  if (hasOpenvino) engineSelect.value = "openvino";
-
-  const computeSelect = el("ocr-compute-device");
-  const translateCheckbox = el("ocr-translate");
-  const fillComputeDevices = () => {
-    computeSelect.innerHTML = "";
-    const isOpenvino = engineSelect.value === "openvino";
-    const options = isOpenvino ? ["AUTO", ...data.openvino_devices] : ["cpu"];
-    for (const value of options) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-      computeSelect.appendChild(opt);
-    }
-    translateCheckbox.disabled = !isOpenvino;
-    if (!isOpenvino) translateCheckbox.checked = false;
-  };
-  engineSelect.onchange = fillComputeDevices;
-  fillComputeDevices();
-}
-
-function setOcrStatus(text, kind) {
-  const status = el("ocr-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function renderOcrResult(data) {
-  const container = el("ocr-result");
-  container.innerHTML = "";
-
-  const label = document.createElement("p");
-  label.className = "ocr-result-label";
-  label.textContent = data.translated_text !== null ? "Translation (English)" : "Extracted text";
-  container.appendChild(label);
-
-  const textBlock = document.createElement("p");
-  textBlock.className = "ocr-text-block";
-  const shownText = data.translated_text !== null ? data.translated_text : data.text;
-  textBlock.textContent = shownText || "(no text detected)";
-  container.appendChild(textBlock);
-
-  if (data.regions && data.regions.length) {
-    const regionsLabel = document.createElement("p");
-    regionsLabel.className = "ocr-result-label";
-    regionsLabel.textContent = "Detected regions";
-    container.appendChild(regionsLabel);
-
-    for (const region of data.regions) {
-      const row = document.createElement("div");
-      row.className = "ocr-region-row";
-      row.innerHTML = `<span class="ocr-region-text">${escapeHtml(region.text)}</span><span class="ocr-region-score">${Math.round(region.confidence * 100)}%</span>`;
-      container.appendChild(row);
-    }
+  hasError() {
+    return this.statusEl.classList.contains("error");
   }
-}
 
-async function runScreenOcrExtract() {
-  const source = el("ocr-source").value;
-  const engine = el("ocr-engine").value;
-  const computeDevice = el("ocr-compute-device").value;
-  const translate = el("ocr-translate").checked;
+  // Mirror the brick's real backend phase (from the shared /api/status poll)
+  // into a pill until unwatch() -- so a slow first-time download or compile
+  // shows what is actually happening instead of a static "Working...".
+  watch(key, target = this.statusEl) {
+    this.watchKey = key;
+    this.watchTarget = target;
+    this.onStatus();
+  }
 
-  el("ocr-extract").disabled = true;
-  setOcrStatus(source === "upload" ? "Uploading and extracting..." : "Capturing and extracting...");
-  const stopStatus = pollBrickStatus("screen-ocr", "ocr-status");
+  unwatch() {
+    this.watchKey = null;
+    this.watchTarget = null;
+  }
 
-  try {
-    let data;
-    if (source === "upload") {
-      const fileInput = el("ocr-upload");
-      if (!fileInput.files.length) {
-        setOcrStatus("Choose an image file first.", "error");
-        el("ocr-extract").disabled = false;
+  onStatus() {
+    if (!this.watchKey || !this.isOpen) return;
+    const status = STATUS.snapshot[this.watchKey];
+    if (status) reflectStatus(this.watchTarget, status);
+  }
+
+  every(ms, fn) {
+    this.timers.push(setInterval(fn, ms));
+  }
+
+  clearTimers() {
+    for (const timer of this.timers) clearInterval(timer);
+    this.timers = [];
+  }
+
+  async open() {
+    this.isOpen = true;
+    if (!this.populated) {
+      try {
+        const data = await fetchJSON(`/api/${this.id}/devices`);
+        this.populate(data);
+        this.populated = true;
+      } catch (err) {
+        this.setStatus(`Error: ${err.message}`, "error");
         return;
       }
-      const form = new FormData();
-      form.append("file", fileInput.files[0]);
-      form.append("engine", engine);
-      form.append("compute_device", computeDevice);
-      form.append("translate", translate);
-      data = await fetchJSON("/api/screen-ocr/extract-upload", { method: "POST", body: form });
+    }
+    await this.rehydrate();
+  }
+
+  leave() {
+    this.isOpen = false;
+    this.unwatch();
+    this.clearTimers();
+  }
+
+  populate() {}
+
+  async rehydrate() {}
+
+  wire() {}
+
+  // One request/response action: disables `button`, shows `busy`, mirrors the
+  // brick's phase (statusKey) into `statusEl` while the call is in flight,
+  // then `done` (a string, or a function of the result) -- or the error.
+  async run({ button, statusEl = this.statusEl, key, busy, work, done = "Done" }) {
+    button.disabled = true;
+    paintStatus(statusEl, busy, "loading");
+    if (key) this.watch(key, statusEl);
+    try {
+      const result = await work();
+      this.unwatch();
+      paintStatus(statusEl, typeof done === "function" ? done(result) : done, "live");
+      return result;
+    } catch (err) {
+      this.unwatch();
+      paintStatus(statusEl, `Error: ${err.message}`, "error");
+      return undefined;
+    } finally {
+      button.disabled = false;
+    }
+  }
+}
+
+class StreamPanel extends Panel {
+  constructor(config) {
+    super(config);
+    this.running = false;
+    this.ws = null;
+  }
+
+  get img() {
+    return this.video ? el(this.video) : null;
+  }
+
+  async open() {
+    await super.open();
+    if (this.transport === "ws" && this.isOpen) this.connect();
+  }
+
+  leave() {
+    super.leave();
+    this.disconnect();
+    if (this.img) this.detachVideo();
+  }
+
+  // The brick may have been started from a previous visit (or before a page
+  // reload): pick up its real state instead of assuming Idle.
+  async rehydrate() {
+    const status = STATUS.snapshot[this.statusKey];
+    if (status && status.phase !== "error") {
+      this.setRunning(true);
     } else {
-      const sourceDeviceValue = el("ocr-source-device").value;
-      data = await fetchJSON("/api/screen-ocr/extract", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source,
-          camera_index: source === "webcam" ? Number(sourceDeviceValue || 0) : 0,
-          screen_index: source === "screen" ? Number(sourceDeviceValue || 1) : 1,
-          engine,
-          compute_device: computeDevice,
-          translate,
-        }),
-      });
+      this.setRunning(false);
+      if (status) reflectStatus(this.statusEl, status);
     }
-    renderOcrResult(data);
-    setOcrStatus("Done", "live");
-  } catch (err) {
-    setOcrStatus(`Error: ${err.message}`, "error");
-  } finally {
-    stopStatus();
-    el("ocr-extract").disabled = false;
   }
-}
 
-function closeScreenOcr() {
-  el("ocr-modal-overlay").classList.add("hidden");
-}
-
-// --- Live meeting notes demo ---
-// A stream (live transcript, same WebSocket pattern as live-translation)
-// plus a request/response layered on top (Generate notes, same pattern as
-// doc-qa's Ask) -- this demo genuinely needs both.
-
-let mtgWs = null;
-let mtgRunning = false;
-
-async function openMeetingNotes() {
-  el("mtg-modal-overlay").classList.remove("hidden");
-  await populateMeetingNotesDevices();
-  connectMeetingNotesWebSocket();
-}
-
-async function populateMeetingNotesDevices() {
-  const data = await fetchJSON("/api/meeting-notes/devices");
-
-  const audioSelect = el("mtg-audio-device");
-  const defaultOpt = document.createElement("option");
-  defaultOpt.value = "";
-  defaultOpt.textContent = "Default device";
-
-  const sourceSelect = el("mtg-source");
-  const fillAudioDevices = () => {
-    const names = sourceSelect.value === "mic" ? data.microphones : data.speakers;
-    audioSelect.innerHTML = "";
-    audioSelect.appendChild(defaultOpt.cloneNode(true));
-    for (const name of names) {
-      const opt = document.createElement("option");
-      opt.value = name;
-      opt.textContent = name;
-      audioSelect.appendChild(opt);
+  setRunning(isRunning) {
+    this.running = isRunning;
+    el(`${this.prefix}-start`).disabled = isRunning;
+    el(`${this.prefix}-stop`).disabled = !isRunning;
+    for (const id of this.controls) el(id).disabled = isRunning;
+    if (isRunning) {
+      if (!STATUS.snapshot[this.statusKey]) this.setStatus("Starting…", "loading");
+      this.watch(this.statusKey);
+      if (this.img) this.attachVideo();
+      if (this.onRunning) this.onRunning(true);
+    } else {
+      this.unwatch();
+      this.clearTimers();
+      if (!this.hasError()) this.setStatus("Idle");
+      if (this.img) this.detachVideo();
+      if (this.onRunning) this.onRunning(false);
     }
-  };
-  sourceSelect.onchange = fillAudioDevices;
-  fillAudioDevices();
+  }
 
-  const engineSelect = el("mtg-engine");
-  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  openvinoOption.textContent = hasOpenvino
-    ? `OpenVINO (Whisper + LLM, ${data.openvino_devices.join(", ")})`
-    : "OpenVINO (install this brick's `openvino` extra to enable)";
-  if (hasOpenvino) engineSelect.value = "openvino";
+  streamUrl() {
+    return `/api/${this.id}/stream?t=${Date.now()}`;
+  }
 
-  const computeSelect = el("mtg-compute-device");
-  const fillComputeDevices = () => {
-    computeSelect.innerHTML = "";
-    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["auto", "cpu", "cuda"];
-    for (const value of options) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-      computeSelect.appendChild(opt);
+  attachVideo() {
+    const url = this.streamUrl();
+    if (!url) return;
+    this.img.src = url;
+    this.img.classList.add("visible");
+  }
+
+  detachVideo() {
+    this.img.removeAttribute("src");
+    this.img.classList.remove("visible");
+  }
+
+  async start() {
+    let body;
+    try {
+      body = this.body();
+    } catch (err) {
+      this.setStatus(err.message, "error");
+      return;
     }
-  };
-  engineSelect.onchange = fillComputeDevices;
-  fillComputeDevices();
-}
+    this.setStatus("Starting…", "loading");
+    try {
+      const data = await postJSON(`/api/${this.id}/start`, body);
+      if (this.onStarted) this.onStarted(data);
+      this.setRunning(true);
+    } catch (err) {
+      this.setStatus(`Error: ${err.message}`, "error");
+    }
+  }
 
-function connectMeetingNotesWebSocket() {
-  if (mtgWs) return;
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  mtgWs = new WebSocket(`${protocol}://${location.host}/ws/meeting-notes`);
-  mtgWs.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    if (message.type === "line") {
-      appendMeetingTranscriptLine(message);
-    } else if (message.type === "error") {
-      setMtgStatus(`Error: ${message.message}`, "error");
-      setMtgRunning(false);
-    } else if (message.type === "stopped") {
-      setMtgRunning(false);
-      if (!el("mtg-status").classList.contains("error")) {
-        setMtgStatus("Idle");
+  async stop() {
+    el(`${this.prefix}-stop`).disabled = true;
+    this.setStatus("Stopping…", "loading");
+    try {
+      await postJSON(`/api/${this.id}/stop`);
+    } catch (err) {
+      this.setStatus(`Error: ${err.message}`, "error");
+    }
+    this.setRunning(false);
+  }
+
+  connect() {
+    if (this.ws) return;
+    const protocol = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${protocol}://${location.host}/ws/${this.id}`);
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === "error") {
+        this.setStatus(`Error: ${message.message}`, "error");
+        this.setRunning(false);
+      } else if (message.type === "stopped") {
+        this.setRunning(false);
+        if (this.onStopped) this.onStopped();
+      } else if (this.onMessage) {
+        this.onMessage(message);
       }
-    }
-  };
-  mtgWs.onclose = () => { mtgWs = null; };
-}
-
-function appendMeetingTranscriptLine(line) {
-  const container = el("mtg-transcript");
-  const placeholder = container.querySelector(".transcript-placeholder");
-  if (placeholder) placeholder.remove();
-
-  const p = document.createElement("p");
-  p.className = "transcript-line";
-  p.innerHTML = `<span class="transcript-time">${line.timestamp}</span><span class="transcript-lang">(${(line.detected_language || "auto").toUpperCase()})</span>${escapeHtml(line.text)}`;
-  container.appendChild(p);
-  container.scrollTop = container.scrollHeight;
-}
-
-function setMtgStatus(text, kind) {
-  const status = el("mtg-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function setMtgRunning(isRunning) {
-  mtgRunning = isRunning;
-  el("mtg-start").disabled = isRunning;
-  el("mtg-stop").disabled = !isRunning;
-  for (const id of ["mtg-source", "mtg-audio-device", "mtg-engine", "mtg-compute-device"]) {
-    el(id).disabled = isRunning;
+    };
+    // The run is a server-side thread that outlives any one socket: while the
+    // panel is open, a dropped connection just reconnects.
+    ws.onclose = () => {
+      this.ws = null;
+      if (this.isOpen) setTimeout(() => this.connect(), 1000);
+    };
+    this.ws = ws;
   }
-  if (isRunning) {
-    // Don't claim "Listening..." yet -- the model may still be loading;
-    // the status poll (started below) will show the real phase within
-    // 1.5s, including the "live" class once it's actually running.
-    setMtgStatus("Starting...");
-    startStatusPoll("meeting-notes", "meeting-notes", "mtg-status");
-  } else {
-    stopStatusPoll("meeting-notes");
+
+  disconnect() {
+    if (!this.ws) return;
+    this.ws.onclose = null;
+    this.ws.close();
+    this.ws = null;
+  }
+
+  wire() {
+    el(`${this.prefix}-start`).addEventListener("click", () => this.start());
+    el(`${this.prefix}-stop`).addEventListener("click", () => this.stop());
+    if (this.wireExtra) this.wireExtra();
   }
 }
 
-async function startMeetingNotes() {
-  setMtgStatus("Starting...");
-  try {
-    await fetchJSON("/api/meeting-notes/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+// --- Brick configs --------------------------------------------------------------------
+
+const PANELS = {
+  "live-translation": new StreamPanel({
+    id: "live-translation",
+    prefix: "lt",
+    transport: "ws",
+    statusKey: "live-translation",
+    controls: ["lt-source", "lt-audio-device", "lt-engine", "lt-compute-device", "lt-model"],
+    populate(data) {
+      wireAudioSource(el("lt-source"), el("lt-audio-device"), data);
+      const modelSelect = el("lt-model");
+      const small = modelSelect.querySelector('option[value="small"]');
+      wireEngineAndDevice(el("lt-engine"), el("lt-compute-device"), data, {
+        portableDevices: ["cpu", "cuda"],
+        onChange: (isOpenvino) => {
+          // Intel publishes pre-converted OpenVINO Whisper for
+          // tiny/base/medium/large-v3 only -- there is no "small".
+          small.disabled = isOpenvino;
+          small.textContent = isOpenvino ? "small (portable engine only)" : "small";
+          modelSelect.value = isOpenvino ? "base" : "small";
+        },
+      });
+    },
+    body() {
+      return {
+        source: el("lt-source").value,
+        audio_device: el("lt-audio-device").value || null,
+        engine: el("lt-engine").value,
+        model_size: el("lt-model").value,
+        compute_device: el("lt-compute-device").value,
+      };
+    },
+    onMessage(message) {
+      if (message.type === "result") {
+        appendTimedLine(el("lt-transcript"), new Date().toLocaleTimeString(), message.detected_language, message.text);
+      }
+    },
+  }),
+
+  "meeting-notes": new StreamPanel({
+    id: "meeting-notes",
+    prefix: "mtg",
+    transport: "ws",
+    statusKey: "meeting-notes",
+    controls: ["mtg-source", "mtg-audio-device", "mtg-engine", "mtg-compute-device"],
+    populate(data) {
+      wireAudioSource(el("mtg-source"), el("mtg-audio-device"), data);
+      wireEngineAndDevice(el("mtg-engine"), el("mtg-compute-device"), data, { portableDevices: ["cpu", "cuda"] });
+    },
+    body() {
+      return {
         source: el("mtg-source").value,
         audio_device: el("mtg-audio-device").value || null,
         engine: el("mtg-engine").value,
         compute_device: el("mtg-compute-device").value,
-      }),
-    });
-    setMtgRunning(true);
-  } catch (err) {
-    setMtgStatus(`Error: ${err.message}`, "error");
-  }
-}
-
-async function stopMeetingNotes() {
-  el("mtg-stop").disabled = true;
-  setMtgStatus("Stopping...");
-  try {
-    await fetchJSON("/api/meeting-notes/stop", { method: "POST" });
-  } catch (err) {
-    setMtgStatus(`Error: ${err.message}`, "error");
-  }
-  setMtgRunning(false);
-}
-
-function setMtgNotesStatus(text, kind) {
-  const status = el("mtg-notes-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function renderMeetingNotes(text) {
-  const container = el("mtg-notes");
-  container.innerHTML = "";
-  const block = document.createElement("p");
-  block.className = "ocr-text-block";
-  block.textContent = text;
-  container.appendChild(block);
-}
-
-async function generateMeetingNotes() {
-  el("mtg-generate").disabled = true;
-  setMtgNotesStatus("Generating...");
-  const stopStatus = pollBrickStatus("meeting-notes:notes", "mtg-notes-status");
-  try {
-    const data = await fetchJSON("/api/meeting-notes/generate", { method: "POST" });
-    renderMeetingNotes(data.text);
-    setMtgNotesStatus(`Based on ${data.transcript_line_count} transcript line(s)`, "live");
-  } catch (err) {
-    setMtgNotesStatus(`Error: ${err.message}`, "error");
-  } finally {
-    stopStatus();
-    el("mtg-generate").disabled = false;
-  }
-}
-
-function closeMeetingNotes() {
-  el("mtg-modal-overlay").classList.add("hidden");
-  if (mtgRunning) stopMeetingNotes();
-}
-
-// --- Webcam background effects demo ---
-
-let webcamRunning = false;
-let webcamStatsTimer = null;
-
-async function openWebcamEffects() {
-  el("webcam-modal-overlay").classList.remove("hidden");
-  await populateWebcamDevices();
-}
-
-async function populateWebcamDevices() {
-  const data = await fetchJSON("/api/webcam-effects/devices");
-
-  const cameraSelect = el("webcam-camera");
-  cameraSelect.innerHTML = "";
-  if (!data.cameras.length) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "No camera found";
-    cameraSelect.appendChild(opt);
-  }
-  for (const index of data.cameras) {
-    const opt = document.createElement("option");
-    opt.value = index;
-    opt.textContent = `Camera ${index}`;
-    cameraSelect.appendChild(opt);
-  }
-
-  const engineSelect = el("webcam-engine");
-  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  openvinoOption.textContent = hasOpenvino
-    ? `OpenVINO (${data.openvino_devices.join(", ")})`
-    : "OpenVINO (install this brick's `openvino` extra to enable)";
-  if (hasOpenvino) engineSelect.value = "openvino";
-
-  const computeSelect = el("webcam-compute-device");
-  const fillComputeDevices = () => {
-    computeSelect.innerHTML = "";
-    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
-    for (const value of options) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-      computeSelect.appendChild(opt);
-    }
-  };
-  engineSelect.onchange = fillComputeDevices;
-  fillComputeDevices();
-
-  const effectSelect = el("webcam-effect");
-  const colorField = el("webcam-color-field");
-  effectSelect.onchange = () => {
-    colorField.hidden = effectSelect.value !== "replace";
-    if (webcamRunning) sendWebcamEffect();
-  };
-}
-
-async function sendWebcamEffect() {
-  try {
-    await fetchJSON("/api/webcam-effects/effect", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        effect: el("webcam-effect").value,
-        color: el("webcam-color").value,
-      }),
-    });
-  } catch {
-    // Best-effort -- a failed live effect switch just leaves the previous look on screen.
-  }
-}
-
-function setWebcamStatus(text, kind) {
-  const status = el("webcam-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function setWebcamRunning(isRunning) {
-  webcamRunning = isRunning;
-  el("webcam-start").disabled = isRunning;
-  el("webcam-stop").disabled = !isRunning;
-  for (const id of ["webcam-camera", "webcam-engine", "webcam-compute-device"]) {
-    el(id).disabled = isRunning;
-  }
-
-  const img = el("webcam-video");
-  if (isRunning) {
-    setWebcamStatus("Running...", "live");
-    startStatusPoll("webcam-effects", "webcam-effects", "webcam-status");
-    img.src = `/api/webcam-effects/stream?t=${Date.now()}`;
-    img.classList.add("visible");
-    webcamStatsTimer = setInterval(pollWebcamStats, 700);
-  } else {
-    stopStatusPoll("webcam-effects");
-    setWebcamStatus("Idle");
-    img.removeAttribute("src");
-    img.classList.remove("visible");
-    el("webcam-stats").innerHTML = '<p class="transcript-placeholder">Person-coverage will be shown here once running.</p>';
-    if (webcamStatsTimer) {
-      clearInterval(webcamStatsTimer);
-      webcamStatsTimer = null;
-    }
-  }
-}
-
-async function pollWebcamStats() {
-  try {
-    const data = await fetchJSON("/api/webcam-effects/stats");
-    if (data.error) {
-      setWebcamStatus(`Error: ${data.error}`, "error");
-      setWebcamRunning(false);
-      return;
-    }
-    el("webcam-stats").innerHTML =
-      `<div class="objdet-detection-row"><span class="objdet-detection-label">Person coverage</span><span class="objdet-detection-score">${Math.round(data.person_coverage * 100)}%</span></div>`;
-  } catch {
-    // Best-effort -- a transient failure here shouldn't interrupt the video stream.
-  }
-}
-
-async function startWebcamEffects() {
-  setWebcamStatus("Starting...");
-  try {
-    await fetchJSON("/api/webcam-effects/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        camera_index: Number(el("webcam-camera").value || 0),
-        engine: el("webcam-engine").value,
-        compute_device: el("webcam-compute-device").value,
-        effect: el("webcam-effect").value,
-        color: el("webcam-color").value,
-      }),
-    });
-    setWebcamRunning(true);
-  } catch (err) {
-    setWebcamStatus(`Error: ${err.message}`, "error");
-  }
-}
-
-async function stopWebcamEffects() {
-  el("webcam-stop").disabled = true;
-  setWebcamStatus("Stopping...");
-  try {
-    await fetchJSON("/api/webcam-effects/stop", { method: "POST" });
-  } catch (err) {
-    setWebcamStatus(`Error: ${err.message}`, "error");
-  }
-  setWebcamRunning(false);
-}
-
-function closeWebcamEffects() {
-  el("webcam-modal-overlay").classList.add("hidden");
-  if (webcamRunning) stopWebcamEffects();
-}
-
-// --- Expense Report Extractor demo ---
-
-let expxWs = null;
-let expxRunning = false;
-
-async function openExpenseExtract() {
-  el("expx-modal-overlay").classList.remove("hidden");
-  await populateExpenseExtractDevices();
-  connectExpenseExtractWebSocket();
-}
-
-async function populateExpenseExtractDevices() {
-  const data = await fetchJSON("/api/expense-extract/devices");
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-
-  for (const engineId of ["expx-ocr-engine", "expx-llm-engine"]) {
-    const engineSelect = el(engineId);
-    const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-    openvinoOption.disabled = !hasOpenvino;
-    openvinoOption.textContent = hasOpenvino
-      ? `OpenVINO (${data.openvino_devices.join(", ")})`
-      : "OpenVINO (install this brick's `openvino` extra to enable)";
-    if (hasOpenvino) engineSelect.value = "openvino";
-  }
-
-  const wireComputeDevices = (engineSelectId, deviceSelectId) => {
-    const engineSelect = el(engineSelectId);
-    const deviceSelect = el(deviceSelectId);
-    const fill = () => {
-      deviceSelect.innerHTML = "";
-      const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
-      for (const value of options) {
-        const opt = document.createElement("option");
-        opt.value = value;
-        opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-        deviceSelect.appendChild(opt);
+      };
+    },
+    onMessage(message) {
+      if (message.type === "line") {
+        appendTimedLine(el("mtg-transcript"), message.timestamp, message.detected_language, message.text);
       }
-    };
-    engineSelect.onchange = fill;
-    fill();
-  };
-  wireComputeDevices("expx-ocr-engine", "expx-ocr-device");
-  wireComputeDevices("expx-llm-engine", "expx-llm-device");
+    },
+    wireExtra() {
+      el("mtg-generate").addEventListener("click", () =>
+        this.run({
+          button: el("mtg-generate"),
+          statusEl: el("mtg-notes-status"),
+          key: "meeting-notes:notes",
+          busy: "Generating notes…",
+          work: async () => {
+            const data = await postJSON("/api/meeting-notes/generate");
+            renderTextBlock(el("mtg-notes"), data.text);
+            return data;
+          },
+          done: (data) => `Based on ${data.transcript_line_count} transcript line(s)`,
+        }),
+      );
+    },
+  }),
 
-  // Nudge the demo toward its actual point: OCR on the GPU, LLM structuring
-  // on the NPU, running at once -- if this machine has both. Deliberately
-  // GPU-for-OCR / NPU-for-LLM, not the other way around: screen-ocr's
-  // OpenVINO engine is a large (7B) vision-language model, and testing
-  // found its NPU compile reliably fails on this hardware ("Can't convert
-  // 76 Bit to Byte" in OpenVINO's vpux-compiler) -- GPU is the OCR device
-  // that's actually verified working. doc-qa's LLM, much smaller, compiles
-  // and runs fine on NPU. See expense-extract's README for the finding.
-  const anyGpu = data.openvino_devices.find((d) => d.toUpperCase().startsWith("GPU"));
-  if (hasOpenvino && anyGpu) {
-    el("expx-ocr-engine").value = "openvino";
-    el("expx-ocr-engine").dispatchEvent(new Event("change"));
-    el("expx-ocr-device").value = anyGpu;
-  }
-  if (hasOpenvino && data.openvino_devices.includes("NPU")) {
-    el("expx-llm-engine").value = "openvino";
-    el("expx-llm-engine").dispatchEvent(new Event("change"));
-    el("expx-llm-device").value = "NPU";
-  }
-}
+  "voice-assistant": new StreamPanel({
+    id: "voice-assistant",
+    prefix: "va",
+    transport: "ws",
+    statusKey: "voice-assistant",
+    controls: ["va-audio-device", "va-wake-word", "va-engine", "va-compute-device", "va-speak"],
+    populate(data) {
+      fillSelect(el("va-audio-device"), [
+        { value: "", label: "Default microphone" },
+        ...(data.microphones || []).map((n) => ({ value: n, label: n })),
+      ]);
+      fillSelect(el("va-wake-word"), (data.wake_words || []).map((w) => ({ value: w, label: w.replace(/_/g, " ") })));
+      wireEngineAndDevice(el("va-engine"), el("va-compute-device"), data);
+    },
+    body() {
+      return {
+        audio_device: el("va-audio-device").value || null,
+        engine: el("va-engine").value,
+        compute_device: el("va-compute-device").value,
+        wake_word: el("va-wake-word").value,
+        speak_replies: el("va-speak").checked,
+      };
+    },
+    onMessage(message) {
+      const box = el("va-transcript");
+      if (message.type === "wake") appendLine(box, "line-note", "Wake word heard -- listening for your question...");
+      else if (message.type === "heard") appendLine(box, "line-question", `You: ${message.text}`);
+      else if (message.type === "reply") appendLine(box, "line-answer", `Assistant: ${message.text}`);
+    },
+  }),
 
-function connectExpenseExtractWebSocket() {
-  if (expxWs) return;
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  expxWs = new WebSocket(`${protocol}://${location.host}/ws/expense-extract`);
-  expxWs.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    if (message.type === "ocr_progress") {
-      setExpxStatus(`OCR ${message.index}/${message.total}: ${message.file}`, "live");
-    } else if (message.type === "structured") {
-      appendExpenseLine(message.line);
-    } else if (message.type === "done") {
-      setExpxStatus(`Done -- ${message.structured}/${message.count} structured, total $${message.total.toFixed(2)}`, "live");
-      setExpxRunning(false);
-    } else if (message.type === "error") {
-      setExpxStatus(`Error: ${message.message}`, "error");
-      setExpxRunning(false);
-    } else if (message.type === "stopped") {
-      setExpxRunning(false);
-      if (!el("expx-status").classList.contains("error")) {
-        setExpxStatus("Idle");
-      }
-    }
-  };
-  expxWs.onclose = () => { expxWs = null; };
-}
-
-function appendExpenseLine(line) {
-  const container = el("expx-transcript");
-  const placeholder = container.querySelector(".transcript-placeholder");
-  if (placeholder) placeholder.remove();
-
-  const row = document.createElement("p");
-  row.className = "transcript-answer";
-  if (line.error) {
-    row.textContent = `${line.source_file}: skipped (${line.error})`;
-  } else {
-    const amount = line.amount !== null && line.amount !== undefined ? `$${line.amount.toFixed(2)}` : "?";
-    row.textContent = `${line.source_file}: ${line.vendor || "?"} -- ${line.date || "?"} -- ${amount} -- ${line.category}`;
-  }
-  container.appendChild(row);
-  container.scrollTop = container.scrollHeight;
-}
-
-function setExpxStatus(text, kind) {
-  const status = el("expx-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function setExpxRunning(isRunning) {
-  expxRunning = isRunning;
-  el("expx-start").disabled = isRunning;
-  el("expx-stop").disabled = !isRunning;
-  for (const id of ["expx-folder", "expx-ocr-engine", "expx-ocr-device", "expx-llm-engine", "expx-llm-device"]) {
-    el(id).disabled = isRunning;
-  }
-  // Two stages run concurrently (OCR + LLM structuring); the single status
-  // span shows the OCR stage's phase -- both start together, so it's
-  // representative of "is the pipeline actually going" either way.
-  if (isRunning) {
-    startStatusPoll("expense-extract", "expense-extract:ocr", "expx-status");
-  } else {
-    stopStatusPoll("expense-extract");
-  }
-}
-
-async function startExpenseExtract() {
-  const folder = el("expx-folder").value.trim();
-  if (!folder) {
-    setExpxStatus("Enter a folder path first.", "error");
-    return;
-  }
-
-  el("expx-transcript").innerHTML = '<p class="transcript-placeholder">Results will appear here as each receipt is structured.</p>';
-  setExpxStatus("Starting...");
-  try {
-    await fetchJSON("/api/expense-extract/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+  "expense-extract": new StreamPanel({
+    id: "expense-extract",
+    prefix: "expx",
+    transport: "ws",
+    statusKey: "expense-extract:ocr",
+    controls: ["expx-folder", "expx-sample", "expx-ocr-engine", "expx-ocr-device", "expx-llm-engine", "expx-llm-device"],
+    populate(data) {
+      attachRecents("expx-folder");
+      wireEngineAndDevice(el("expx-ocr-engine"), el("expx-ocr-device"), data);
+      wireEngineAndDevice(el("expx-llm-engine"), el("expx-llm-device"), data);
+      // Nudge the demo toward its actual point: OCR on a GPU, LLM structuring
+      // on the NPU, at once -- if this machine has both. GPU for OCR, not the
+      // other way around: screen-ocr's OpenVINO engine is a 7B vision-language
+      // model whose NPU compile fails on this hardware (see expense-extract's
+      // README); doc-qa's small LLM compiles and runs fine on the NPU.
+      const devices = data.openvino_devices || [];
+      const anyGpu = devices.find((d) => d.toUpperCase().startsWith("GPU"));
+      if (anyGpu) el("expx-ocr-device").value = anyGpu;
+      if (devices.includes("NPU")) el("expx-llm-device").value = "NPU";
+      wireSamplePicker("expx-sample", data.samples, { "expx-folder": "folder" });
+    },
+    body() {
+      const folder = el("expx-folder").value.trim();
+      if (!folder) throw new Error("Enter a folder of receipt photos first.");
+      rememberPath("expx-folder");
+      return {
         folder,
         ocr_engine: el("expx-ocr-engine").value,
         ocr_compute_device: el("expx-ocr-device").value,
         llm_engine: el("expx-llm-engine").value,
         llm_compute_device: el("expx-llm-device").value,
-      }),
-    });
-    setExpxRunning(true);
-  } catch (err) {
-    setExpxStatus(`Error: ${err.message}`, "error");
-  }
-}
-
-async function stopExpenseExtract() {
-  el("expx-stop").disabled = true;
-  setExpxStatus("Stopping...");
-  try {
-    await fetchJSON("/api/expense-extract/stop", { method: "POST" });
-  } catch (err) {
-    setExpxStatus(`Error: ${err.message}`, "error");
-  }
-  setExpxRunning(false);
-}
-
-function closeExpenseExtract() {
-  el("expx-modal-overlay").classList.add("hidden");
-  if (expxRunning) stopExpenseExtract();
-}
-
-// --- Local Screen Memory demo ---
-
-let recallWs = null;
-let recallRunning = false;
-
-async function openRecall() {
-  el("recall-modal-overlay").classList.remove("hidden");
-  await populateRecallDevices();
-  await refreshRecallStatus();
-  connectRecallWebSocket();
-}
-
-async function populateRecallDevices() {
-  const data = await fetchJSON("/api/smart-recall/devices");
-
-  const screenSelect = el("recall-screen");
-  screenSelect.innerHTML = "";
-  for (const screen of data.screens) {
-    const opt = document.createElement("option");
-    opt.value = screen.index;
-    opt.textContent = `Screen ${screen.index} (${screen.width}x${screen.height})`;
-    screenSelect.appendChild(opt);
-  }
-
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  for (const engineId of ["recall-ocr-engine", "recall-embed-engine"]) {
-    const openvinoOption = el(engineId).querySelector('option[value="openvino"]');
-    openvinoOption.disabled = !hasOpenvino;
-    openvinoOption.textContent = hasOpenvino
-      ? `OpenVINO (${data.openvino_devices.join(", ")})`
-      : "OpenVINO (install this brick's `openvino` extra to enable)";
-    if (hasOpenvino) el(engineId).value = "openvino";
-  }
-
-  const wireComputeDevices = (engineSelectId, deviceSelectId) => {
-    const engineSelect = el(engineSelectId);
-    const deviceSelect = el(deviceSelectId);
-    const fill = () => {
-      deviceSelect.innerHTML = "";
-      const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
-      for (const value of options) {
-        const opt = document.createElement("option");
-        opt.value = value;
-        opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-        deviceSelect.appendChild(opt);
+      };
+    },
+    onStarted() {
+      showPlaceholder(el("expx-transcript"), "Each receipt's vendor, date, amount, and category will appear here as it is structured.");
+    },
+    onMessage(message) {
+      const box = el("expx-transcript");
+      if (message.type === "ocr_progress") {
+        appendLine(box, "line-note", `Reading receipt ${message.index}/${message.total}: ${message.file}`);
+      } else if (message.type === "structured") {
+        const line = message.line;
+        if (line.error) {
+          appendLine(box, "line-answer", `${line.source_file}: skipped (${line.error})`);
+        } else {
+          const amount = line.amount !== null && line.amount !== undefined ? `$${line.amount.toFixed(2)}` : "?";
+          appendLine(box, "line-answer", `${line.source_file}: ${line.vendor || "?"} -- ${line.date || "?"} -- ${amount} -- ${line.category}`);
+        }
+      } else if (message.type === "done") {
+        this.setRunning(false);
+        this.setStatus(`Done -- ${message.structured}/${message.count} structured, total $${message.total.toFixed(2)}`, "live");
       }
-    };
-    engineSelect.onchange = fill;
-    fill();
-  };
-  wireComputeDevices("recall-ocr-engine", "recall-ocr-device");
-  wireComputeDevices("recall-embed-engine", "recall-embed-device");
+    },
+  }),
 
-  wireSamplePicker("recall-sample", data.samples, { "recall-question": "question" });
-}
-
-async function refreshRecallStatus() {
-  const status = await fetchJSON("/api/smart-recall/status");
-  const embedEngineSelect = el("recall-embed-engine");
-
-  // Reopening the modal (or a page reload) shouldn't lose track of a
-  // recording that's still going server-side -- the background thread
-  // outlives any one browser tab, so the UI has to ask rather than assume.
-  setRecallRunning(status.running);
-
-  if (status.embed_engine) {
-    // The index already has a fixed embedding engine -- lock the selector
-    // to it instead of letting the user pick something that would just
-    // get rejected (or worse, silently produce meaningless results).
-    embedEngineSelect.value = status.embed_engine;
-    embedEngineSelect.dispatchEvent(new Event("change"));
-    embedEngineSelect.disabled = true;
-  } else {
-    embedEngineSelect.disabled = status.running;
-  }
-
-  if (!status.running) {
-    setRecallStatus(status.indexed_count > 0 ? `Idle -- ${status.indexed_count} screen(s) indexed` : "Idle");
-  }
-}
-
-function connectRecallWebSocket() {
-  if (recallWs) return;
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  recallWs = new WebSocket(`${protocol}://${location.host}/ws/smart-recall`);
-  recallWs.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    if (message.type === "indexed") {
-      appendRecallEvent(`[${message.timestamp}] indexed: ${message.chunk.text.slice(0, 100)}`, "transcript-answer");
-    } else if (message.type === "skipped") {
-      appendRecallEvent(`(skipped -- ${message.reason})`, "transcript-sources");
-    } else if (message.type === "error") {
-      setRecallStatus(`Error: ${message.message}`, "error");
-      setRecallRunning(false);
-    } else if (message.type === "stopped") {
-      setRecallRunning(false);
-      if (!el("recall-status").classList.contains("error")) {
-        refreshRecallStatus();
+  "smart-recall": new StreamPanel({
+    id: "smart-recall",
+    prefix: "recall",
+    transport: "ws",
+    statusKey: "smart-recall:ocr",
+    // The embedding engine is locked/unlocked by the index's own state (see
+    // refreshStatus), not by whether recording is running.
+    controls: ["recall-screen", "recall-interval", "recall-ocr-engine", "recall-ocr-device", "recall-embed-device"],
+    populate(data) {
+      fillSelect(el("recall-screen"), (data.screens || []).map((s) => ({ value: String(s.index), label: `Screen ${s.index} (${s.width}x${s.height})` })));
+      wireEngineAndDevice(el("recall-ocr-engine"), el("recall-ocr-device"), data);
+      wireEngineAndDevice(el("recall-embed-engine"), el("recall-embed-device"), data);
+      wireSamplePicker("recall-sample", data.samples, { "recall-question": "question" });
+    },
+    async rehydrate() {
+      await this.refreshStatus();
+    },
+    async refreshStatus() {
+      const status = await fetchJSON("/api/smart-recall/status");
+      this.setRunning(status.running);
+      const embedEngine = el("recall-embed-engine");
+      if (status.embed_engine) {
+        // The index already has a fixed embedding engine -- lock the pick to
+        // it rather than offer something that would just be rejected.
+        embedEngine.value = status.embed_engine;
+        embedEngine.dispatchEvent(new Event("change"));
+        embedEngine.disabled = true;
+      } else {
+        embedEngine.disabled = status.running;
       }
-    }
-  };
-  recallWs.onclose = () => {
-    recallWs = null;
-    // Reconnect while the modal's still open -- recording is a background
-    // thread that outlives any one WebSocket, so a dropped connection
-    // (idle timeout, a network blip) shouldn't silently stop the capture
-    // feed from updating while the operator is still watching it.
-    if (!el("recall-modal-overlay").classList.contains("hidden")) {
-      setTimeout(connectRecallWebSocket, 1000);
-    }
-  };
-}
-
-function appendRecallEvent(text, className) {
-  const container = el("recall-capture-feed");
-  const placeholder = container.querySelector(".transcript-placeholder");
-  if (placeholder) placeholder.remove();
-
-  const line = document.createElement("p");
-  line.className = className;
-  line.textContent = text;
-  container.appendChild(line);
-  container.scrollTop = container.scrollHeight;
-}
-
-function setRecallStatus(text, kind) {
-  const status = el("recall-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function setRecallRunning(isRunning) {
-  recallRunning = isRunning;
-  el("recall-start").disabled = isRunning;
-  el("recall-stop").disabled = !isRunning;
-  el("recall-reset").disabled = isRunning;
-  for (const id of ["recall-screen", "recall-interval", "recall-ocr-engine", "recall-ocr-device", "recall-embed-device"]) {
-    el(id).disabled = isRunning;
-  }
-  if (isRunning) {
-    setRecallStatus("Recording...", "live");
-    startStatusPoll("smart-recall", "smart-recall:ocr", "recall-status");
-  } else {
-    stopStatusPoll("smart-recall");
-  }
-}
-
-async function startRecall() {
-  setRecallStatus("Starting...");
-  try {
-    await fetchJSON("/api/smart-recall/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      if (!status.running && !this.hasError()) {
+        this.setStatus(status.indexed_count > 0 ? `Idle -- ${status.indexed_count} screen(s) indexed` : "Idle");
+      }
+    },
+    body() {
+      return {
         screen_index: Number(el("recall-screen").value),
         interval_seconds: Number(el("recall-interval").value) || 5,
         ocr_engine: el("recall-ocr-engine").value,
         ocr_compute_device: el("recall-ocr-device").value,
         embed_engine: el("recall-embed-engine").value,
         embed_compute_device: el("recall-embed-device").value,
-      }),
-    });
-    setRecallRunning(true);
-  } catch (err) {
-    setRecallStatus(`Error: ${err.message}`, "error");
-  }
-}
-
-async function stopRecall() {
-  el("recall-stop").disabled = true;
-  setRecallStatus("Stopping...");
-  try {
-    await fetchJSON("/api/smart-recall/stop", { method: "POST" });
-  } catch (err) {
-    setRecallStatus(`Error: ${err.message}`, "error");
-  }
-  setRecallRunning(false);
-}
-
-async function resetRecall() {
-  if (!confirm("Delete every indexed screen capture and screenshot? This can't be undone.")) return;
-  try {
-    await fetchJSON("/api/smart-recall/reset", { method: "POST" });
-    el("recall-embed-engine").disabled = false;
-    el("recall-capture-feed").innerHTML = '<p class="transcript-placeholder">Capture events will appear here while recording.</p>';
-    el("recall-results").innerHTML = '<p class="transcript-placeholder">Search results, with a screenshot thumbnail, will appear here.</p>';
-    await refreshRecallStatus();
-  } catch (err) {
-    setRecallStatus(`Error: ${err.message}`, "error");
-  }
-}
-
-function renderRecallResults(results) {
-  const container = el("recall-results");
-  container.innerHTML = "";
-
-  if (!results.length) {
-    container.innerHTML = '<p class="transcript-placeholder">No matches yet.</p>';
-    return;
-  }
-
-  for (const r of results) {
-    const row = document.createElement("div");
-    row.className = "recall-result";
-    row.innerHTML = `
-      <img class="recall-result-thumb" src="${r.screenshot_url}" alt="Screenshot from ${escapeHtml(r.source)}" />
-      <div class="recall-result-body">
-        <div class="recall-result-meta">
-          <span>${escapeHtml(r.source)}</span>
-          <span class="recall-result-score">${r.score.toFixed(2)}</span>
-        </div>
-        <p class="recall-result-text">${escapeHtml(r.text.slice(0, 220))}</p>
-      </div>
-    `;
-    container.appendChild(row);
-  }
-}
-
-async function runRecallSearch() {
-  const question = el("recall-question").value.trim();
-  if (!question) return;
-
-  el("recall-search").disabled = true;
-  try {
-    const data = await fetchJSON("/api/smart-recall/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, top_k: 5 }),
-    });
-    renderRecallResults(data.results);
-  } catch (err) {
-    el("recall-results").innerHTML = `<p class="transcript-placeholder">Error: ${escapeHtml(err.message)}</p>`;
-  } finally {
-    el("recall-search").disabled = false;
-  }
-}
-
-function closeRecall() {
-  el("recall-modal-overlay").classList.add("hidden");
-  if (recallRunning) stopRecall();
-}
-
-// --- Local Voice Assistant demo ---
-
-let vaWs = null;
-let vaRunning = false;
-
-async function openVoiceAssistant() {
-  el("va-modal-overlay").classList.remove("hidden");
-  await populateVoiceAssistantDevices();
-  connectVoiceAssistantWebSocket();
-}
-
-async function populateVoiceAssistantDevices() {
-  const data = await fetchJSON("/api/voice-assistant/devices");
-
-  const audioSelect = el("va-audio-device");
-  audioSelect.innerHTML = "";
-  const defaultOpt = document.createElement("option");
-  defaultOpt.value = "";
-  defaultOpt.textContent = "Default microphone";
-  audioSelect.appendChild(defaultOpt);
-  for (const name of data.microphones) {
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
-    audioSelect.appendChild(opt);
-  }
-
-  const wakeSelect = el("va-wake-word");
-  wakeSelect.innerHTML = "";
-  for (const word of data.wake_words) {
-    const opt = document.createElement("option");
-    opt.value = word;
-    opt.textContent = word.replace(/_/g, " ");
-    wakeSelect.appendChild(opt);
-  }
-
-  const engineSelect = el("va-engine");
-  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  openvinoOption.textContent = hasOpenvino
-    ? `OpenVINO (${data.openvino_devices.join(", ")})`
-    : "OpenVINO (install this brick's `openvino` extra to enable)";
-  if (hasOpenvino) engineSelect.value = "openvino";
-
-  const computeSelect = el("va-compute-device");
-  const fillComputeDevices = () => {
-    computeSelect.innerHTML = "";
-    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["auto", "cpu"];
-    for (const value of options) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-      computeSelect.appendChild(opt);
-    }
-  };
-  engineSelect.onchange = fillComputeDevices;
-  fillComputeDevices();
-}
-
-function connectVoiceAssistantWebSocket() {
-  if (vaWs) return;
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  vaWs = new WebSocket(`${protocol}://${location.host}/ws/voice-assistant`);
-  vaWs.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    if (message.type === "wake") {
-      appendVaNote("Wake word heard -- listening for your question...");
-    } else if (message.type === "heard") {
-      appendVaLine("transcript-question", `You: ${message.text}`);
-    } else if (message.type === "reply") {
-      appendVaLine("transcript-answer", `Assistant: ${message.text}`);
-    } else if (message.type === "error") {
-      setVaStatus(`Error: ${message.message}`, "error");
-      setVaRunning(false);
-    } else if (message.type === "stopped") {
-      setVaRunning(false);
-      if (!el("va-status").classList.contains("error")) {
-        setVaStatus("Idle");
-      }
-    }
-  };
-  vaWs.onclose = () => { vaWs = null; };
-}
-
-function appendVaLine(className, text) {
-  const container = el("va-transcript");
-  const placeholder = container.querySelector(".transcript-placeholder");
-  if (placeholder) placeholder.remove();
-
-  const line = document.createElement("p");
-  line.className = className;
-  line.textContent = text;
-  container.appendChild(line);
-  container.scrollTop = container.scrollHeight;
-}
-
-function appendVaNote(text) {
-  const container = el("va-transcript");
-  const placeholder = container.querySelector(".transcript-placeholder");
-  if (placeholder) placeholder.remove();
-
-  const line = document.createElement("p");
-  line.className = "transcript-sources";
-  line.textContent = text;
-  container.appendChild(line);
-  container.scrollTop = container.scrollHeight;
-}
-
-function setVaStatus(text, kind) {
-  const status = el("va-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function setVaRunning(isRunning) {
-  vaRunning = isRunning;
-  el("va-start").disabled = isRunning;
-  el("va-stop").disabled = !isRunning;
-  for (const id of ["va-audio-device", "va-wake-word", "va-engine", "va-compute-device", "va-speak"]) {
-    el(id).disabled = isRunning;
-  }
-  if (isRunning) {
-    setVaStatus("Listening...", "live");
-    startStatusPoll("voice-assistant", "voice-assistant", "va-status");
-  } else {
-    stopStatusPoll("voice-assistant");
-  }
-}
-
-async function startVoiceAssistant() {
-  setVaStatus("Starting...");
-  try {
-    await fetchJSON("/api/voice-assistant/start", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        audio_device: el("va-audio-device").value || null,
-        engine: el("va-engine").value,
-        compute_device: el("va-compute-device").value,
-        wake_word: el("va-wake-word").value,
-        speak_replies: el("va-speak").checked,
-      }),
-    });
-    setVaRunning(true);
-  } catch (err) {
-    setVaStatus(`Error: ${err.message}`, "error");
-  }
-}
-
-async function stopVoiceAssistant() {
-  el("va-stop").disabled = true;
-  setVaStatus("Stopping...");
-  try {
-    await fetchJSON("/api/voice-assistant/stop", { method: "POST" });
-  } catch (err) {
-    setVaStatus(`Error: ${err.message}`, "error");
-  }
-  setVaRunning(false);
-}
-
-function closeVoiceAssistant() {
-  el("va-modal-overlay").classList.add("hidden");
-  if (vaRunning) stopVoiceAssistant();
-}
-
-// --- Voice Clone Studio demo ---
-
-async function openVoiceCloneStudio() {
-  el("voice-modal-overlay").classList.remove("hidden");
-  await populateVoiceDevices();
-  const status = await fetchJSON("/api/voice-clone-studio/status");
-  setVoiceEnrolled(status.enrolled);
-}
-
-async function populateVoiceDevices() {
-  const data = await fetchJSON("/api/voice-clone-studio/devices");
-
-  const sourceSelect = el("voice-source");
-  const recordField = el("voice-record-field");
-  const uploadField = el("voice-upload-field");
-  const fillSource = () => {
-    const isUpload = sourceSelect.value === "upload";
-    recordField.hidden = isUpload;
-    uploadField.hidden = !isUpload;
-  };
-  sourceSelect.onchange = fillSource;
-  fillSource();
-
-  const engineSelect = el("voice-engine");
-  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  openvinoOption.textContent = hasOpenvino
-    ? `OpenVINO (${data.openvino_devices.join(", ")})`
-    : "OpenVINO (install this brick's `openvino` extra to enable)";
-  if (hasOpenvino) engineSelect.value = "openvino";
-
-  const computeSelect = el("voice-compute-device");
-  const fillComputeDevices = () => {
-    computeSelect.innerHTML = "";
-    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["CPU"];
-    for (const value of options) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-      computeSelect.appendChild(opt);
-    }
-  };
-  engineSelect.onchange = fillComputeDevices;
-  fillComputeDevices();
-
-  if (!data.microphones || !data.microphones.length) {
-    const recordOption = sourceSelect.querySelector('option[value="record"]');
-    recordOption.disabled = true;
-    recordOption.textContent = "Record from microphone (none found)";
-    sourceSelect.value = "upload";
-    fillSource();
-  }
-
-  wireSamplePicker("voice-sample", data.samples, { "voice-text": "text" });
-}
-
-function setVoiceEnrollStatus(text, kind) {
-  const status = el("voice-enroll-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function setVoiceEnrolled(enrolled) {
-  el("voice-text").disabled = !enrolled;
-  el("voice-sample").disabled = !enrolled;
-  el("voice-style").disabled = !enrolled;
-  el("voice-tau").disabled = !enrolled;
-  el("voice-synthesize").disabled = !enrolled;
-  if (enrolled) setVoiceEnrollStatus("Voice enrolled -- ready to speak", "live");
-}
-
-async function runVoiceEnroll() {
-  const source = el("voice-source").value;
-  const engine = el("voice-engine").value;
-  const computeDevice = el("voice-compute-device").value;
-
-  el("voice-enroll").disabled = true;
-  setVoiceEnrollStatus(source === "record" ? "Recording..." : "Uploading and enrolling...");
-  const stopStatus = pollBrickStatus("voice-clone-studio", "voice-enroll-status");
-
-  try {
-    if (source === "upload") {
-      const fileInput = el("voice-upload");
-      if (!fileInput.files.length) {
-        setVoiceEnrollStatus("Choose an audio file first.", "error");
-        el("voice-enroll").disabled = false;
+      };
+    },
+    onRunning(isRunning) {
+      el("recall-reset").disabled = isRunning;
+    },
+    onMessage(message) {
+      const box = el("recall-capture-feed");
+      if (message.type === "indexed") appendLine(box, "line-answer", `[${message.timestamp}] indexed: ${message.chunk.text.slice(0, 100)}`);
+      else if (message.type === "skipped") appendLine(box, "line-note", `(skipped -- ${message.reason})`);
+    },
+    onStopped() {
+      this.refreshStatus().catch(() => {});
+    },
+    wireExtra() {
+      el("recall-reset").addEventListener("click", async () => {
+        if (!confirm("Delete every indexed screen capture and screenshot? This can't be undone.")) return;
+        try {
+          await postJSON("/api/smart-recall/reset");
+          el("recall-embed-engine").disabled = false;
+          showPlaceholder(el("recall-capture-feed"), "Capture events will appear here while recording.");
+          showPlaceholder(el("recall-results"), "Search results, each with a screenshot thumbnail, will appear here.");
+          await this.refreshStatus();
+        } catch (err) {
+          this.setStatus(`Error: ${err.message}`, "error");
+        }
+      });
+      const search = async () => {
+        const question = el("recall-question").value.trim();
+        if (!question) return;
+        el("recall-search").disabled = true;
+        try {
+          const data = await postJSON("/api/smart-recall/search", { question, top_k: 5 });
+          this.renderResults(data.results || []);
+        } catch (err) {
+          showPlaceholder(el("recall-results"), `Error: ${err.message}`);
+        } finally {
+          el("recall-search").disabled = false;
+        }
+      };
+      el("recall-search").addEventListener("click", search);
+      el("recall-question").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") search();
+      });
+    },
+    renderResults(results) {
+      const container = el("recall-results");
+      if (!results.length) {
+        showPlaceholder(container, "No matches yet.");
         return;
       }
-      const form = new FormData();
-      form.append("file", fileInput.files[0]);
-      form.append("engine", engine);
-      form.append("compute_device", computeDevice);
-      await fetchJSON("/api/voice-clone-studio/enroll-upload", { method: "POST", body: form });
-    } else {
-      const seconds = Number(el("voice-record-seconds").value) || 10;
-      await fetchJSON("/api/voice-clone-studio/enroll-record", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seconds, engine, compute_device: computeDevice }),
+      container.innerHTML = results
+        .map(
+          (r) => `
+        <div class="recall-result">
+          <img class="recall-result-thumb" src="${escapeHtml(r.screenshot_url)}" alt="Screenshot from ${escapeHtml(r.source)}" />
+          <div class="recall-result-body">
+            <div class="recall-result-meta"><span>${escapeHtml(r.source)}</span><span class="recall-result-score">${r.score.toFixed(2)}</span></div>
+            <p class="recall-result-text">${escapeHtml(r.text.slice(0, 220))}</p>
+          </div>
+        </div>`,
+        )
+        .join("");
+    },
+  }),
+
+  "object-detection": new StreamPanel({
+    id: "object-detection",
+    prefix: "objdet",
+    transport: "mjpeg",
+    video: "objdet-video",
+    statusKey: "object-detection",
+    controls: ["objdet-source", "objdet-source-device", "objdet-engine", "objdet-compute-device"],
+    populate(data) {
+      wireVideoSource(el("objdet-source"), el("objdet-source-device"), data);
+      wireEngineAndDevice(el("objdet-engine"), el("objdet-compute-device"), data);
+    },
+    body() {
+      const source = el("objdet-source").value;
+      const device = el("objdet-source-device").value;
+      return {
+        source,
+        camera_index: source === "webcam" ? Number(device || 0) : 0,
+        screen_index: source === "screen" ? Number(device || 1) : 1,
+        engine: el("objdet-engine").value,
+        compute_device: el("objdet-compute-device").value,
+      };
+    },
+    onRunning(isRunning) {
+      const box = el("objdet-detections");
+      if (!isRunning) {
+        showPlaceholder(box, "Detected objects will be listed here.");
+        return;
+      }
+      this.every(700, async () => {
+        try {
+          const data = await fetchJSON("/api/object-detection/detections");
+          if (data.error) {
+            this.setStatus(`Error: ${data.error}`, "error");
+            this.setRunning(false);
+            return;
+          }
+          const detections = [...(data.detections || [])].sort((a, b) => b.confidence - a.confidence);
+          box.innerHTML = detections.length
+            ? detections.map((d) => statRow(d.label, `${Math.round(d.confidence * 100)}%`)).join("")
+            : '<p class="placeholder">Nothing detected right now.</p>';
+        } catch {
+          // Best-effort -- a transient failure shouldn't interrupt the video stream.
+        }
+      });
+    },
+  }),
+
+  "webcam-effects": new StreamPanel({
+    id: "webcam-effects",
+    prefix: "webcam",
+    transport: "mjpeg",
+    video: "webcam-video",
+    statusKey: "webcam-effects",
+    controls: ["webcam-camera", "webcam-engine", "webcam-compute-device"],
+    populate(data) {
+      const cameras = data.cameras || [];
+      fillSelect(
+        el("webcam-camera"),
+        cameras.length
+          ? cameras.map((index) => ({ value: String(index), label: `Camera ${index}` }))
+          : [{ value: "", label: "No camera found" }],
+      );
+      wireEngineAndDevice(el("webcam-engine"), el("webcam-compute-device"), data);
+      const effect = el("webcam-effect");
+      const colorField = el("webcam-color-field");
+      const sync = () => {
+        colorField.hidden = effect.value !== "replace";
+        if (this.running) this.sendEffect();
+      };
+      effect.addEventListener("change", sync);
+      el("webcam-color").addEventListener("change", () => {
+        if (this.running) this.sendEffect();
+      });
+      sync();
+    },
+    async sendEffect() {
+      try {
+        await postJSON("/api/webcam-effects/effect", { effect: el("webcam-effect").value, color: el("webcam-color").value });
+      } catch {
+        // Best-effort -- a failed live switch just leaves the previous look on screen.
+      }
+    },
+    body() {
+      return {
+        camera_index: Number(el("webcam-camera").value || 0),
+        engine: el("webcam-engine").value,
+        compute_device: el("webcam-compute-device").value,
+        effect: el("webcam-effect").value,
+        color: el("webcam-color").value,
+      };
+    },
+    onRunning(isRunning) {
+      const box = el("webcam-stats");
+      if (!isRunning) {
+        showPlaceholder(box, "How much of the frame the model sees as a person will be shown here.");
+        return;
+      }
+      this.every(700, async () => {
+        try {
+          const data = await fetchJSON("/api/webcam-effects/stats");
+          if (data.error) {
+            this.setStatus(`Error: ${data.error}`, "error");
+            this.setRunning(false);
+            return;
+          }
+          box.innerHTML = statRow("Person coverage", `${Math.round(data.person_coverage * 100)}%`);
+        } catch {
+          // Best-effort.
+        }
+      });
+    },
+  }),
+
+  "smart-city-monitor": new StreamPanel({
+    id: "smart-city-monitor",
+    prefix: "smartcity",
+    transport: "mjpeg",
+    video: "smartcity-video",
+    statusKey: "smart-city-monitor:feed-1",
+    controls: ["smartcity-feeds", "smartcity-engine", "smartcity-compute-device", "smartcity-loop"],
+    feeds: [],
+    populate(data) {
+      wireEngineAndDevice(el("smartcity-engine"), el("smartcity-compute-device"), data);
+      el("smartcity-feed-picker").addEventListener("change", () => this.attachVideo());
+    },
+    async rehydrate() {
+      // The feed list lives on the server (a run may predate this visit):
+      // pick it up from the counts route, then the usual running check.
+      try {
+        const data = await fetchJSON("/api/smart-city-monitor/counts");
+        this.feeds = data.feeds || [];
+      } catch {
+        this.feeds = [];
+      }
+      await StreamPanel.prototype.rehydrate.call(this);
+    },
+    // "path" or "path|device" per line; a blank device means the shared pick.
+    body() {
+      const feeds = el("smartcity-feeds")
+        .value.split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const pipe = line.lastIndexOf("|");
+          if (pipe === -1) return { path: line, compute_device: null };
+          return { path: line.slice(0, pipe), compute_device: line.slice(pipe + 1).trim() || null };
+        });
+      if (!feeds.length) throw new Error("Enter at least one video file path.");
+      return {
+        feeds,
+        engine: el("smartcity-engine").value,
+        compute_device: el("smartcity-compute-device").value,
+        loop: el("smartcity-loop").checked,
+      };
+    },
+    onStarted(data) {
+      this.feeds = data.feeds || [];
+    },
+    streamUrl() {
+      const feedId = el("smartcity-feed-picker").value;
+      return feedId ? `/api/smart-city-monitor/stream?feed=${encodeURIComponent(feedId)}&t=${Date.now()}` : null;
+    },
+    onRunning(isRunning) {
+      const picker = el("smartcity-feed-picker");
+      const combined = el("smartcity-combined-counts");
+      const perFeed = el("smartcity-per-feed");
+      if (!isRunning) {
+        el("smartcity-picker-row").hidden = true;
+        picker.innerHTML = "";
+        showPlaceholder(combined, "Combined per-minute counts will appear here once running.");
+        perFeed.innerHTML = "";
+        this.feeds = [];
+        return;
+      }
+      fillSelect(picker, this.feeds.map((f) => ({ value: f.feed_id, label: `${f.name} -- ${f.compute_device}` })));
+      el("smartcity-picker-row").hidden = this.feeds.length === 0;
+      this.attachVideo();
+      this.every(1000, async () => {
+        try {
+          const data = await fetchJSON("/api/smart-city-monitor/counts");
+          if (data.error) {
+            this.setStatus(`Error: ${data.error}`, "error");
+            this.setRunning(false);
+            return;
+          }
+          if (!data.snapshot) return;
+          const entries = Object.entries(data.snapshot.combined_last_60s || {});
+          combined.innerHTML = entries.length
+            ? entries.map(([label, count]) => statRow(label, `${count}/min`)).join("")
+            : '<p class="placeholder">No relevant objects counted yet.</p>';
+          perFeed.innerHTML = this.feeds
+            .map((feed) => {
+              const counts = (data.snapshot.per_feed_last_60s || {})[feed.feed_id] || {};
+              const parts = Object.entries(counts).map(([label, count]) => `${escapeHtml(label)}: ${count}/min`).join(", ") || "nothing counted yet";
+              return `<p class="feed-summary"><strong>${escapeHtml(feed.name)}</strong> (${escapeHtml(feed.compute_device)}): ${parts}</p>`;
+            })
+            .join("");
+        } catch {
+          // Best-effort.
+        }
+      });
+    },
+  }),
+
+  "doc-qa": new Panel({
+    id: "doc-qa",
+    prefix: "docqa",
+    indexed: false,
+    populate(data) {
+      attachRecents("docqa-folder");
+      wireEngineAndDevice(el("docqa-engine"), el("docqa-compute-device"), data);
+      wireSamplePicker("docqa-sample", data.samples, { "docqa-folder": "folder", "docqa-question": "question" });
+    },
+    async rehydrate() {
+      // An index built on a previous visit (or before a reload) is still
+      // loaded server-side -- reflect it instead of asking to re-index.
+      try {
+        const status = await fetchJSON("/api/doc-qa/status");
+        this.setIndexed(status.indexed);
+        if (status.indexed) {
+          this.setStatus(`Indexed ${status.chunks} chunk(s) from ${status.folder}`, "live");
+          if (!el("docqa-folder").value) el("docqa-folder").value = status.folder;
+        }
+      } catch {
+        this.setIndexed(false);
+      }
+    },
+    setIndexed(indexed) {
+      this.indexed = indexed;
+      this.setBusy(false);
+    },
+    setBusy(busy) {
+      el("docqa-ingest").disabled = busy;
+      el("docqa-ask").disabled = busy || !this.indexed;
+      el("docqa-question").disabled = busy || !this.indexed;
+      // The sample picker also fills the folder -- usable before indexing, so
+      // only gated on busy.
+      for (const id of ["docqa-folder", "docqa-engine", "docqa-compute-device", "docqa-reindex", "docqa-sample"]) {
+        el(id).disabled = busy;
+      }
+    },
+    wire() {
+      el("docqa-ingest").addEventListener("click", async () => {
+        const folder = el("docqa-folder").value.trim();
+        if (!folder) {
+          this.setStatus("Enter a folder path first.", "error");
+          return;
+        }
+        this.indexed = false;
+        this.setBusy(true);
+        const result = await this.run({
+          button: el("docqa-ingest"),
+          key: "doc-qa",
+          busy: "Indexing… (the first run downloads the models)",
+          work: () =>
+            postJSON("/api/doc-qa/ingest", {
+              folder,
+              engine: el("docqa-engine").value,
+              compute_device: el("docqa-compute-device").value,
+              reindex: el("docqa-reindex").checked,
+            }),
+          done: (r) => `Indexed ${r.chunks} chunk(s) from ${r.folder}`,
+        });
+        if (result) rememberPath("docqa-folder");
+        this.setIndexed(Boolean(result));
+      });
+      const ask = async () => {
+        const question = el("docqa-question").value.trim();
+        if (!question) return;
+        const box = el("docqa-transcript");
+        appendLine(box, "line-question", `Q: ${question}`);
+        el("docqa-question").value = "";
+        this.setBusy(true);
+        try {
+          const answer = await postJSON("/api/doc-qa/ask", { question });
+          appendLine(box, "line-answer", answer.text);
+          if (answer.sources && answer.sources.length) {
+            appendLine(box, "line-note", "Sources: " + answer.sources.map((s) => `${s.source} [${s.score.toFixed(2)}]`).join(", "));
+          }
+        } catch (err) {
+          appendLine(box, "line-answer", `Error: ${err.message}`);
+        } finally {
+          this.setBusy(false);
+        }
+      };
+      el("docqa-ask").addEventListener("click", ask);
+      el("docqa-question").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") ask();
+      });
+    },
+  }),
+
+  "screen-ocr": new Panel({
+    id: "screen-ocr",
+    prefix: "ocr",
+    populate(data) {
+      const source = el("ocr-source");
+      const sync = () => {
+        const isUpload = source.value === "upload";
+        el("ocr-source-device-field").hidden = isUpload;
+        el("ocr-upload-field").hidden = !isUpload;
+      };
+      wireVideoSource(source, el("ocr-source-device"), data);
+      source.addEventListener("change", sync);
+      sync();
+      const translate = el("ocr-translate");
+      wireEngineAndDevice(el("ocr-engine"), el("ocr-compute-device"), data, {
+        onChange: (isOpenvino) => {
+          translate.disabled = !isOpenvino;
+          if (!isOpenvino) translate.checked = false;
+        },
+      });
+    },
+    wire() {
+      el("ocr-extract").addEventListener("click", () => {
+        const source = el("ocr-source").value;
+        const engine = el("ocr-engine").value;
+        const computeDevice = el("ocr-compute-device").value;
+        const translate = el("ocr-translate").checked;
+        if (source === "upload" && !el("ocr-upload").files.length) {
+          this.setStatus("Choose an image file first.", "error");
+          return;
+        }
+        this.run({
+          button: el("ocr-extract"),
+          key: "screen-ocr",
+          busy: source === "upload" ? "Uploading and reading…" : "Capturing and reading…",
+          work: async () => {
+            let data;
+            if (source === "upload") {
+              const form = new FormData();
+              form.append("file", el("ocr-upload").files[0]);
+              form.append("engine", engine);
+              form.append("compute_device", computeDevice);
+              form.append("translate", translate);
+              data = await fetchJSON("/api/screen-ocr/extract-upload", { method: "POST", body: form });
+            } else {
+              const device = el("ocr-source-device").value;
+              data = await postJSON("/api/screen-ocr/extract", {
+                source,
+                camera_index: source === "webcam" ? Number(device || 0) : 0,
+                screen_index: source === "screen" ? Number(device || 1) : 1,
+                engine,
+                compute_device: computeDevice,
+                translate,
+              });
+            }
+            this.renderResult(data);
+            return data;
+          },
+        });
+      });
+    },
+    renderResult(data) {
+      const container = el("ocr-result");
+      const translated = data.translated_text !== null && data.translated_text !== undefined;
+      const shown = translated ? data.translated_text : data.text;
+      let html = `<p class="section-label">${translated ? "Translation (English)" : "Extracted text"}</p>`;
+      html += `<p class="text-block">${escapeHtml(shown || "(no text detected)")}</p>`;
+      if (data.regions && data.regions.length) {
+        html += '<p class="section-label">Detected regions</p>';
+        html += data.regions.map((r) => statRow(r.text, `${Math.round(r.confidence * 100)}%`)).join("");
+      }
+      container.innerHTML = html;
+    },
+  }),
+
+  "voice-clone-studio": new Panel({
+    id: "voice-clone-studio",
+    prefix: "voice",
+    populate(data) {
+      const source = el("voice-source");
+      const sync = () => {
+        const isUpload = source.value === "upload";
+        el("voice-record-field").hidden = isUpload;
+        el("voice-upload-field").hidden = !isUpload;
+      };
+      source.addEventListener("change", sync);
+      if (!(data.microphones || []).length) {
+        const record = source.querySelector('option[value="record"]');
+        record.disabled = true;
+        record.textContent = "Record from the microphone (none found)";
+        source.value = "upload";
+      }
+      sync();
+      wireEngineAndDevice(el("voice-engine"), el("voice-compute-device"), data);
+      const tau = el("voice-tau");
+      const readout = el("voice-tau-value");
+      tau.addEventListener("input", () => {
+        readout.value = Number(tau.value).toFixed(2);
+      });
+      wireSamplePicker("voice-sample", data.samples, { "voice-text": "text" });
+    },
+    async rehydrate() {
+      try {
+        const status = await fetchJSON("/api/voice-clone-studio/status");
+        this.setEnrolled(status.enrolled);
+      } catch {
+        this.setEnrolled(false);
+      }
+    },
+    setEnrolled(enrolled) {
+      for (const id of ["voice-text", "voice-sample", "voice-style", "voice-tau", "voice-synthesize"]) {
+        el(id).disabled = !enrolled;
+      }
+      if (enrolled) paintStatus(el("voice-enroll-status"), "Voice enrolled -- ready to speak", "live");
+    },
+    wire() {
+      el("voice-enroll").addEventListener("click", () => {
+        const source = el("voice-source").value;
+        const engine = el("voice-engine").value;
+        const computeDevice = el("voice-compute-device").value;
+        if (source === "upload" && !el("voice-upload").files.length) {
+          paintStatus(el("voice-enroll-status"), "Choose an audio file first.", "error");
+          return;
+        }
+        this.run({
+          button: el("voice-enroll"),
+          statusEl: el("voice-enroll-status"),
+          key: "voice-clone-studio",
+          busy: source === "record" ? "Recording…" : "Uploading and enrolling…",
+          work: async () => {
+            if (source === "upload") {
+              const form = new FormData();
+              form.append("file", el("voice-upload").files[0]);
+              form.append("engine", engine);
+              form.append("compute_device", computeDevice);
+              await fetchJSON("/api/voice-clone-studio/enroll-upload", { method: "POST", body: form });
+            } else {
+              await postJSON("/api/voice-clone-studio/enroll-record", {
+                seconds: Number(el("voice-record-seconds").value) || 10,
+                engine,
+                compute_device: computeDevice,
+              });
+            }
+            this.setEnrolled(true);
+            return true;
+          },
+          done: "Voice enrolled -- ready to speak",
+        });
+      });
+      el("voice-synthesize").addEventListener("click", () => {
+        const text = el("voice-text").value.trim();
+        if (!text) {
+          this.setStatus("Type something to say first.", "error");
+          return;
+        }
+        this.run({
+          button: el("voice-synthesize"),
+          key: "voice-clone-studio",
+          busy: "Synthesizing…",
+          work: async () => {
+            const res = await fetch("/api/voice-clone-studio/synthesize", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text, style: el("voice-style").value, tau: Number(el("voice-tau").value) }),
+            });
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              throw new Error(body.error || `synthesize failed (${res.status})`);
+            }
+            const player = el("voice-player");
+            player.src = URL.createObjectURL(await res.blob());
+            player.hidden = false;
+            player.play().catch(() => {});
+            return true;
+          },
+        });
+      });
+    },
+  }),
+
+  "code-review-assist": new Panel({
+    id: "code-review-assist",
+    prefix: "cra",
+    populate(data) {
+      attachRecents("cra-folder");
+      const source = el("cra-source");
+      const sync = () => {
+        const isWorktree = source.value === "worktree";
+        el("cra-folder-field").hidden = !isWorktree;
+        el("cra-against-field").hidden = !isWorktree;
+        el("cra-diff-text-field").hidden = isWorktree;
+      };
+      source.addEventListener("change", sync);
+      sync();
+      wireEngineAndDevice(el("cra-engine"), el("cra-compute-device"), data, { preferLargeModel: true });
+      wireSamplePicker("cra-sample", data.samples, { "cra-source": "source", "cra-diff-text": "diff_text" });
+    },
+    wire() {
+      el("cra-review").addEventListener("click", () => {
+        const source = el("cra-source").value;
+        if (source === "diff_text" && !el("cra-diff-text").value.trim()) {
+          this.setStatus("Paste a diff first.", "error");
+          return;
+        }
+        if (source === "worktree" && !el("cra-folder").value.trim()) {
+          this.setStatus("Enter a repository folder first.", "error");
+          return;
+        }
+        if (source === "worktree") rememberPath("cra-folder");
+        this.run({
+          button: el("cra-review"),
+          key: "code-review-assist",
+          busy: "Reviewing…",
+          work: async () => {
+            const data = await postJSON("/api/code-review-assist/review", {
+              source,
+              folder: el("cra-folder").value,
+              against: el("cra-against").value || "HEAD",
+              diff_text: el("cra-diff-text").value,
+              engine: el("cra-engine").value,
+              compute_device: el("cra-compute-device").value,
+            });
+            this.renderResult(data);
+            return data;
+          },
+        });
+      });
+    },
+    renderResult(data) {
+      let html = "";
+      if (data.diff_truncated) {
+        html += `<p class="section-label">Diff was ${data.diff_char_count} characters -- truncated before review, some changes may not be reflected.</p>`;
+      }
+      html += `<p class="section-label">Commit message</p><pre class="text-block">${escapeHtml(data.commit_message)}</pre>`;
+      html += `<p class="section-label">Review notes</p><p class="text-block">${escapeHtml(data.review_notes)}</p>`;
+      el("cra-result").innerHTML = html;
+    },
+  }),
+
+  "html-creator": new Panel({
+    id: "html-creator",
+    prefix: "htmlc",
+    currentHtml: null,
+    populate(data) {
+      attachRecents("htmlc-folder");
+      const mode = el("htmlc-mode");
+      const sync = () => {
+        const isLandingPage = mode.value === "landing_page";
+        el("htmlc-prompt-field").hidden = !isLandingPage;
+        el("htmlc-folder-field").hidden = isLandingPage;
+      };
+      mode.addEventListener("change", sync);
+      sync();
+      wireEngineAndDevice(el("htmlc-engine"), el("htmlc-compute-device"), data, { preferLargeModel: true });
+      wireSamplePicker("htmlc-sample", data.samples, { "htmlc-mode": "mode", "htmlc-prompt": "prompt", "htmlc-folder": "folder" });
+    },
+    wire() {
+      el("htmlc-generate").addEventListener("click", () => {
+        const mode = el("htmlc-mode").value;
+        if (mode === "landing_page" && !el("htmlc-prompt").value.trim()) {
+          this.setStatus("Describe the page first.", "error");
+          return;
+        }
+        if (mode === "document" && !el("htmlc-folder").value.trim()) {
+          this.setStatus("Enter a folder first.", "error");
+          return;
+        }
+        if (mode === "document") rememberPath("htmlc-folder");
+        el("htmlc-download").hidden = true;
+        this.run({
+          button: el("htmlc-generate"),
+          key: "html-creator",
+          busy: "Generating…",
+          work: async () => {
+            const data = await postJSON("/api/html-creator/generate", {
+              mode,
+              prompt: el("htmlc-prompt").value,
+              folder: el("htmlc-folder").value,
+              engine: el("htmlc-engine").value,
+              compute_device: el("htmlc-compute-device").value,
+            });
+            this.renderResult(data);
+            return data;
+          },
+        });
+      });
+      el("htmlc-download").addEventListener("click", () => {
+        if (!this.currentHtml) return;
+        const url = URL.createObjectURL(new Blob([this.currentHtml], { type: "text/html" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "generated.html";
+        link.click();
+        URL.revokeObjectURL(url);
+      });
+    },
+    renderResult(data) {
+      this.currentHtml = data.html;
+      const container = el("htmlc-result");
+      container.innerHTML = "";
+      if (data.html_truncated) {
+        container.insertAdjacentHTML("beforeend", '<p class="section-label">Output doesn\'t end with </html> -- it may have been cut off.</p>');
+      }
+      if (data.source_truncated) {
+        container.insertAdjacentHTML("beforeend", `<p class="section-label">Source was ${data.source_char_count} characters -- truncated before generation, some content may not be reflected.</p>`);
+      }
+      const iframe = document.createElement("iframe");
+      iframe.className = "htmlc-preview-frame";
+      iframe.setAttribute("sandbox", "allow-scripts");
+      iframe.title = "Generated page preview";
+      iframe.srcdoc = data.html;
+      container.appendChild(iframe);
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "View raw HTML";
+      details.appendChild(summary);
+      const pre = document.createElement("pre");
+      pre.className = "text-block";
+      pre.textContent = data.html;
+      details.appendChild(pre);
+      container.appendChild(details);
+      el("htmlc-download").hidden = false;
+    },
+  }),
+};
+
+// --- Home grid ----------------------------------------------------------------------
+
+function renderBadges(container, demo) {
+  container.innerHTML = "";
+  if (demo.requires_dgpu) {
+    const badge = document.createElement("span");
+    badge.className = "badge badge-dgpu";
+    badge.textContent = "Discrete GPU";
+    badge.title =
+      "The OpenVINO engine's model here needs a real discrete GPU with its own VRAM -- too large for an iGPU's or NPU's memory budget. The portable engine still runs everywhere.";
+    container.appendChild(badge);
+  }
+  if (demo.status !== "available") {
+    const badge = document.createElement("span");
+    badge.className = "badge badge-planned";
+    badge.textContent = "Coming soon";
+    container.appendChild(badge);
+  }
+}
+
+let lastLaunchButton = null;
+
+function renderCards(demos) {
+  const root = el("categories");
+  root.innerHTML = "";
+  const template = el("card-template");
+
+  const byCategory = new Map();
+  for (const demo of demos) {
+    if (!byCategory.has(demo.category)) byCategory.set(demo.category, []);
+    byCategory.get(demo.category).push(demo);
+  }
+  const orderedCategories = [
+    ...CATEGORY_ORDER.filter((c) => byCategory.has(c)),
+    ...[...byCategory.keys()].filter((c) => !CATEGORY_ORDER.includes(c)),
+  ];
+
+  for (const category of orderedCategories) {
+    const block = document.createElement("section");
+    block.className = "category-block";
+    const heading = document.createElement("h2");
+    heading.className = "category-heading";
+    heading.textContent = category;
+    block.appendChild(heading);
+
+    const grid = document.createElement("div");
+    grid.className = "card-grid";
+    for (const demo of byCategory.get(category)) {
+      const node = template.content.cloneNode(true);
+      const card = node.querySelector(".card");
+      card.dataset.id = demo.id;
+      node.querySelector(".card-name").textContent = demo.name;
+      node.querySelector(".card-tagline").textContent = demo.tagline;
+      renderBadges(node.querySelector(".badges"), demo);
+      const button = node.querySelector(".launch-btn");
+      if (demo.status === "available" && PANELS[demo.id]) {
+        const open = () => {
+          lastLaunchButton = button;
+          location.hash = `#/brick/${demo.id}`;
+        };
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          open();
+        });
+        card.addEventListener("click", open);
+      } else {
+        card.classList.add("planned");
+        button.remove();
+      }
+      grid.appendChild(node);
+    }
+    block.appendChild(grid);
+    root.appendChild(block);
+  }
+}
+
+// --- Routing --------------------------------------------------------------------
+
+let currentPanel = null;
+
+function route() {
+  const match = location.hash.match(/^#\/brick\/([\w-]+)$/);
+  const demo = match ? demoById(match[1]) : null;
+  if (demo && demo.status === "available" && PANELS[demo.id]) showPanel(demo);
+  else showHome();
+}
+
+async function showPanel(demo) {
+  const panel = PANELS[demo.id];
+  const switching = currentPanel !== panel;
+  if (currentPanel && switching) currentPanel.leave();
+  el("view-home").hidden = true;
+  el("view-brick").hidden = false;
+  for (const node of document.querySelectorAll(".brick-panel")) node.hidden = node.id !== `${panel.prefix}-panel`;
+  el("panel-title").textContent = demo.name;
+  el("panel-description").textContent = demo.description;
+  renderBadges(el("panel-badges"), demo);
+  document.title = `${demo.name} · Panther Lake AI Studio`;
+  renderRunningStrip();
+  window.scrollTo(0, 0);
+  el("panel-title").focus({ preventScroll: true });
+  if (switching) {
+    currentPanel = panel;
+    await panel.open();
+  }
+}
+
+function showHome() {
+  if (currentPanel) {
+    currentPanel.leave();
+    currentPanel = null;
+  }
+  el("view-brick").hidden = true;
+  el("view-home").hidden = false;
+  document.title = "Panther Lake AI Studio";
+  renderRunningStrip();
+  if (lastLaunchButton) {
+    lastLaunchButton.focus({ preventScroll: true });
+    lastLaunchButton = null;
+  }
+}
+
+// --- Now running strip + card states ------------------------------------------------
+
+// A brick with several stages (expense-extract's OCR/LLM, smart-city's feeds)
+// has one entry per stage: loading beats running (it says more), and an
+// error is shown only briefly after it happened -- the status snapshot keeps
+// errors until the next run, and a chip that never goes away would just be noise.
+function summarizeStatus(entries) {
+  const loading = entries.find((e) => e.phase === "loading");
+  if (loading) return loading;
+  const running = entries.find((e) => e.phase === "running");
+  if (running) return running;
+  const nowSeconds = Date.now() / 1000;
+  return entries.find((e) => e.phase === "error" && nowSeconds - e.at < 120) || null;
+}
+
+function renderRunningStrip() {
+  const groups = new Map();
+  for (const [key, entry] of Object.entries(STATUS.snapshot)) {
+    const base = key.split(":")[0];
+    if (!groups.has(base)) groups.set(base, []);
+    groups.get(base).push(entry);
+  }
+
+  const chips = [];
+  const phases = new Map();
+  for (const [base, entries] of groups) {
+    const status = summarizeStatus(entries);
+    if (!status) continue;
+    phases.set(base, status.phase);
+    const demo = demoById(base);
+    const devices = [...new Set(STATUS.active.filter((a) => a.demo_id === base).map((a) => a.device))];
+    const meta = [status.phase, ...devices].join(" · ");
+    const current = currentPanel && currentPanel.id === base ? " current" : "";
+    chips.push(
+      `<button type="button" class="running-chip phase-${status.phase}${current}" data-id="${escapeHtml(base)}" title="${escapeHtml(status.message || "")}">` +
+        `<span class="chip-dot"></span><span class="chip-name">${escapeHtml(demo ? demo.name : base)}</span>` +
+        `<span class="chip-meta">${escapeHtml(meta)}</span></button>`,
+    );
+  }
+  const container = el("running-chips");
+  const markup = chips.join("");
+  if (container.innerHTML !== markup) {
+    container.innerHTML = markup;
+    for (const chip of container.querySelectorAll(".running-chip")) {
+      chip.addEventListener("click", () => {
+        location.hash = `#/brick/${chip.dataset.id}`;
       });
     }
-    setVoiceEnrolled(true);
-  } catch (err) {
-    setVoiceEnrollStatus(`Error: ${err.message}`, "error");
-  } finally {
-    stopStatus();
-    el("voice-enroll").disabled = false;
+  }
+  el("running-strip").hidden = chips.length === 0;
+
+  for (const card of document.querySelectorAll(".card[data-id]")) {
+    const phase = phases.get(card.dataset.id);
+    card.classList.toggle("is-running", phase === "running");
+    card.classList.toggle("is-loading", phase === "loading");
+    card.querySelector(".card-state").textContent = phase === "running" ? "Running" : phase === "loading" ? "Loading…" : "";
   }
 }
 
-function setVoiceSynthesizeStatus(text, kind) {
-  const status = el("voice-synthesize-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-async function runVoiceSynthesize() {
-  const text = el("voice-text").value.trim();
-  if (!text) {
-    setVoiceSynthesizeStatus("Type something to say first.", "error");
-    return;
-  }
-
-  el("voice-synthesize").disabled = true;
-  setVoiceSynthesizeStatus("Synthesizing...");
-  const stopStatus = pollBrickStatus("voice-clone-studio", "voice-synthesize-status");
-
+async function pollStatus() {
   try {
-    const res = await fetch("/api/voice-clone-studio/synthesize", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, style: el("voice-style").value, tau: Number(el("voice-tau").value) }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `synthesize failed (${res.status})`);
-    }
-    const blob = await res.blob();
-    const player = el("voice-player");
-    player.src = URL.createObjectURL(blob);
-    player.hidden = false;
-    player.play();
-    setVoiceSynthesizeStatus("Done", "live");
-  } catch (err) {
-    setVoiceSynthesizeStatus(`Error: ${err.message}`, "error");
-  } finally {
-    stopStatus();
-    el("voice-synthesize").disabled = false;
-  }
-}
-
-function closeVoiceCloneStudio() {
-  el("voice-modal-overlay").classList.add("hidden");
-}
-
-// --- Init ---
-
-async function loadDeviceSummary() {
-  try {
-    const data = await fetchJSON("/api/live-translation/devices");
-    const ov = data.openvino_devices.length ? data.openvino_devices.join(", ") : "not installed";
-    el("device-summary").textContent = `Inference devices: ${ov}\nMicrophones: ${data.microphones.length} · Outputs: ${data.speakers.length}`;
+    STATUS.snapshot = await fetchJSON("/api/status");
   } catch {
-    el("device-summary").textContent = "";
+    return; // best-effort -- a missed poll just skips this tick
+  }
+  renderRunningStrip();
+  if (currentPanel) currentPanel.onStatus();
+}
+
+// --- Telemetry --------------------------------------------------------------------
+
+function matchGaugeKind(device) {
+  const d = (device || "").toUpperCase();
+  if (d === "CPU") return "cpu";
+  // A specific GPU id ("GPU.0", "GPU.1", or bare "GPU" on a single-GPU
+  // machine), so pinning a demo's stage to one physical GPU lights up only
+  // that GPU's gauge.
+  if (d.startsWith("GPU")) return d;
+  if (d === "NPU") return "npu";
+  return null; // "AUTO" or "cuda": picked internally by the runtime, not pinned to one gauge
+}
+
+function renderTelemetry(data) {
+  STATUS.active = data.active || [];
+  // data.active is a list, not a dict keyed by demo id: a demo like
+  // expense-extract has two entries at once (one per stage, on two devices).
+  const activeByKind = {};
+  for (const info of STATUS.active) {
+    const kind = matchGaugeKind(info.device);
+    if (!kind) continue;
+    const demo = demoById(info.demo_id);
+    const baseName = demo ? demo.name : info.demo_id;
+    activeByKind[kind] = info.stage_label ? `${baseName} (${info.stage_label})` : baseName;
+  }
+
+  const gauges = {
+    cpu: { value: data.cpu_percent, name: null, selector: '.telemetry-gauge[data-device="cpu"]' },
+    npu: { value: data.npu_percent, name: data.npu_name, selector: '.telemetry-gauge[data-device="npu"]' },
+  };
+  for (const gpu of data.gpus || []) {
+    gauges[gpu.id] = { value: gpu.percent, name: gpu.name, selector: `.telemetry-gauge[data-gpu-id="${gpu.id}"]` };
+  }
+
+  for (const [kind, { value, name, selector }] of Object.entries(gauges)) {
+    const gauge = document.querySelector(selector);
+    if (!gauge) continue;
+    const valueEl = gauge.querySelector(".telemetry-gauge-value");
+    const fillEl = gauge.querySelector(".telemetry-bar-fill");
+    const noteEl = gauge.querySelector(".telemetry-gauge-note");
+    if (value === null || value === undefined) {
+      valueEl.textContent = "N/A";
+      fillEl.style.width = "0%";
+      gauge.classList.add("unavailable");
+    } else {
+      valueEl.textContent = `${Math.round(value)}%`;
+      fillEl.style.width = `${Math.min(value, 100)}%`;
+      gauge.classList.remove("unavailable");
+    }
+    const activeLabel = activeByKind[kind];
+    noteEl.textContent = activeLabel || name || "";
+    gauge.classList.toggle("active-gauge", Boolean(activeLabel));
+  }
+  renderDeviceSummary(data);
+  // The chips' device labels come from this poll, not the status one --
+  // refresh them now rather than up to 1.5s later.
+  renderRunningStrip();
+}
+
+let deviceSummaryDone = false;
+
+function renderDeviceSummary(telemetry) {
+  if (deviceSummaryDone) return;
+  const parts = ["CPU", ...GPU_DEVICES.map((g) => shortGpuName(g.full_name))];
+  if (telemetry.npu_percent !== null && telemetry.npu_percent !== undefined) parts.push("NPU");
+  el("device-summary").textContent = `Inference devices: ${parts.join(" · ")}`;
+  deviceSummaryDone = true;
+}
+
+async function pollTelemetry() {
+  try {
+    renderTelemetry(await fetchJSON("/api/telemetry"));
+  } catch {
+    // Best-effort panel -- ignore a transient failure and try again next tick.
   }
 }
+
+// One gauge per detected GPU; GPU_DEVICES is the source of truth for which
+// gauges exist, /api/telemetry polls only fill in their values.
+function initGpuGauges() {
+  const template = el("telemetry-gpu-gauge-template");
+  const container = document.querySelector(".telemetry-gpu-gauges");
+  for (const gpu of GPU_DEVICES) {
+    const gauge = template.content.cloneNode(true).querySelector(".telemetry-gauge");
+    gauge.dataset.gpuId = gpu.id;
+    if (GPU_DEVICES.length > 1) gauge.querySelector(".telemetry-gauge-label").textContent = gpu.id;
+    container.appendChild(gauge);
+  }
+}
+
+async function initTelemetry() {
+  try {
+    GPU_DEVICES = await fetchJSON("/api/system/gpu-devices");
+  } catch {
+    GPU_DEVICES = [];
+  }
+  initGpuGauges();
+  pollTelemetry();
+  setInterval(pollTelemetry, 2000);
+}
+
+// --- Activity log -------------------------------------------------------------------
+
+function logDemoLabel(demoId) {
+  const [baseId, stage] = demoId.split(":");
+  const demo = demoById(baseId);
+  const base = demo ? demo.name : baseId;
+  return stage ? `${base} (${stage})` : base;
+}
+
+async function openLogViewer() {
+  el("log-modal-overlay").hidden = false;
+  el("log-modal-close").focus();
+  const container = el("log-list");
+  try {
+    const entries = await fetchJSON("/api/logs?limit=100");
+    if (!entries.length) {
+      showPlaceholder(container, "No events yet -- launch a brick to see activity here.");
+      return;
+    }
+    container.innerHTML = entries
+      .slice()
+      .reverse()
+      .map(
+        (entry) =>
+          `<div class="log-entry${entry.phase === "error" ? " error" : ""}">` +
+          `<span class="log-entry-time">${new Date(entry.at * 1000).toLocaleTimeString()}</span>` +
+          `<span class="log-entry-demo">${escapeHtml(logDemoLabel(entry.demo_id))}</span>` +
+          `<span class="log-entry-message">${escapeHtml(entry.message || entry.phase)}</span></div>`,
+      )
+      .join("");
+  } catch (err) {
+    showPlaceholder(container, `Error loading log: ${err.message}`);
+  }
+}
+
+function closeLogViewer() {
+  el("log-modal-overlay").hidden = true;
+  el("log-open").focus();
+}
+
+// --- Init ------------------------------------------------------------------------
 
 async function loadVersion() {
   try {
@@ -2315,416 +1756,32 @@ async function loadVersion() {
   }
 }
 
-// --- Commit & Code Review Assistant demo ---
-
-async function openCodeReviewAssist() {
-  el("cra-modal-overlay").classList.remove("hidden");
-  await populateCodeReviewDevices();
-}
-
-async function populateCodeReviewDevices() {
-  const data = await fetchJSON("/api/code-review-assist/devices");
-
-  const sourceSelect = el("cra-source");
-  const folderField = el("cra-folder-field");
-  const againstField = el("cra-against-field");
-  const diffTextField = el("cra-diff-text-field");
-  const fillSource = () => {
-    const isWorktree = sourceSelect.value === "worktree";
-    folderField.hidden = !isWorktree;
-    againstField.hidden = !isWorktree;
-    diffTextField.hidden = isWorktree;
-  };
-  sourceSelect.onchange = fillSource;
-  fillSource();
-
-  const engineSelect = el("cra-engine");
-  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  openvinoOption.textContent = hasOpenvino
-    ? `OpenVINO (coding model, ${data.openvino_devices.join(", ")})`
-    : "OpenVINO (install this brick's `openvino` extra to enable)";
-  if (hasOpenvino) engineSelect.value = "openvino";
-
-  const computeSelect = el("cra-compute-device");
-  const fillComputeDevices = () => {
-    computeSelect.innerHTML = "";
-    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
-    for (const value of options) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-      computeSelect.appendChild(opt);
-    }
-    // This brick's default OpenVINO model is a 30B coder that needs real
-    // VRAM -- pre-select the discrete GPU when there is one, else AUTO.
-    if (engineSelect.value === "openvino") {
-      computeSelect.value = preferredLargeModelDevice(data.openvino_devices);
-    }
-  };
-  engineSelect.onchange = fillComputeDevices;
-  fillComputeDevices();
-
-  wireSamplePicker("cra-sample", data.samples, { "cra-diff-text": "diff_text" });
-}
-
-function setCraStatus(text, kind) {
-  const status = el("cra-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function renderCodeReviewResult(data) {
-  const container = el("cra-result");
-  container.innerHTML = "";
-
-  if (data.diff_truncated) {
-    const warning = document.createElement("p");
-    warning.className = "ocr-result-label";
-    warning.textContent = `Diff was ${data.diff_char_count} characters -- truncated before review, some changes may not be reflected.`;
-    container.appendChild(warning);
-  }
-
-  const commitLabel = document.createElement("p");
-  commitLabel.className = "ocr-result-label";
-  commitLabel.textContent = "Commit message";
-  container.appendChild(commitLabel);
-
-  const commitBlock = document.createElement("pre");
-  commitBlock.className = "ocr-text-block";
-  commitBlock.textContent = data.commit_message;
-  container.appendChild(commitBlock);
-
-  const notesLabel = document.createElement("p");
-  notesLabel.className = "ocr-result-label";
-  notesLabel.textContent = "Review notes";
-  container.appendChild(notesLabel);
-
-  const notesBlock = document.createElement("p");
-  notesBlock.className = "ocr-text-block";
-  notesBlock.textContent = data.review_notes;
-  container.appendChild(notesBlock);
-}
-
-async function runCodeReview() {
-  const source = el("cra-source").value;
-  const engine = el("cra-engine").value;
-  const computeDevice = el("cra-compute-device").value;
-
-  if (source === "diff_text" && !el("cra-diff-text").value.trim()) {
-    setCraStatus("Paste a diff first.", "error");
-    return;
-  }
-  if (source === "worktree" && !el("cra-folder").value.trim()) {
-    setCraStatus("Enter a git repo folder first.", "error");
-    return;
-  }
-
-  el("cra-review").disabled = true;
-  setCraStatus("Reviewing...");
-  const stopStatus = pollBrickStatus("code-review-assist", "cra-status");
-
-  try {
-    const data = await fetchJSON("/api/code-review-assist/review", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source,
-        folder: el("cra-folder").value,
-        against: el("cra-against").value || "HEAD",
-        diff_text: el("cra-diff-text").value,
-        engine,
-        compute_device: computeDevice,
-      }),
-    });
-    renderCodeReviewResult(data);
-    setCraStatus("Done", "live");
-  } catch (err) {
-    setCraStatus(`Error: ${err.message}`, "error");
-  } finally {
-    stopStatus();
-    el("cra-review").disabled = false;
-  }
-}
-
-function closeCodeReviewAssist() {
-  el("cra-modal-overlay").classList.add("hidden");
-}
-
-// --- HTML Creator demo ---
-
-let htmlcCurrentHtml = null;
-
-async function openHtmlCreator() {
-  el("htmlc-modal-overlay").classList.remove("hidden");
-  await populateHtmlCreatorDevices();
-}
-
-async function populateHtmlCreatorDevices() {
-  const data = await fetchJSON("/api/html-creator/devices");
-
-  const modeSelect = el("htmlc-mode");
-  const promptField = el("htmlc-prompt-field");
-  const folderField = el("htmlc-folder-field");
-  const fillMode = () => {
-    const isLandingPage = modeSelect.value === "landing_page";
-    promptField.hidden = !isLandingPage;
-    folderField.hidden = isLandingPage;
-  };
-  modeSelect.onchange = fillMode;
-  fillMode();
-
-  const engineSelect = el("htmlc-engine");
-  const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
-  const hasOpenvino = data.openvino_devices && data.openvino_devices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  openvinoOption.textContent = hasOpenvino
-    ? `OpenVINO (coding model, ${data.openvino_devices.join(", ")})`
-    : "OpenVINO (install this brick's `openvino` extra to enable)";
-  if (hasOpenvino) engineSelect.value = "openvino";
-
-  const computeSelect = el("htmlc-compute-device");
-  const fillComputeDevices = () => {
-    computeSelect.innerHTML = "";
-    const options = engineSelect.value === "openvino" ? ["AUTO", ...data.openvino_devices] : ["cpu"];
-    for (const value of options) {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = value.toUpperCase().startsWith("GPU") ? gpuDeviceLabel(value) : value;
-      computeSelect.appendChild(opt);
-    }
-    // This brick's default OpenVINO model is a 30B coder that needs real
-    // VRAM -- pre-select the discrete GPU when there is one, else AUTO.
-    if (engineSelect.value === "openvino") {
-      computeSelect.value = preferredLargeModelDevice(data.openvino_devices);
-    }
-  };
-  engineSelect.onchange = fillComputeDevices;
-  fillComputeDevices();
-
-  wireSamplePicker("htmlc-sample", data.samples, {
-    "htmlc-mode": "mode",
-    "htmlc-prompt": "prompt",
-    "htmlc-folder": "folder",
-  });
-}
-
-function setHtmlCreatorStatus(text, kind) {
-  const status = el("htmlc-status");
-  status.textContent = text;
-  status.classList.remove("live", "error");
-  if (kind) status.classList.add(kind);
-}
-
-function renderHtmlCreatorResult(data) {
-  htmlcCurrentHtml = data.html;
-
-  const container = el("htmlc-result");
-  container.innerHTML = "";
-
-  if (data.html_truncated) {
-    const warning = document.createElement("p");
-    warning.className = "ocr-result-label";
-    warning.textContent = "Output doesn't end with </html> -- it may have been cut off.";
-    container.appendChild(warning);
-  }
-  if (data.source_truncated) {
-    const warning = document.createElement("p");
-    warning.className = "ocr-result-label";
-    warning.textContent = `Source was ${data.source_char_count} characters -- truncated before generation, some content may not be reflected.`;
-    container.appendChild(warning);
-  }
-
-  const iframe = document.createElement("iframe");
-  iframe.className = "htmlc-preview-frame";
-  iframe.setAttribute("sandbox", "allow-scripts");
-  iframe.srcdoc = data.html;
-  container.appendChild(iframe);
-
-  const details = document.createElement("details");
-  const summary = document.createElement("summary");
-  summary.textContent = "View raw HTML";
-  details.appendChild(summary);
-  const pre = document.createElement("pre");
-  pre.className = "ocr-text-block";
-  pre.textContent = data.html;
-  details.appendChild(pre);
-  container.appendChild(details);
-
-  el("htmlc-download").hidden = false;
-}
-
-function downloadHtmlCreatorResult() {
-  if (!htmlcCurrentHtml) return;
-  const blob = new Blob([htmlcCurrentHtml], { type: "text/html" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "generated.html";
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-async function runHtmlCreator() {
-  const mode = el("htmlc-mode").value;
-  const engine = el("htmlc-engine").value;
-  const computeDevice = el("htmlc-compute-device").value;
-
-  if (mode === "landing_page" && !el("htmlc-prompt").value.trim()) {
-    setHtmlCreatorStatus("Describe the page first.", "error");
-    return;
-  }
-  if (mode === "document" && !el("htmlc-folder").value.trim()) {
-    setHtmlCreatorStatus("Enter a folder first.", "error");
-    return;
-  }
-
-  el("htmlc-generate").disabled = true;
-  el("htmlc-download").hidden = true;
-  setHtmlCreatorStatus("Generating...");
-  const stopStatus = pollBrickStatus("html-creator", "htmlc-status");
-
-  try {
-    const data = await fetchJSON("/api/html-creator/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mode,
-        prompt: el("htmlc-prompt").value,
-        folder: el("htmlc-folder").value,
-        engine,
-        compute_device: computeDevice,
-      }),
-    });
-    renderHtmlCreatorResult(data);
-    setHtmlCreatorStatus("Done", "live");
-  } catch (err) {
-    setHtmlCreatorStatus(`Error: ${err.message}`, "error");
-  } finally {
-    stopStatus();
-    el("htmlc-generate").disabled = false;
-  }
-}
-
-function closeHtmlCreator() {
-  el("htmlc-modal-overlay").classList.add("hidden");
-}
-
-// --- Activity Log ---
-
-function formatLogTime(atSeconds) {
-  return new Date(atSeconds * 1000).toLocaleTimeString();
-}
-
-function logDemoLabel(demoId) {
-  // demo_id can carry a stage suffix, e.g. "expense-extract:ocr" or
-  // "meeting-notes:notes" -- show the friendly brick name plus the stage.
-  const [baseId, stage] = demoId.split(":");
-  const base = DEMO_NAMES_BY_ID[baseId] || baseId;
-  return stage ? `${base} (${stage})` : base;
-}
-
-async function openLogViewer() {
-  el("log-modal-overlay").classList.remove("hidden");
-  const container = el("log-list");
-  try {
-    const entries = await fetchJSON("/api/logs?limit=100");
-    if (!entries.length) {
-      container.innerHTML = '<p class="transcript-placeholder">No events yet -- launch a brick to see activity here.</p>';
-      return;
-    }
-    container.innerHTML = "";
-    for (const entry of entries.slice().reverse()) {
-      const row = document.createElement("div");
-      row.className = `log-entry${entry.phase === "error" ? " error" : ""}`;
-      row.innerHTML = `<span class="log-entry-time">${formatLogTime(entry.at)}</span><span class="log-entry-demo">${escapeHtml(logDemoLabel(entry.demo_id))}</span><span class="log-entry-message">${escapeHtml(entry.message || entry.phase)}</span>`;
-      container.appendChild(row);
-    }
-  } catch (err) {
-    container.innerHTML = `<p class="transcript-placeholder">Error loading log: ${escapeHtml(err.message)}</p>`;
-  }
-}
-
-function closeLogViewer() {
-  el("log-modal-overlay").classList.add("hidden");
-}
-
 async function init() {
-  const demos = await fetchJSON("/api/demos");
-  renderCards(demos);
-  loadDeviceSummary();
+  DEMOS = await fetchJSON("/api/demos");
+  renderCards(DEMOS);
   loadVersion();
   initTelemetry();
 
-  el("modal-close").addEventListener("click", closeLiveTranslation);
-  el("ctl-start").addEventListener("click", startLiveTranslation);
-  el("ctl-stop").addEventListener("click", stopLiveTranslation);
-  document.querySelector(".placeholder-close").addEventListener("click", () => {
-    el("placeholder-overlay").classList.add("hidden");
+  for (const panel of Object.values(PANELS)) panel.wire();
+
+  el("panel-back").addEventListener("click", () => {
+    location.hash = "#/";
   });
-
-  el("docqa-modal-close").addEventListener("click", closeDocQA);
-  el("docqa-ingest").addEventListener("click", runDocQaIngest);
-  el("docqa-ask").addEventListener("click", runDocQaAsk);
-  el("docqa-question").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") runDocQaAsk();
-  });
-
-  el("objdet-modal-close").addEventListener("click", closeObjectDetection);
-  el("objdet-start").addEventListener("click", startObjectDetection);
-  el("objdet-stop").addEventListener("click", stopObjectDetection);
-
-  el("smartcity-modal-close").addEventListener("click", closeSmartCityMonitor);
-  el("smartcity-start").addEventListener("click", startSmartCityMonitor);
-  el("smartcity-stop").addEventListener("click", stopSmartCityMonitor);
-
-  el("ocr-modal-close").addEventListener("click", closeScreenOcr);
-  el("ocr-extract").addEventListener("click", runScreenOcrExtract);
-
-  el("mtg-modal-close").addEventListener("click", closeMeetingNotes);
-  el("mtg-start").addEventListener("click", startMeetingNotes);
-  el("mtg-stop").addEventListener("click", stopMeetingNotes);
-  el("mtg-generate").addEventListener("click", generateMeetingNotes);
-
-  el("webcam-modal-close").addEventListener("click", closeWebcamEffects);
-  el("webcam-start").addEventListener("click", startWebcamEffects);
-  el("webcam-stop").addEventListener("click", stopWebcamEffects);
-  el("webcam-color").addEventListener("change", () => {
-    if (webcamRunning) sendWebcamEffect();
-  });
-
-  el("voice-modal-close").addEventListener("click", closeVoiceCloneStudio);
-  el("voice-enroll").addEventListener("click", runVoiceEnroll);
-  el("voice-synthesize").addEventListener("click", runVoiceSynthesize);
-
-  el("va-modal-close").addEventListener("click", closeVoiceAssistant);
-  el("va-start").addEventListener("click", startVoiceAssistant);
-  el("va-stop").addEventListener("click", stopVoiceAssistant);
-
-  el("expx-modal-close").addEventListener("click", closeExpenseExtract);
-  el("expx-start").addEventListener("click", startExpenseExtract);
-  el("expx-stop").addEventListener("click", stopExpenseExtract);
-
-  el("recall-modal-close").addEventListener("click", closeRecall);
-  el("recall-start").addEventListener("click", startRecall);
-  el("recall-stop").addEventListener("click", stopRecall);
-  el("recall-reset").addEventListener("click", resetRecall);
-  el("recall-search").addEventListener("click", runRecallSearch);
-  el("recall-question").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") runRecallSearch();
-  });
-
-  el("cra-modal-close").addEventListener("click", closeCodeReviewAssist);
-  el("cra-review").addEventListener("click", runCodeReview);
-
-  el("htmlc-modal-close").addEventListener("click", closeHtmlCreator);
-  el("htmlc-generate").addEventListener("click", runHtmlCreator);
-  el("htmlc-download").addEventListener("click", downloadHtmlCreatorResult);
-
   el("log-open").addEventListener("click", openLogViewer);
   el("log-modal-close").addEventListener("click", closeLogViewer);
+  el("log-modal-overlay").addEventListener("click", (event) => {
+    if (event.target === el("log-modal-overlay")) closeLogViewer();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!el("log-modal-overlay").hidden) closeLogViewer();
+    else if (currentPanel && !["TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) location.hash = "#/";
+  });
+
+  await pollStatus();
+  setInterval(pollStatus, 1500);
+  window.addEventListener("hashchange", route);
+  route();
 }
 
 init();

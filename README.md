@@ -38,20 +38,30 @@ uv run panther-lake-launcher
 ```
 
 A local web UI opens at `http://127.0.0.1:8765`, demos grouped by the
-kind of work they do: pick one, hit Launch -- it defaults to OpenVINO on
-your NPU/iGPU/GPU when available, portable CPU otherwise -- and the
+kind of work they do: open one and press Start -- it defaults to OpenVINO
+on your NPU/iGPU/GPU when available, portable CPU otherwise -- and the
 status line tells you what's actually happening (downloading a model the
 first time, loading it from disk after, or running), instead of a static
 "please wait." Then watch the CPU/GPU/NPU gauges in the header light up
 with *which demo is using which chip, right now*. If your machine has
 more than one GPU (say, an iGPU plus a discrete Arc card), each gets its
-own gauge, tracked independently -- point two different demos at two
-different GPUs and watch both light up at once. That live attribution is
-real, not decorative: it comes from the exact device string each demo
-handed the inference runtime, not a guess.
+own gauge, tracked independently. That live attribution is real, not
+decorative: it comes from the exact device string each demo handed the
+inference runtime, not a guess.
 
 <p align="center">
-  <img src="docs/screenshot-home.png" alt="Panther Lake AI Studio launcher, showing the header telemetry gauges and the Speech category of demo cards" width="820" />
+  <img src="docs/screenshot-home.png" alt="Panther Lake AI Studio launcher: the header telemetry gauges, the Now running strip, and the demo cards grouped by category" width="820" />
+</p>
+
+Leaving a demo doesn't stop it. Start object detection on the iGPU, go
+back to the grid, open Document Q&A on the discrete GPU -- the "Now
+running" strip under the header keeps both in view wherever you are, each
+gauge names the demo driving it, and reopening a demo picks up exactly
+where it is (the video reattaches, an index built five minutes ago is
+still there). Two demos, two chips, one glance:
+
+<p align="center">
+  <img src="docs/screenshot-running.png" alt="Two demos running at once: the Now running strip lists Object Detection on GPU.0 and the Code Review Assistant on GPU.1, and both GPU gauges are lit and labeled" width="820" />
 </p>
 
 ## The demo suite
@@ -108,10 +118,11 @@ engine still runs everywhere, with a much smaller model.*
 </p>
 
 Every content-hungry demo also ships with a "Try a sample" picker --
-named example prompts, diffs, and questions, including a fictional
-company's documents (`sample-data/`) for `doc-qa` and `html-creator`'s
-document mode -- so there's always something real to click Launch on
-without hunting for your own files first.
+named example prompts, diffs, and questions, a fictional company's
+documents (`sample-data/`) for `doc-qa` and `html-creator`'s document
+mode, and three synthetic receipts for `expense-extract` -- so there's
+always something real to press Start on without hunting for your own
+files first.
 
 Also on the roadmap and already visible as "Coming soon" cards in the
 launcher: an inbox triage & draft assistant, and live noise suppression
@@ -148,7 +159,7 @@ ships.
   model loads can take a minute or more, so the launcher tracks each
   demo's real lifecycle -- downloading, loading, running, or error -- and
   keeps a persisted Activity Log of what happened, reviewable from the
-  footer at any time.
+  header at any time.
 - **One launcher, no build step.** The front end is vanilla HTML/CSS/JS
   served straight from FastAPI -- no npm install, no bundler, just
   `uv run panther-lake-launcher`.
