@@ -1508,6 +1508,12 @@ function renderCards(demos) {
         });
         card.addEventListener("click", open);
       } else {
+        if (demo.status === "available") {
+          console.error(
+            `[panther-lake] "${demo.id}" is available on the server but has no panel in app.js -- ` +
+              "showing it as unavailable. (A stale cached app.js will do this; try a hard reload.)",
+          );
+        }
         card.classList.add("planned");
         button.remove();
       }
@@ -1525,8 +1531,14 @@ let currentPanel = null;
 function route() {
   const match = location.hash.match(/^#\/brick\/([\w-]+)$/);
   const demo = match ? demoById(match[1]) : null;
-  if (demo && demo.status === "available" && PANELS[demo.id]) showPanel(demo);
-  else showHome();
+  if (!demo || demo.status !== "available" || !PANELS[demo.id]) {
+    if (match && !demo) console.error(`[panther-lake] no demo called "${match[1]}" -- going back to the grid.`);
+    showHome();
+    return;
+  }
+  // Never fail silently: a panel that can't open should say so somewhere,
+  // rather than leaving a click looking like it did nothing.
+  showPanel(demo).catch((err) => console.error(`[panther-lake] couldn't open "${demo.id}":`, err));
 }
 
 async function showPanel(demo) {
@@ -1794,7 +1806,11 @@ async function init() {
   loadVersion();
   initTelemetry();
 
-  for (const panel of Object.values(PANELS)) panel.wire();
+  // Navigation is wired before the panels, and each panel independently:
+  // one brick missing an element must not cost the whole app its routing.
+  // (Wired the other way round, a single throw in wire() left every card
+  // silently doing nothing when clicked, with no clue as to why.)
+  window.addEventListener("hashchange", route);
 
   el("panel-back").addEventListener("click", () => {
     location.hash = "#/";
@@ -1810,9 +1826,16 @@ async function init() {
     else if (currentPanel && !["TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) location.hash = "#/";
   });
 
+  for (const panel of Object.values(PANELS)) {
+    try {
+      panel.wire();
+    } catch (err) {
+      console.error(`[panther-lake] "${panel.id}" failed to wire its controls -- its panel may not work:`, err);
+    }
+  }
+
   await pollStatus();
   setInterval(pollStatus, 1500);
-  window.addEventListener("hashchange", route);
   route();
 }
 

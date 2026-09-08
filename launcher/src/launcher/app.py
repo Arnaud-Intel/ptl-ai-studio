@@ -228,9 +228,14 @@ def index() -> HTMLResponse:
         except OSError:
             continue
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={stamp}")
-    # The page itself must be re-fetched on every navigation (it is tiny),
-    # otherwise a cached copy keeps pointing at the previous asset stamps.
-    return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+    # `no-store`, not `no-cache`: the page carries the asset stamps, so a
+    # stored copy pins the whole UI to whatever app.js/style.css it was
+    # built against. `no-cache` only asks for revalidation, and this
+    # response has no ETag to revalidate against -- browsers were observed
+    # serving an index.html nearly two hours stale, i.e. new markup running
+    # old JS (or the reverse), which fails in confusing, partial ways. The
+    # page is a few KB; re-fetching it every navigation costs nothing.
+    return HTMLResponse(html, headers={"Cache-Control": "no-store, must-revalidate"})
 
 
 @app.get("/api/demos")
