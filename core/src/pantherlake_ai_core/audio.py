@@ -16,9 +16,15 @@ import numpy as np
 # there (the segmenter, the launcher's registry and routes, and the tests
 # all import through it); only actually capturing or playing audio needs
 # the backend, so that is where the failure is raised, with the reason.
+#
+# Deliberately `Exception`, not a specific type: soundcard signals this in
+# whatever way its per-platform backend happens to -- on Linux with no
+# PulseAudio daemon it's a bare `assert` on the connection state, elsewhere
+# an OSError or a cffi error. There is no useful way to enumerate them, and
+# every one of them means the same thing here: no audio on this machine.
 try:
     import soundcard as _soundcard
-except (ImportError, OSError) as exc:  # pragma: no cover - depends on the host
+except Exception as exc:  # pragma: no cover - depends on the host
     _soundcard = None
     _SOUNDCARD_ERROR: Exception | None = exc
 else:
@@ -29,7 +35,8 @@ SAMPLE_RATE = 16000
 
 def _backend():
     if _soundcard is None:
-        raise RuntimeError(f"Audio capture isn't available on this machine: {_SOUNDCARD_ERROR}")
+        reason = str(_SOUNDCARD_ERROR) or type(_SOUNDCARD_ERROR).__name__
+        raise RuntimeError(f"Audio isn't available on this machine: {reason}")
     return _soundcard
 
 
