@@ -12,9 +12,13 @@ from typing import Callable
 
 import cv2
 import numpy as np
-import openvino as ov
 from pantherlake_ai_core.engine import ov_config_for
 from pantherlake_ai_core.model_cache import resolve_snapshot
+
+# openvino itself is imported where it's used, not here: this brick's
+# `openvino` extra is optional, and importing this module must not require
+# it. resolve_device() below is plain Python that callers (and the tests)
+# need whether or not the extra is installed.
 
 from .types import ExtractionResult
 
@@ -67,6 +71,8 @@ class OpenVINOExtractor:
         self.pipeline = ov_genai.VLMPipeline(resolved_dir, self.device, **ov_config_for(self.device))
 
     def extract(self, image: np.ndarray, translate: bool = False) -> ExtractionResult:
+        import openvino as ov
+
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         tensor = ov.Tensor(np.ascontiguousarray(rgb))
 

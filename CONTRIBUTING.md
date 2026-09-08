@@ -214,6 +214,13 @@ push and pull request via
 [`.github/workflows/test.yml`](.github/workflows/test.yml), on a plain
 Ubuntu runner with no Intel hardware.
 
+**CI installs with a plain `uv sync`, without the `openvino` extra**, so a
+test module has to be *importable* without it. Keep `import openvino` (and
+`openvino_genai`, `model_api`) inside the function or method that uses it,
+the way every `*_openvino.py` backend already does -- a module-level one
+turns into a collection error that takes the whole suite down, not a
+single skipped test.
+
 A new brick should bring a test for its pure parts -- a parser, a
 post-processing step, a CLI argument helper -- and, if it adds routes, an
 entry in `test_launcher_api.py`'s expectations. Anything that needs a
