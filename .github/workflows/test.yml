@@ -35,4 +35,19 @@ jobs:
         run: uv sync
 
       - name: Run the tests
-        run: uv run pytest
+        run: |
+          set -o pipefail
+          uv run pytest --color=no 2>&1 | tee pytest.log
+
+      # Downloading a run's log needs repo credentials; an annotation on the
+      # commit doesn't. So on a failure, put the output somewhere anyone
+      # looking at the red check can actually read it.
+      - name: Surface the failure on the commit
+        if: failure()
+        run: |
+          python - <<'PY'
+          import pathlib
+          log = pathlib.Path("pytest.log")
+          text = log.read_text(errors="replace")[-6000:] if log.exists() else "(pytest produced no output)"
+          print("::error title=pytest output::" + text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A"))
+          PY
