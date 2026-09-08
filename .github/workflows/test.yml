@@ -37,7 +37,9 @@ jobs:
       - name: Run the tests
         run: |
           set -o pipefail
-          uv run pytest --color=no 2>&1 | tee pytest.log
+          # -p no:warnings: third-party deprecation noise otherwise fills the
+          # captured tail and pushes the actual failure out of the annotation.
+          uv run pytest --color=no -p no:warnings 2>&1 | tee pytest.log
 
       # Downloading a run's log needs repo credentials; an annotation on the
       # commit doesn't. So on a failure, put the output somewhere anyone
