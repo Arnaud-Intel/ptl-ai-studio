@@ -28,6 +28,8 @@ import importlib
 import io
 import os
 import shutil
+import socket
+import sys
 import tempfile
 import uuid
 import webbrowser
@@ -1131,12 +1133,40 @@ async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
 # --- entry point --------------------------------------------------------------------
 
 
+def is_already_serving(host: str, port: int) -> bool:
+    """True if something already answers on that port -- i.e. a copy of this
+    launcher is running. Asked by connecting rather than by trying to bind,
+    because on Windows a bind test can succeed against a socket someone else
+    is listening on and tell us the opposite of the truth."""
+    target = "127.0.0.1" if host in ("0.0.0.0", "::") else host
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.5)
+        try:
+            return probe.connect_ex((target, port)) == 0
+        except OSError:
+            return False
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="panther-lake-launcher", description="Serve the Panther Lake AI Studio UI.")
     parser.add_argument("--host", default="127.0.0.1", help="Interface to bind. Default: 127.0.0.1 (this machine only).")
     parser.add_argument("--port", type=int, default=8765, help="Port to listen on. Default: 8765")
     parser.add_argument("--no-browser", action="store_true", help="Don't open the UI in a browser tab on start.")
     args = parser.parse_args()
+
+    # Checked *before* the browser opens, which is the whole point. Started a
+    # second time on a taken port, this used to open a tab -- pointed at the
+    # copy already running -- and only then die on the bind. You would be
+    # looking at the old instance, in a tab your restart had just opened, with
+    # nothing on screen saying so. Worse, the page would look updated: static
+    # files are read per request, so the UI refreshes while the Python behind
+    # it stays as it was.
+    if is_already_serving(args.host, args.port):
+        print(f"Panther Lake AI Studio is already running on http://{args.host}:{args.port}.", file=sys.stderr)
+        print("Close that window (or press Ctrl+C in it), then start this again.", file=sys.stderr)
+        print("A running copy keeps serving the code it started with -- it will not pick up an update.", file=sys.stderr)
+        print(f"To run a second copy alongside it instead: panther-lake-launcher --port {args.port + 1}", file=sys.stderr)
+        raise SystemExit(1)
 
     if not args.no_browser:
         browse_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host

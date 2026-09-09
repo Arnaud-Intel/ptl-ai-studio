@@ -261,3 +261,26 @@ def test_no_restart_is_claimed_when_the_process_matches_the_disk(client, monkeyp
     body = client.get("/api/version").json()
     assert body["version"] == "1.2.3"
     assert body["restart_needed"] is False
+
+
+def test_a_taken_port_is_reported_as_already_running(monkeypatch):
+    """Starting a second copy used to open a browser tab -- at the copy
+    already running -- and only then die on the bind, so a restart looked
+    like it had worked while serving the old code."""
+    import socket as socket_mod
+
+    from launcher import app as app_module
+
+    with socket_mod.socket(socket_mod.AF_INET, socket_mod.SOCK_STREAM) as taken:
+        taken.bind(("127.0.0.1", 0))
+        # a backlog big enough for both probes: nothing accepts them here,
+        # so with listen(1) the second connect would be refused and the
+        # test, not the code, would be what failed
+        taken.listen(8)
+        port = taken.getsockname()[1]
+        assert app_module.is_already_serving("127.0.0.1", port) is True
+        # 0.0.0.0 is asked about over the loopback it would actually serve
+        assert app_module.is_already_serving("0.0.0.0", port) is True
+
+    # and once nothing is listening there, it is free again
+    assert app_module.is_already_serving("127.0.0.1", port) is False
