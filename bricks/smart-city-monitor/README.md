@@ -18,7 +18,11 @@ an LLM a third time. What it adds on top:
   counted once as it moves through frame instead of once per detection.
 - **Counting** ([`pipeline.py`](src/smart_city_monitor/pipeline.py)) — a
   trailing-60-second count per class, continuously refreshed, plus a
-  running total, combined across every feed and broken down per feed.
+  running total, **reported per feed**. The launcher shows one block per
+  feed and the CLI prints one line each; the snapshot still carries a
+  combined total for anything that wants it, but nothing displays it.
+  Summing two cameras gives a number about nowhere, and *which* feed is
+  busy is the thing worth reading when each is pinned to its own chip.
 - **Real-time-paced file playback**
   ([`pantherlake_ai_core.video.stream_video_file_frames`](../../core/src/pantherlake_ai_core/video.py)) —
   a video file is played back at its own frame rate rather than as fast

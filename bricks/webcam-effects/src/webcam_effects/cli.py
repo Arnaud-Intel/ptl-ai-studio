@@ -39,7 +39,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--compute-device", default=None,
-        help="openvino engine only: AUTO, CPU, GPU, or NPU. Default: AUTO.",
+        help="openvino engine only: AUTO, CPU, GPU, or NPU. Default: the integrated GPU, "
+             "which for live video is about four times faster than AUTO for the same result.",
     )
     p.add_argument("--model-path", default=None, help="Use a local model instead of downloading the default.")
     p.add_argument(
@@ -61,7 +62,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     engine = engine_mod.resolve_engine(args.engine)
-    compute_device = args.compute_device or engine_mod.default_device(engine)
+    # See preferred_realtime_vision_device: AUTO is four times slower
+    # than the iGPU here, for the same output.
+    compute_device = args.compute_device or (
+        engine_mod.preferred_realtime_vision_device()
+        if engine == engine_mod.Engine.OPENVINO
+        else engine_mod.default_device(engine)
+    )
 
     print(f"Loading segmenter (engine={engine.value}, device={compute_device})... this may download a model on first use.")
     print(f"Watching camera {args.camera_index}, effect={args.effect}. Press Ctrl+C to stop.\n")

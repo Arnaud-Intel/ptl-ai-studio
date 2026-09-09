@@ -51,7 +51,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     engine = engine_mod.resolve_engine(args.engine)
-    compute_device = args.compute_device or engine_mod.default_device(engine)
+    # See preferred_realtime_vision_device: AUTO is four times slower
+    # than the iGPU here, for the same detections.
+    compute_device = args.compute_device or (
+        engine_mod.preferred_realtime_vision_device()
+        if engine == engine_mod.Engine.OPENVINO
+        else engine_mod.default_device(engine)
+    )
 
     print(f"Loading detector (engine={engine.value}, device={compute_device})... this may download a model on first use.")
 

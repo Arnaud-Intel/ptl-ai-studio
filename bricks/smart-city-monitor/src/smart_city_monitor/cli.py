@@ -49,7 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--compute-device", default=None,
-        help="openvino engine only: default device for any --source without its own '|DEVICE'. Default: AUTO.",
+        help="openvino engine only: default device for any --source without its own '|DEVICE'. "
+             "Default: the integrated GPU, which for live video is about four times faster than "
+             "AUTO for identical detections.",
     )
     p.add_argument("--model-path", default=None, help="Use a local model instead of downloading the default.")
     p.add_argument(
@@ -79,7 +81,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     engine = engine_mod.resolve_engine(args.engine)
-    default_device = args.compute_device or engine_mod.default_device(engine)
+    # The iGPU, not AUTO: for a small detection model on live video AUTO
+    # measures four times slower for identical results (see
+    # preferred_realtime_vision_device). Matches what the launcher does.
+    default_device = args.compute_device or (
+        engine_mod.preferred_realtime_vision_device()
+        if engine == engine_mod.Engine.OPENVINO
+        else engine_mod.default_device(engine)
+    )
 
     feeds = []
     for i, raw in enumerate(args.sources, start=1):
@@ -119,11 +128,20 @@ def main(argv: list[str] | None = None) -> int:
         if now - last_summary[0] < _SUMMARY_INTERVAL_SECONDS:
             return
         last_summary[0] = now
-        if not snapshot.combined_last_60s:
+        # Per feed, not summed. Two cameras added together give a number
+        # about nowhere -- and which feed is busy is the thing worth
+        # reading when each one is pinned to its own chip.
+        names = {feed.feed_id: feed.name for feed in feeds}
+        printed = False
+        for feed_id in snapshot.active_feeds:
+            counts = {k: v for k, v in sorted(snapshot.per_feed_last_60s.get(feed_id, {}).items()) if v}
+            if not counts:
+                continue
+            parts = ", ".join(f"{label}: {count}/min" for label, count in counts.items())
+            print(f"  {names.get(feed_id, feed_id)}: {parts}")
+            printed = True
+        if not printed:
             print("(no relevant objects counted yet)")
-            return
-        parts = ", ".join(f"{label}: {count}/min" for label, count in sorted(snapshot.combined_last_60s.items()))
-        print(f"Combined across {len(snapshot.active_feeds)} feed(s): {parts}")
 
     stop_event = threading.Event()
     try:

@@ -1289,13 +1289,11 @@ const PANELS = {
     },
     onRunning(isRunning) {
       const picker = el("smartcity-feed-picker");
-      const combined = el("smartcity-combined-counts");
-      const perFeed = el("smartcity-per-feed");
+      const counts = el("smartcity-counts");
       if (!isRunning) {
         el("smartcity-picker-row").hidden = true;
         picker.innerHTML = "";
-        showPlaceholder(combined, "Combined per-minute counts will appear here once running.");
-        perFeed.innerHTML = "";
+        showPlaceholder(counts, "Per-minute counts will appear here once running, one block per feed.");
         for (const card of feedCards()) card.querySelector(".feed-card-counts").textContent = "";
         this.feeds = [];
         return;
@@ -1312,12 +1310,26 @@ const PANELS = {
             return;
           }
           if (!data.snapshot) return;
-          // A class stays in the map with a count of 0 once its last
-          // sighting ages out of the 60s window; "Buses: 0/min" is noise.
-          const entries = Object.entries(data.snapshot.combined_last_60s || {}).filter(([, n]) => n > 0);
-          combined.innerHTML = entries.length
-            ? entries.map(([label, count]) => statRow(label, `${count}/min`)).join("")
-            : '<p class="placeholder">No relevant objects counted yet.</p>';
+          // One block per feed rather than one combined total. Two cameras
+          // summed tell you nothing useful -- 90/min across Tokyo and
+          // Dublin is not a number about anywhere -- and which feed is busy
+          // is the thing the per-feed devices were set up to show.
+          const perFeed = data.snapshot.per_feed_last_60s || {};
+          counts.innerHTML =
+            this.feeds
+              .map((feed) => {
+                // A class stays in the map with a count of 0 once its last
+                // sighting ages out of the 60s window; "Buses: 0/min" is noise.
+                const rows = Object.entries(perFeed[feed.feed_id] || {}).filter(([, n]) => n > 0);
+                const body = rows.length
+                  ? rows.map(([label, count]) => statRow(label, `${count}/min`)).join("")
+                  : '<p class="placeholder">Nothing counted yet.</p>';
+                return (
+                  `<div class="feed-counts"><p class="feed-counts-head">${escapeHtml(feed.name)}` +
+                  `<span class="feed-counts-device">${escapeHtml(feed.compute_device)}</span></p>${body}</div>`
+                );
+              })
+              .join("") || '<p class="placeholder">No feeds running.</p>';
           // Each feed's numbers go on its own card -- the thing you set up
           // is the thing you read the result from.
           const cards = feedCards();
