@@ -217,12 +217,34 @@ push and pull request via
 [`.github/workflows/test.yml`](.github/workflows/test.yml), on a plain
 Ubuntu runner with no Intel hardware.
 
-**CI installs with a plain `uv sync`, without the `openvino` extra**, so a
-test module has to be *importable* without it. Keep `import openvino` (and
-`openvino_genai`, `model_api`) inside the function or method that uses it,
-the way every `*_openvino.py` backend already does -- a module-level one
-turns into a collection error that takes the whole suite down, not a
-single skipped test.
+### Check it the way CI will, before pushing
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/precheck.ps1
+```
+
+A dev machine here runs Windows, Python 3.12 and `uv sync --extra
+openvino`; CI runs Linux, Python 3.11 and a plain `uv sync`. Every red
+build on this repo so far has come from that gap rather than from a real
+regression. [`scripts/precheck.ps1`](scripts/precheck.ps1) closes the
+dependency half of it: it builds a second environment matching CI's in
+`.venv-ci` and runs pytest there, leaving `.venv` untouched -- which
+matters, because a plain `uv sync` against the default environment would
+silently remove the openvino extras this machine's demos need.
+
+Two rules cover the half a local run can't check, both learned the hard
+way:
+
+- **CI installs without the `openvino` extra**, so a test module has to be
+  *importable* without it. Keep `import openvino` (and `openvino_genai`,
+  `model_api`) inside the function or method that uses it, the way every
+  `*_openvino.py` backend already does -- a module-level one turns into a
+  collection error that takes the whole suite down, not a single skipped
+  test.
+- **CI runs on Linux**, so nothing may assume Windows path semantics.
+  `Path(r"C:\videos\clip.mp4").name` is the filename on Windows and the
+  entire string on Linux; use `PureWindowsPath` for a path a user typed,
+  since it splits on both separators everywhere.
 
 A new brick should bring a test for its pure parts -- a parser, a
 post-processing step, a CLI argument helper -- and, if it adds routes, an
