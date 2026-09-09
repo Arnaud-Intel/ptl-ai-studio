@@ -91,10 +91,16 @@ class _SharedState:
             )
 
 
-def _group_by_device(feeds: list[FeedSpec]) -> dict[str, list[FeedSpec]]:
-    groups: dict[str, list[FeedSpec]] = defaultdict(list)
+# What makes two feeds able to share one loaded detector. Device alone
+# isn't enough now that a feed picks its own engine and model: two feeds on
+# the NPU running different models need two detectors.
+DetectorKey = tuple[Engine, str, str | None]
+
+
+def _group_by_detector(feeds: list[FeedSpec], default_engine: Engine) -> dict[DetectorKey, list[FeedSpec]]:
+    groups: dict[DetectorKey, list[FeedSpec]] = defaultdict(list)
     for feed in feeds:
-        groups[feed.compute_device].append(feed)
+        groups[(feed.engine or default_engine, feed.compute_device, feed.model_path)].append(feed)
     return dict(groups)
 
 
@@ -112,10 +118,13 @@ def run(
 ) -> None:
     """Blocks the calling thread until every feed's video ends (only
     possible with `loop=False`) or `stop_event` is set. Runs N feeds
-    concurrently, one detector per distinct `compute_device` among them
-    (shared by every feed pinned to that device, guarded by one lock, so
-    a device's model loads exactly once) -- feeds on different devices
-    therefore run, and load, genuinely in parallel.
+    concurrently, one detector per distinct (engine, device, model) among
+    them (shared by every feed asking for the same three, guarded by one
+    lock, so each combination loads exactly once) -- feeds on different
+    devices therefore run, and load, genuinely in parallel.
+
+    `engine` and `model_path` are the run's defaults; a feed that names its
+    own `engine`/`model_path` overrides them, so one run can mix backends.
 
     `on_ready(feed_id)` fires once per feed, as its first frame is
     processed -- i.e. once that feed's own device has finished loading its
@@ -142,9 +151,10 @@ def run(
         if on_feed_error is not None:
             on_feed_error(feed_id, str(exc))
 
-    def device_worker(device: str, device_feeds: list[FeedSpec]) -> None:
+    def device_worker(key: DetectorKey, device_feeds: list[FeedSpec]) -> None:
+        feed_engine, device, feed_model = key
         try:
-            detector = create_detector(engine, device=device, model_path=model_path)
+            detector = create_detector(feed_engine, device=device, model_path=feed_model or model_path)
         except Exception as exc:
             for feed in device_feeds:
                 fail(feed.feed_id, exc)
@@ -181,10 +191,10 @@ def run(
         for t in feed_threads:
             t.join()
 
-    feeds_by_device = _group_by_device(feeds)
+    feeds_by_detector = _group_by_detector(feeds, engine)
     device_threads = [
-        threading.Thread(target=device_worker, args=(device, device_feeds), daemon=True)
-        for device, device_feeds in feeds_by_device.items()
+        threading.Thread(target=device_worker, args=(key, device_feeds), daemon=True)
+        for key, device_feeds in feeds_by_detector.items()
     ]
     for t in device_threads:
         t.start()

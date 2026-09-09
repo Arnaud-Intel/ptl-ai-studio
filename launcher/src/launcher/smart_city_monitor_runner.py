@@ -77,13 +77,17 @@ class SmartCityMonitorRunner:
 
         def target() -> None:
             for feed in feeds:
+                # A feed may run a different engine from the rest, so report
+                # its own rather than the run's -- the telemetry gauges and
+                # the status line both name what that feed is actually using.
+                feed_engine = (feed.engine or engine).value
                 activity.set_active(
-                    _DEMO_ID, engine=engine.value, device=feed.compute_device,
+                    _DEMO_ID, engine=feed_engine, device=feed.compute_device,
                     stage=feed.feed_id, stage_label=f"Feed {feed.feed_id.removeprefix('feed-')}",
                 )
                 events.set_phase(
                     _DEMO_ID, "loading",
-                    f"Loading model (engine={engine.value}, device={feed.compute_device})...",
+                    f"Loading model (engine={feed_engine}, device={feed.compute_device})...",
                     stage=feed.feed_id,
                 )
             try:

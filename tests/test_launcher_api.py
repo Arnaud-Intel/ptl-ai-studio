@@ -211,3 +211,27 @@ def test_starting_twice_is_a_409_and_stop_resets(client, monkeypatch):
 
     assert client.post("/api/object-detection/stop").json() == {"status": "stopped"}
     assert client.post("/api/object-detection/start", json=body).status_code == 200
+
+
+def test_a_feed_with_no_source_is_rejected_by_name(client):
+    """A blank feed is the user's mistake, not a server error -- and the
+    message has to say *which* feed, since there can be several."""
+    res = client.post(
+        "/api/smart-city-monitor/start",
+        json={"feeds": [{"path": "clip.mp4"}, {"path": "   "}]},
+    )
+    assert res.status_code == 400
+    assert "feed 2" in res.json()["error"].lower()
+
+
+def test_an_unknown_per_feed_engine_is_a_400(client):
+    res = client.post(
+        "/api/smart-city-monitor/start",
+        json={"feeds": [{"path": "clip.mp4", "engine": "not-an-engine"}]},
+    )
+    assert res.status_code == 400
+
+
+def test_an_upload_without_a_filename_is_a_400(client):
+    res = client.post("/api/smart-city-monitor/upload", files={"file": ("", b"x")})
+    assert res.status_code in (400, 422)

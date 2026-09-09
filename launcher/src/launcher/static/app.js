@@ -584,6 +584,178 @@ class StreamPanel extends Panel {
 
 // --- Brick configs --------------------------------------------------------------------
 
+
+// --- smart-city feed cards ------------------------------------------------
+// One card per feed, added and removed by the user. Each one carries its
+// own engine, model, chip and source, because the pipeline now loads one
+// detector per distinct (engine, device, model) -- so two cards can run
+// genuinely different backends at once.
+
+// Each engine ships exactly one model; "Custom path" is what makes the
+// control more than decoration, and it is the only way to reach the
+// pipeline's model_path from the UI.
+const FEED_MODELS = {
+  portable: [{ value: "", label: "DETR-ResNet-50 (built-in)" }],
+  openvino: [{ value: "", label: "YOLO11n INT8 (built-in)" }],
+};
+const CUSTOM_MODEL = "__custom__";
+
+let feedDevicesData = null;  // the /devices payload, needed by every new card
+let feedCounter = 0;
+
+function feedCards() {
+  return [...document.querySelectorAll("#smartcity-feed-list .feed-card")];
+}
+
+function renumberFeeds() {
+  const cards = feedCards();
+  cards.forEach((card, i) => {
+    card.querySelector(".feed-card-title").textContent = `Feed ${i + 1}`;
+  });
+  el("smartcity-feed-empty").hidden = cards.length > 0;
+}
+
+// The value a card contributes to the start request: whichever source box
+// its type is showing, plus how that feed wants to be run.
+function feedCardValue(card) {
+  const type = card.querySelector(".feed-type").value;
+  const path = type === "url"
+    ? card.querySelector(".feed-url").value.trim()
+    : card.querySelector(".feed-path").value.trim();
+  const model = card.querySelector(".feed-model").value;
+  return {
+    path,
+    engine: card.querySelector(".feed-engine").value,
+    compute_device: card.querySelector(".feed-device").value,
+    model_path: model === CUSTOM_MODEL ? card.querySelector(".feed-model-path").value.trim() || null : null,
+  };
+}
+
+async function uploadFeedVideo(card, file) {
+  const zone = card.querySelector(".dropzone");
+  const text = zone.querySelector(".dropzone-text");
+  const body = new FormData();
+  body.append("file", file);
+  zone.classList.add("is-busy");
+  text.textContent = `Copying ${file.name}...`;
+  try {
+    const res = await fetch("/api/smart-city-monitor/upload", { method: "POST", body });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `upload failed (${res.status})`);
+    card.querySelector(".feed-path").value = data.path;
+    text.textContent = `${data.name} -- ${(data.bytes / 1048576).toFixed(1)} MB, ready`;
+  } catch (err) {
+    text.textContent = `Couldn't take that file: ${err.message}`;
+  } finally {
+    zone.classList.remove("is-busy");
+  }
+}
+
+function wireFeedCard(card) {
+  const engine = card.querySelector(".feed-engine");
+  const device = card.querySelector(".feed-device");
+  const model = card.querySelector(".feed-model");
+  const modelPathField = card.querySelector(".feed-model-path-field");
+  const type = card.querySelector(".feed-type");
+
+  // The same helper every other panel uses, just scoped to this card's
+  // pair of selects -- so a card gets the engine/device rules for free.
+  if (feedDevicesData) wireEngineAndDevice(engine, device, feedDevicesData);
+
+  const fillModels = () => {
+    const options = [...(FEED_MODELS[engine.value] || []), { value: CUSTOM_MODEL, label: "Custom path..." }];
+    fillSelect(model, options);
+    modelPathField.hidden = true;
+  };
+  engine.addEventListener("change", fillModels);
+  model.addEventListener("change", () => {
+    modelPathField.hidden = model.value !== CUSTOM_MODEL;
+  });
+  fillModels();
+
+  const showSource = () => {
+    const isUrl = type.value === "url";
+    card.querySelector(".feed-source-file").hidden = isUrl;
+    card.querySelector(".feed-source-url").hidden = !isUrl;
+  };
+  type.addEventListener("change", showSource);
+  showSource();
+
+  // Drag-and-drop, and the same zone as a click-to-browse. A browser never
+  // tells a page where a dropped file lives, so the bytes are copied to the
+  // launcher and the path it landed at goes in the box -- typing a path
+  // straight in stays the way to use a big file where it already is.
+  const zone = card.querySelector(".dropzone");
+  const fileInput = card.querySelector(".feed-file-input");
+  zone.addEventListener("click", () => fileInput.click());
+  zone.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      fileInput.click();
+    }
+  });
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files[0]) uploadFeedVideo(card, fileInput.files[0]);
+  });
+  for (const name of ["dragenter", "dragover"]) {
+    zone.addEventListener(name, (event) => {
+      event.preventDefault();
+      zone.classList.add("is-over");
+    });
+  }
+  for (const name of ["dragleave", "drop"]) {
+    zone.addEventListener(name, () => zone.classList.remove("is-over"));
+  }
+  zone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files[0];
+    if (file) uploadFeedVideo(card, file);
+  });
+
+  card.querySelector(".feed-remove").addEventListener("click", () => {
+    card.remove();
+    renumberFeeds();
+  });
+}
+
+// Point a device select at `wanted` without ever leaving it blank. A
+// preset names a device the machine may not enumerate under that exact id:
+// a sample pinned to "GPU" has to land on "GPU.0" on a two-GPU box, and on
+// nothing at all if there is no GPU -- in which case AUTO is the honest
+// answer, not an empty select that posts an empty device.
+function selectDevice(select, wanted) {
+  const options = [...select.options].filter((o) => !o.disabled).map((o) => o.value);
+  const exact = options.find((value) => value === wanted);
+  const prefixed = options.find((value) => value.startsWith(`${wanted}.`));
+  select.value = exact || prefixed || (options.includes("AUTO") ? "AUTO" : options[0] || "");
+  return select.value;
+}
+
+// `preset` fills a new card in: {type, path, engine, device, name}.
+function addFeedCard(preset = {}) {
+  const template = el("smartcity-feed-template");
+  const card = template.content.firstElementChild.cloneNode(true);
+  card.dataset.key = `card-${++feedCounter}`;
+  el("smartcity-feed-list").appendChild(card);
+  wireFeedCard(card);
+
+  if (preset.engine) {
+    card.querySelector(".feed-engine").value = preset.engine;
+    card.querySelector(".feed-engine").dispatchEvent(new Event("change"));
+  }
+  if (preset.device) selectDevice(card.querySelector(".feed-device"), preset.device);
+  if (preset.type) {
+    card.querySelector(".feed-type").value = preset.type;
+    card.querySelector(".feed-type").dispatchEvent(new Event("change"));
+  }
+  if (preset.path) {
+    const target = preset.type === "url" ? ".feed-url" : ".feed-path";
+    card.querySelector(target).value = preset.path;
+  }
+  renumberFeeds();
+  return card;
+}
+
 const PANELS = {
   "live-translation": new StreamPanel({
     id: "live-translation",
@@ -975,42 +1147,72 @@ const PANELS = {
     transport: "mjpeg",
     video: "smartcity-video",
     statusKey: "smart-city-monitor:feed-1",
-    controls: ["smartcity-feeds", "smartcity-sample", "smartcity-engine", "smartcity-compute-device", "smartcity-loop"],
+    // A disabled <fieldset> disables every card inside it, however many.
+    controls: ["smartcity-feed-set", "smartcity-loop"],
     feeds: [],
     populate(data) {
-      wireEngineAndDevice(el("smartcity-engine"), el("smartcity-compute-device"), data);
-      wireSamplePicker("smartcity-sample", data.samples, { "smartcity-feeds": "feeds" });
+      feedDevicesData = data;  // every card added later needs the device lists
+      el("smartcity-add-feed").addEventListener("click", () => addFeedCard({ type: "file" }));
       el("smartcity-feed-picker").addEventListener("change", () => this.attachVideo());
+
+      // A sample is a set of feeds, not a value for one box: each of its
+      // lines ("url" or "url|DEVICE") becomes its own card, so "two cities,
+      // two chips" arrives as two cards already pinned to their chips.
+      const picker = el("smartcity-sample");
+      const samples = data.samples || [];
+      while (picker.options.length > 1) picker.remove(1);
+      for (const sample of samples) picker.appendChild(option(sample.name, `${sample.name} -- ${sample.description}`));
+      picker.disabled = !samples.length;
+      picker.onchange = () => {
+        const sample = samples.find((entry) => entry.name === picker.value);
+        picker.value = "";
+        if (!sample) return;
+        for (const line of sample.feeds.split("\n").map((l) => l.trim()).filter(Boolean)) {
+          const pipe = line.lastIndexOf("|");
+          addFeedCard({
+            type: "url",
+            path: pipe === -1 ? line : line.slice(0, pipe),
+            device: pipe === -1 ? null : line.slice(pipe + 1).trim(),
+          });
+        }
+      };
+
+      if (!feedCards().length) addFeedCard({ type: "url" });  // start with one to fill in
+      renumberFeeds();
     },
     async rehydrate() {
       // The feed list lives on the server (a run may predate this visit):
-      // pick it up from the counts route, then the usual running check.
+      // pick it up from the counts route, then the usual running check. The
+      // route reports each feed's engine, chip and source, so the cards can
+      // be rebuilt exactly as they were rather than left blank under a run.
       try {
         const data = await fetchJSON("/api/smart-city-monitor/counts");
         this.feeds = data.feeds || [];
+        if (this.feeds.length) {
+          el("smartcity-feed-list").innerHTML = "";
+          for (const feed of this.feeds) {
+            addFeedCard({
+              type: feed.source_type || "url",
+              path: feed.path,
+              engine: feed.engine,
+              device: feed.compute_device,
+            });
+          }
+        }
       } catch {
         this.feeds = [];
       }
       await StreamPanel.prototype.rehydrate.call(this);
     },
-    // "path" or "path|device" per line; a blank device means the shared pick.
     body() {
-      const feeds = el("smartcity-feeds")
-        .value.split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => {
-          const pipe = line.lastIndexOf("|");
-          if (pipe === -1) return { path: line, compute_device: null };
-          return { path: line.slice(0, pipe), compute_device: line.slice(pipe + 1).trim() || null };
-        });
-      if (!feeds.length) throw new Error("Enter at least one video file path.");
-      return {
-        feeds,
-        engine: el("smartcity-engine").value,
-        compute_device: el("smartcity-compute-device").value,
-        loop: el("smartcity-loop").checked,
-      };
+      const cards = feedCards();
+      if (!cards.length) throw new Error("Add at least one feed.");
+      const feeds = cards.map(feedCardValue);
+      const blank = feeds.findIndex((feed) => !feed.path);
+      if (blank !== -1) throw new Error(`Feed ${blank + 1} has no source yet -- choose a video file or enter a URL.`);
+      // No run-wide engine or device: every card carries its own, and the
+      // route only falls back per feed if one is somehow left unset.
+      return { feeds, loop: el("smartcity-loop").checked };
     },
     onStarted(data) {
       this.feeds = data.feeds || [];
@@ -1028,6 +1230,7 @@ const PANELS = {
         picker.innerHTML = "";
         showPlaceholder(combined, "Combined per-minute counts will appear here once running.");
         perFeed.innerHTML = "";
+        for (const card of feedCards()) card.querySelector(".feed-card-counts").textContent = "";
         this.feeds = [];
         return;
       }
@@ -1043,17 +1246,24 @@ const PANELS = {
             return;
           }
           if (!data.snapshot) return;
-          const entries = Object.entries(data.snapshot.combined_last_60s || {});
+          // A class stays in the map with a count of 0 once its last
+          // sighting ages out of the 60s window; "Buses: 0/min" is noise.
+          const entries = Object.entries(data.snapshot.combined_last_60s || {}).filter(([, n]) => n > 0);
           combined.innerHTML = entries.length
             ? entries.map(([label, count]) => statRow(label, `${count}/min`)).join("")
             : '<p class="placeholder">No relevant objects counted yet.</p>';
-          perFeed.innerHTML = this.feeds
-            .map((feed) => {
-              const counts = (data.snapshot.per_feed_last_60s || {})[feed.feed_id] || {};
-              const parts = Object.entries(counts).map(([label, count]) => `${escapeHtml(label)}: ${count}/min`).join(", ") || "nothing counted yet";
-              return `<p class="feed-summary"><strong>${escapeHtml(feed.name)}</strong> (${escapeHtml(feed.compute_device)}): ${parts}</p>`;
-            })
-            .join("");
+          // Each feed's numbers go on its own card -- the thing you set up
+          // is the thing you read the result from.
+          const cards = feedCards();
+          this.feeds.forEach((feed, i) => {
+            const counts = (data.snapshot.per_feed_last_60s || {})[feed.feed_id] || {};
+            const parts = Object.entries(counts)
+              .filter(([, count]) => count > 0)
+              .map(([label, count]) => `${label}: ${count}/min`)
+              .join(" · ") || "nothing counted yet";
+            const card = cards[i];
+            if (card) card.querySelector(".feed-card-counts").textContent = parts;
+          });
         } catch {
           // Best-effort.
         }

@@ -30,11 +30,13 @@ an LLM a third time. What it adds on top:
   stream first. [`samples.py`](src/smart_city_monitor/samples.py) ships a
   short list of public 24/7 city cameras so the demo has something real to
   count without you sourcing footage.
-- **N feeds, each on its own device** ([`pipeline.py`](src/smart_city_monitor/pipeline.py)) —
-  one detector per distinct device among the feeds (shared by every feed
-  pinned to it, so a device's model loads exactly once), each device's
+- **N feeds, each on its own engine, model and device**
+  ([`pipeline.py`](src/smart_city_monitor/pipeline.py)) — one detector per
+  distinct `(engine, device, model)` among the feeds, shared by every feed
+  asking for the same three so it loads exactly once, with each group's
   feeds running on their own threads. Feeds on different devices run, and
-  load, genuinely in parallel.
+  load, genuinely in parallel — and because the engine is part of that key,
+  one run can have YOLO11n on the NPU and DETR on the CPU at the same time.
 
 ## Setup
 
@@ -86,7 +88,7 @@ Press `Ctrl+C` to stop.
 | Flag | Description |
 | --- | --- |
 | `--source SOURCE[\|DEVICE]` | A feed to monitor, repeatable for multiple feeds: a video file, a stream URL (RTSP/HTTP/HLS), or a YouTube live page. Optional `\|DEVICE` suffix pins that one feed to a specific device (e.g. `clip.mp4\|GPU.0`); omitted, it uses `--compute-device`. Required (at least one). |
-| `--engine {portable,openvino}` | Inference backend for every feed. Default: `openvino` if installed and a device is available, otherwise `portable`. |
+| `--engine {portable,openvino}` | Default inference backend for the run. Default: `openvino` if installed and a device is available, otherwise `portable`. (The CLI applies it to every feed; the launcher UI sets one per feed.) |
 | `--compute-device NAME` | `openvino` engine only: default device for any `--source` without its own `\|DEVICE`. |
 | `--model-path PATH` | Use a local model file/dir instead of downloading the default. |
 | `--no-loop` | Stop each feed at end-of-file instead of restarting it from the beginning. |
@@ -147,9 +149,13 @@ the drawn boxes nor the counts are cluttered with irrelevant classes.
   Reading a YouTube page needs `yt-dlp`, which is a declared dependency of
   this brick and occasionally needs upgrading when YouTube changes
   (`uv sync --upgrade-package yt-dlp`).
-- **No per-feed engine choice**, only per-feed *device* — every feed uses
-  the same model family (`portable` or `openvino`); mixing DETR and
-  YOLO11n per feed would add complexity for no real benefit, since the
-  interesting axis here is which chip a feed runs on, not which model.
+- **A feed dropped onto the launcher UI is copied, not referenced.** A
+  browser never tells a page where a dropped file actually lives, so the
+  only way drag-and-drop can work at all is to send the bytes to the
+  launcher, which stages them under
+  `~/.cache/pantherlake-ai-studio/uploads/` and uses that path. Typing a
+  path into the feed's own box instead reads the file where it already is,
+  with nothing duplicated — which is what you want for anything large.
+  Nothing prunes the staging folder; delete it when it gets big.
 - Inherits `object-detection`'s own label-vocabulary and performance
   caveats (see its README) for whichever engine is selected.

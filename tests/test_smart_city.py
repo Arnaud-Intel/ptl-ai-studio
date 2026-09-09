@@ -5,10 +5,12 @@ from __future__ import annotations
 import pytest
 from object_detection.types import Detection
 
+from pantherlake_ai_core.engine import Engine
+
 from smart_city_monitor.cli import _parse_source
-from smart_city_monitor.pipeline import FeedCounters
+from smart_city_monitor.pipeline import FeedCounters, _group_by_detector
 from smart_city_monitor.tracker import Tracker
-from smart_city_monitor.types import TrackedDetection
+from smart_city_monitor.types import FeedSpec, TrackedDetection
 
 
 def det(label: str, box: tuple[int, int, int, int], confidence: float = 0.9) -> Detection:
@@ -66,3 +68,39 @@ def test_counters_count_a_track_once_and_age_out_of_the_trailing_minute():
 )
 def test_parse_source(raw, expected):
     assert _parse_source(raw, "AUTO") == expected
+
+
+# --- one detector per (engine, device, model) --------------------------------
+
+
+def feed(feed_id: str, device: str, **kwargs) -> FeedSpec:
+    return FeedSpec(feed_id=feed_id, path=f"{feed_id}.mp4", compute_device=device, **kwargs)
+
+
+def test_feeds_wanting_the_same_thing_share_one_detector():
+    """Loading a model is the expensive part, so feeds that ask for the
+    same engine, chip and model must not each load their own."""
+    feeds = [feed("f1", "NPU"), feed("f2", "NPU"), feed("f3", "GPU")]
+    groups = _group_by_detector(feeds, Engine.OPENVINO)
+    assert len(groups) == 2
+    assert [f.feed_id for f in groups[(Engine.OPENVINO, "NPU", None)]] == ["f1", "f2"]
+    assert [f.feed_id for f in groups[(Engine.OPENVINO, "GPU", None)]] == ["f3"]
+
+
+def test_a_feed_with_its_own_engine_gets_its_own_detector():
+    """Two feeds on one chip running different backends is the whole point
+    of per-feed engines -- they must not be collapsed together."""
+    feeds = [feed("f1", "CPU"), feed("f2", "CPU", engine=Engine.PORTABLE)]
+    groups = _group_by_detector(feeds, Engine.OPENVINO)
+    assert set(groups) == {(Engine.OPENVINO, "CPU", None), (Engine.PORTABLE, "CPU", None)}
+
+
+def test_the_model_is_part_of_what_makes_a_detector_distinct():
+    feeds = [feed("f1", "NPU"), feed("f2", "NPU", model_path="/models/other.xml")]
+    groups = _group_by_detector(feeds, Engine.OPENVINO)
+    assert set(groups) == {(Engine.OPENVINO, "NPU", None), (Engine.OPENVINO, "NPU", "/models/other.xml")}
+
+
+def test_a_feed_without_an_engine_falls_back_to_the_run():
+    (key,) = _group_by_detector([feed("f1", "CPU")], Engine.PORTABLE)
+    assert key == (Engine.PORTABLE, "CPU", None)

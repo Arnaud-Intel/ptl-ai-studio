@@ -27,7 +27,9 @@ import asyncio
 import importlib
 import io
 import os
+import shutil
 import tempfile
+import uuid
 import webbrowser
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -458,9 +460,20 @@ def object_detection_stream() -> Response:
 # --- smart-city-monitor -----------------------------------------------------------
 
 
+# Where a video dropped onto the UI lands. A browser can't tell a page the
+# real path of a dropped file, so the only way "drag your clip here" can
+# work at all is to copy the bytes over -- see the upload route below.
+SMART_CITY_UPLOAD_DIR = Path.home() / ".cache" / "pantherlake-ai-studio" / "uploads"
+
+
 class SmartCityFeedInput(BaseModel):
     path: str
     compute_device: str | None = None
+    # Per feed, both optional: unset means "whatever the run was started
+    # with". Set, they let one run mix backends -- one feed on the NPU with
+    # YOLO11n, another on the CPU with DETR, at the same time.
+    engine: str | None = None
+    model_path: str | None = None
 
 
 class SmartCityMonitorStartRequest(BaseModel):
@@ -470,30 +483,77 @@ class SmartCityMonitorStartRequest(BaseModel):
     loop: bool = True
 
 
+def _smart_city_feed_json(feed: SmartCityFeedSpec) -> dict[str, Any]:
+    """What the UI needs to rebuild a feed's card after a reload: not just
+    its name and chip, but the engine and source it was started with."""
+    return {
+        "feed_id": feed.feed_id,
+        "name": feed.name,
+        "compute_device": feed.compute_device,
+        "engine": feed.engine.value if feed.engine else None,
+        "model_path": feed.model_path,
+        "path": feed.path,
+        "source_type": "url" if smart_city_sources.is_url(feed.path) else "file",
+    }
+
+
 @app.post("/api/smart-city-monitor/start")
 async def start_smart_city_monitor(req: SmartCityMonitorStartRequest) -> JSONResponse:
     try:
         if not req.feeds:
             raise ValueError("at least one feed is required")
-        engine, device = resolve(req.engine, req.compute_device)
-        feeds = [
-            SmartCityFeedSpec(
-                feed_id=f"feed-{i}",
-                path=f.path,
-                compute_device=f.compute_device or device,
-                name=smart_city_sources.display_name(f.path),
+        default_engine, default_device = resolve(req.engine, req.compute_device)
+        feeds = []
+        for i, f in enumerate(req.feeds, start=1):
+            if not f.path.strip():
+                raise ValueError(f"feed {i} has no source -- give it a file path or a URL")
+            # Resolved per feed, so an unknown engine name is a 400 naming
+            # the feed rather than a failure deep inside the pipeline.
+            feed_engine, feed_device = resolve(f.engine or req.engine, f.compute_device or req.compute_device)
+            feeds.append(
+                SmartCityFeedSpec(
+                    feed_id=f"feed-{i}",
+                    path=f.path.strip(),
+                    compute_device=feed_device,
+                    name=smart_city_sources.display_name(f.path.strip()),
+                    engine=feed_engine,
+                    model_path=f.model_path or None,
+                )
             )
-            for i, f in enumerate(req.feeds, start=1)
-        ]
-        smart_city_monitor_runner.start(feeds=feeds, engine=engine, loop=req.loop)
+        smart_city_monitor_runner.start(feeds=feeds, engine=default_engine, loop=req.loop)
     except Exception as exc:
         return error_response(exc)
-    return JSONResponse(
-        {
-            "status": "started",
-            "feeds": [{"feed_id": f.feed_id, "name": f.name, "compute_device": f.compute_device} for f in feeds],
-        }
-    )
+    return JSONResponse({"status": "started", "feeds": [_smart_city_feed_json(f) for f in feeds]})
+
+
+@app.post("/api/smart-city-monitor/upload")
+async def upload_smart_city_video(file: UploadFile) -> JSONResponse:
+    """Stage a video dropped on the UI and hand back the path it landed at.
+
+    Copied in chunks rather than read whole: these are video files, and
+    `await file.read()` on a two-gigabyte clip would put all of it in
+    memory. The copy is the price of drag-and-drop working at all -- typing
+    a path into the feed's own box still reads the file where it already
+    lives, with nothing duplicated.
+    """
+    try:
+        if not file.filename:
+            raise ValueError("the upload had no filename")
+        # Only the basename, and prefixed: the client names this file, so it
+        # must not be able to choose where it lands or overwrite a sibling.
+        safe_name = Path(file.filename).name
+        SMART_CITY_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        destination = SMART_CITY_UPLOAD_DIR / f"{uuid.uuid4().hex[:8]}-{safe_name}"
+
+        def save() -> int:
+            with destination.open("wb") as out:
+                shutil.copyfileobj(file.file, out, length=1024 * 1024)
+            return destination.stat().st_size
+
+        size = await run_in_threadpool(save)
+    except Exception as exc:
+        return error_response(exc)
+    return JSONResponse({"path": str(destination), "name": safe_name, "bytes": size})
 
 
 @app.post("/api/smart-city-monitor/stop")
@@ -509,11 +569,8 @@ def smart_city_monitor_counts() -> JSONResponse:
         {
             "snapshot": asdict(snapshot) if snapshot else None,
             # The feed list too, so a panel opened after the run started (or
-            # after a reload) can rebuild its feed picker.
-            "feeds": [
-                {"feed_id": f.feed_id, "name": f.name, "compute_device": f.compute_device}
-                for f in smart_city_monitor_runner.feeds()
-            ],
+            # after a reload) can rebuild every feed's card as it was set up.
+            "feeds": [_smart_city_feed_json(f) for f in smart_city_monitor_runner.feeds()],
             "error": smart_city_monitor_runner.error,
         }
     )

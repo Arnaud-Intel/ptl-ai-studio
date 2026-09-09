@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from pantherlake_ai_core.engine import Engine
+
 
 @dataclass
 class TrackedDetection:
@@ -22,10 +24,20 @@ class TrackedDetection:
 
 @dataclass
 class FeedSpec:
+    """One feed and everything about how it should be run.
+
+    Engine and model live here, not just on the run as a whole, so two
+    feeds can genuinely use different backends at once -- the point of the
+    brick generalized one step further than "same model, different chip".
+    Both default to the run's choice when left unset.
+    """
+
     feed_id: str
     path: str
     compute_device: str
     name: str = ""  # display name (e.g. the file's basename); defaults to feed_id if unset
+    engine: Engine | None = None  # None -> the engine the run was started with
+    model_path: str | None = None  # None -> that engine's built-in model
 
 
 @dataclass

@@ -198,35 +198,24 @@
 
       <!-- smart-city-monitor -->
       <section id="smartcity-panel" class="brick-panel" hidden>
-        <div class="controls">
-          <label class="field field-wide">
-            <span>Video feeds (one per line: a live camera, a stream URL, or a local file)</span>
+        <fieldset id="smartcity-feed-set" class="feed-set">
+          <legend class="feed-set-legend">Video feeds</legend>
+          <div id="smartcity-feed-list" class="feed-list"></div>
+          <p id="smartcity-feed-empty" class="field-help">No feeds yet -- add one, or drop in a live city camera.</p>
+          <div class="feed-set-actions">
+            <button id="smartcity-add-feed" class="btn btn-secondary" type="button">+ Add a feed</button>
             <select id="smartcity-sample" class="sample-picker">
-              <option value="">Pick a live city camera...</option>
+              <option value="">Add a live city camera...</option>
             </select>
-            <textarea id="smartcity-feeds" rows="3" placeholder="https://www.youtube.com/watch?v=...
-rtsp://camera.local/stream
-C:\videos\intersection.mp4|NPU"></textarea>
-          </label>
+          </div>
           <p class="field-help">
-            A feed can be a public live camera (pick one above), an RTSP or HLS stream from a camera on
-            your own network, or a local video file. Add <code>|DEVICE</code> after a line (for example
-            <code>|GPU.0</code> or <code>|NPU</code>) to pin that feed to one chip; otherwise it uses the
-            compute device below. Pin different feeds to different chips and every gauge they use lights
-            up at once, each attributed to its own feed. The public cameras arrive over the internet --
-            the video is a network stream, but every detection runs on local silicon.
+            Each feed picks its own engine, model and chip, so one run can have YOLO11n on the NPU and
+            DETR on the CPU at the same time -- every gauge they use lights up at once, attributed per
+            feed. A feed is either a local video file or a stream URL (RTSP, HLS, or a YouTube live
+            page). Public cameras arrive over the internet, but every detection runs on local silicon.
           </p>
-          <label class="field">
-            <span>Engine</span>
-            <select id="smartcity-engine">
-              <option value="portable">Portable (DETR, ONNX Runtime)</option>
-              <option value="openvino">OpenVINO (YOLO11n)</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Compute device (for feeds without their own)</span>
-            <select id="smartcity-compute-device"></select>
-          </label>
+        </fieldset>
+        <div class="controls">
           <label class="check"><input id="smartcity-loop" type="checkbox" checked /><span>Loop each feed at the end of the file</span></label>
         </div>
         <div class="run-row">
@@ -765,6 +754,63 @@ C:\videos\intersection.mp4|NPU"></textarea>
       </div>
       <div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>
       <span class="telemetry-gauge-note"></span>
+    </div>
+  </template>
+
+  <!-- One smart-city feed. Cloned per "+ Add a feed"; the same card shows
+       that feed's live counts while the run is on, so the thing you set up
+       is the thing you read results from. -->
+  <template id="smartcity-feed-template">
+    <div class="feed-card">
+      <div class="feed-card-head">
+        <span class="feed-card-title"></span>
+        <span class="feed-card-counts"></span>
+        <button class="icon-btn feed-remove" type="button" aria-label="Remove this feed" title="Remove this feed">&times;</button>
+      </div>
+      <div class="feed-card-grid">
+        <label class="field">
+          <span>Source type</span>
+          <select class="feed-type">
+            <option value="file">Video file</option>
+            <option value="url">URL</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Engine</span>
+          <select class="feed-engine">
+            <option value="portable">Portable (DETR, ONNX Runtime)</option>
+            <option value="openvino">OpenVINO (YOLO11n)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <select class="feed-model"></select>
+        </label>
+        <label class="field">
+          <span>Compute device</span>
+          <select class="feed-device"></select>
+        </label>
+      </div>
+      <label class="field field-wide feed-model-path-field" hidden>
+        <span>Model path</span>
+        <input class="feed-model-path" type="text" placeholder="C:\models\yolo11n.xml" autocomplete="off" />
+      </label>
+      <div class="feed-source feed-source-file">
+        <div class="dropzone" tabindex="0" role="button" aria-label="Choose a video file, or drop one here">
+          <span class="dropzone-text">Drop a video here, or click to choose one</span>
+        </div>
+        <input class="feed-file-input" type="file" accept="video/*" hidden />
+        <label class="field field-wide">
+          <span>Path on this machine</span>
+          <input class="feed-path" type="text" placeholder="C:\videos\intersection.mp4" autocomplete="off" />
+        </label>
+      </div>
+      <div class="feed-source feed-source-url" hidden>
+        <label class="field field-wide">
+          <span>Stream URL</span>
+          <input class="feed-url" type="text" placeholder="https://www.youtube.com/watch?v=...  |  rtsp://camera.local/stream" autocomplete="off" />
+        </label>
+      </div>
     </div>
   </template>
 

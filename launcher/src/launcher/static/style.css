@@ -1157,3 +1157,101 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
      go: the demo's name is what makes the chip clickable-with-intent. */
   .compact-chips .chip-meta { display: none; }
 }
+
+/* --- smart-city feed cards ----------------------------------------------
+   A feed is added, configured and removed as one unit, and the same card
+   shows that feed's counts once the run is on. The whole set lives in a
+   <fieldset> so one `disabled` freezes every card while running. */
+
+.feed-set {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px 16px;
+  margin: 0 0 18px;
+  min-width: 0;  /* a fieldset won't shrink below its content without this */
+}
+
+.feed-set-legend {
+  padding: 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-faint);
+}
+
+.feed-set[disabled] { opacity: 0.75; }
+.feed-set[disabled] .dropzone { cursor: default; }
+
+.feed-list { display: flex; flex-direction: column; gap: 12px; }
+
+.feed-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card);
+  padding: 12px 14px 14px;
+}
+
+.feed-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.feed-card-title {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* Takes the middle so the remove button stays pinned right whether or not
+   there are counts to show yet. */
+.feed-card-counts {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-remove { flex-shrink: 0; line-height: 1; }
+
+.feed-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px 14px;
+}
+
+.feed-card-grid .field { margin: 0; }
+
+.feed-source { margin-top: 12px; }
+
+.dropzone {
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  padding: 16px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  cursor: pointer;
+  margin-bottom: 10px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.dropzone:hover,
+.dropzone:focus-visible { border-color: var(--accent-hover); color: var(--text); }
+.dropzone.is-over { border-color: var(--accent-hover); background: var(--accent-soft); color: var(--text); }
+.dropzone.is-busy { cursor: progress; }
+
+.feed-set-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.feed-set-actions .sample-picker { flex: 1 1 260px; min-width: 0; }
