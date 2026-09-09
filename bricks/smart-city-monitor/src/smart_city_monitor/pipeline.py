@@ -6,7 +6,6 @@ each independently pinnable to its own compute device.
 """
 from __future__ import annotations
 
-import os
 import threading
 import time
 from collections import defaultdict, deque
@@ -130,7 +129,7 @@ def run(
         raise ValueError("No feeds given.")
     for feed in feeds:
         if not feed.name:
-            feed.name = os.path.basename(feed.path)
+            feed.name = sources.display_name(feed.path)
 
     state = _SharedState(feeds)
     errors: dict[str, Exception] = {}

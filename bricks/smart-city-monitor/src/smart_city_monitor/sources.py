@@ -18,7 +18,7 @@ silicon. Nothing about the video is sent anywhere.
 from __future__ import annotations
 
 import threading
-from pathlib import Path
+from pathlib import PureWindowsPath
 from urllib.parse import urlparse
 
 from pantherlake_ai_core import video
@@ -58,7 +58,11 @@ def display_name(source: str) -> str:
         return curated
     if is_url(source):
         return urlparse(source).hostname or source
-    return Path(source).name
+    # PureWindowsPath, not Path: it treats both "\\" and "/" as separators
+    # on every platform, so a Windows path typed into the launcher is split
+    # correctly even when the launcher itself is running on Linux (which a
+    # plain PosixPath would leave whole).
+    return PureWindowsPath(source).name
 
 
 def _extract_formats(url: str) -> list[dict]:
