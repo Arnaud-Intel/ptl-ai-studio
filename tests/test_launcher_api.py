@@ -235,3 +235,29 @@ def test_an_unknown_per_feed_engine_is_a_400(client):
 def test_an_upload_without_a_filename_is_a_400(client):
     res = client.post("/api/smart-city-monitor/upload", files={"file": ("", b"x")})
     assert res.status_code in (400, 422)
+
+
+def test_the_version_reported_is_the_one_running_not_the_one_on_disk(client, monkeypatch):
+    """A launcher left running while the repo moves on under it used to
+    report whatever VERSION said, so the page claimed to be the newest code
+    while serving the oldest -- and the static files, read per request,
+    made the UI agree with the claim. It now reports what it started with,
+    and says a restart is pending."""
+    from launcher import app as app_module
+
+    monkeypatch.setattr(app_module, "RUNNING_VERSION", "0.1.0")
+    monkeypatch.setattr(app_module, "read_version_file", lambda: "9.9.9")
+    body = client.get("/api/version").json()
+    assert body["version"] == "0.1.0"
+    assert body["on_disk"] == "9.9.9"
+    assert body["restart_needed"] is True
+
+
+def test_no_restart_is_claimed_when_the_process_matches_the_disk(client, monkeypatch):
+    from launcher import app as app_module
+
+    monkeypatch.setattr(app_module, "RUNNING_VERSION", "1.2.3")
+    monkeypatch.setattr(app_module, "read_version_file", lambda: "1.2.3")
+    body = client.get("/api/version").json()
+    assert body["version"] == "1.2.3"
+    assert body["restart_needed"] is False

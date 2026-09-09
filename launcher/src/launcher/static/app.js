@@ -2098,7 +2098,19 @@ function closeLogViewer() {
 async function loadVersion() {
   try {
     const data = await fetchJSON("/api/version");
-    el("app-version").textContent = `v${data.version}`;
+    const label = el("app-version");
+    label.textContent = `v${data.version}`;
+    // Newer code sitting on disk unstarted is the single most confusing
+    // state this app has: the page reloads (static files are read per
+    // request) while the Python behind it stays as it was.
+    if (data.restart_needed) {
+      label.textContent = `v${data.version} -- restart to load v${data.on_disk}`;
+      label.classList.add("version-stale");
+      label.title = `This launcher started on v${data.version}. v${data.on_disk} is on disk; restart it to run that.`;
+    } else {
+      label.classList.remove("version-stale");
+      label.removeAttribute("title");
+    }
   } catch {
     // Best-effort -- an empty footer label beats breaking page load over it.
   }

@@ -1255,3 +1255,7 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 }
 
 .feed-set-actions .sample-picker { flex: 1 1 260px; min-width: 0; }
+
+/* Newer code on disk than the process is serving -- worth noticing, not
+   worth alarming anyone: the launcher still works, it's just behind. */
+.footer-version.version-stale { color: var(--warning); }

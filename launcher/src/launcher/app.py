@@ -82,11 +82,25 @@ VERSION_FILE = Path(__file__).resolve().parents[3] / "VERSION"
 _WHISPER_SIZE_DEFAULTS = {Engine.PORTABLE: "small", Engine.OPENVINO: "base"}
 
 
-def get_version() -> str:
+def read_version_file() -> str:
     try:
         return VERSION_FILE.read_text(encoding="utf-8").strip()
     except OSError:
         return "unknown"
+
+
+# Snapshotted at import, deliberately. Read fresh on every request, this
+# reports whatever is on disk -- which after a `git pull` is the version you
+# have *not* started yet, so a launcher left running for hours cheerfully
+# claims to be the newest code while serving the oldest. The static files
+# make that worse by being read per request: the UI updates on reload, the
+# Python behind it does not, and the two disagree silently.
+RUNNING_VERSION = read_version_file()
+
+
+def get_version() -> str:
+    """The version this process actually started with."""
+    return RUNNING_VERSION
 
 
 # --- shared plumbing --------------------------------------------------------
@@ -248,7 +262,13 @@ def list_demos() -> JSONResponse:
 
 @app.get("/api/version")
 def api_version() -> JSONResponse:
-    return JSONResponse({"version": get_version()})
+    """`version` is what's running; `on_disk` is what a restart would give
+    you. When they differ the UI says so, because "am I running the latest?"
+    is otherwise unanswerable from the page."""
+    on_disk = read_version_file()
+    return JSONResponse(
+        {"version": RUNNING_VERSION, "on_disk": on_disk, "restart_needed": on_disk != RUNNING_VERSION}
+    )
 
 
 @app.get("/api/telemetry")
