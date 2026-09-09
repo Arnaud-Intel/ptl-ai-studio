@@ -24,6 +24,12 @@ dependencies = [
     "eng-to-ipa>=0.0.2",
     "wavmark>=0.0.3",
     "huggingface_hub>=0.24",
+    # Chatterbox-Turbo runs as four ONNX graphs; `tokenizers` alone reads
+    # its tokenizer.json, which is all we need -- pulling `transformers`
+    # for that one call would cost ~200MB of dependency for byte-identical
+    # ids (verified against AutoTokenizer before dropping it).
+    "onnxruntime>=1.17",
+    "tokenizers>=0.20",
 ]
 
 [project.optional-dependencies]

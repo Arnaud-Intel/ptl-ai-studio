@@ -1259,3 +1259,31 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 /* Newer code on disk than the process is serving -- worth noticing, not
    worth alarming anyone: the launcher still works, it's just behind. */
 .footer-version.version-stale { color: var(--warning); }
+
+/* --- sound tags (voice-clone-studio) ------------------------------------ */
+
+.tag-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.tag-btn {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer;
+}
+
+.tag-btn:hover:not(:disabled) { border-color: var(--accent-hover); }
+.tag-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* A <div class="field"> has no <label> to style, so its caption needs the
+   same treatment the <span> inside a real field gets. */
+.field-label {
+  display: block;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}

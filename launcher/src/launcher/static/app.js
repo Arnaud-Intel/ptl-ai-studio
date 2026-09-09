@@ -771,6 +771,37 @@ function addFeedCard(preset = {}) {
   return card;
 }
 
+// Sound tags for the voice models that understand them. Clicking one
+// drops it at the cursor rather than at the end, because where a laugh
+// falls in a sentence is the whole point of having it.
+function renderTagButtons(tags) {
+  const row = el("voice-tags");
+  if (!row) return;
+  const markup = (tags || [])
+    .map((tag) => `<button type="button" class="tag-btn" data-tag="${escapeHtml(tag)}" disabled>${escapeHtml(tag)}</button>`)
+    .join("");
+  if (row.innerHTML === markup) return;
+  row.innerHTML = markup;
+  for (const button of row.querySelectorAll(".tag-btn")) {
+    button.addEventListener("click", () => {
+      const box = el("voice-text");
+      const tag = button.dataset.tag;
+      const start = box.selectionStart ?? box.value.length;
+      const end = box.selectionEnd ?? box.value.length;
+      const before = box.value.slice(0, start);
+      const after = box.value.slice(end);
+      // Pad only where there isn't already a space, so dropping a tag
+      // mid-sentence doesn't leave a double gap behind it.
+      const lead = before && !/\s$/.test(before) ? " " : "";
+      const trail = !after || /^\s/.test(after) ? "" : " ";
+      const inserted = lead + tag + trail;
+      box.value = before + inserted + after;
+      box.focus();
+      box.selectionStart = box.selectionEnd = start + inserted.length;
+    });
+  }
+}
+
 const PANELS = {
   "live-translation": new StreamPanel({
     id: "live-translation",
@@ -1417,6 +1448,7 @@ const PANELS = {
               form.append("file", el("ocr-upload").files[0]);
               form.append("engine", engine);
               form.append("compute_device", computeDevice);
+              form.append("model", model);
               form.append("translate", translate);
               data = await fetchJSON("/api/screen-ocr/extract-upload", { method: "POST", body: form });
             } else {
@@ -1469,6 +1501,7 @@ const PANELS = {
       }
       sync();
       wireEngineAndDevice(el("voice-engine"), el("voice-compute-device"), data);
+      this.wireModelChoice();
       const tau = el("voice-tau");
       const readout = el("voice-tau-value");
       tau.addEventListener("input", () => {
@@ -1476,9 +1509,56 @@ const PANELS = {
       });
       wireSamplePicker("voice-sample", data.samples, { "voice-text": "text" });
     },
+    // What each model is, in the terms someone choosing between them cares
+    // about. The similarity figures are measured (ECAPA-TDNN, against a
+    // real human reference clip), not marketing.
+    MODEL_INFO: {
+      chatterbox: {
+        engines: ["portable"],
+        styles: false,
+        tags: ["[laugh]", "[chuckle]", "[cough]", "[sigh]", "[gasp]"],
+        help: "Chatterbox Turbo (350 MB, MIT). Reproduces a real speaker much more closely -- 0.65 " +
+              "measured similarity to a human reference against OpenVoice's 0.29 -- and takes the sound " +
+              "tags below. Runs on the CPU only, at roughly 2.5x realtime.",
+      },
+      openvoice: {
+        engines: ["portable", "openvino"],
+        styles: true,
+        tags: [],
+        help: "OpenVoice (MIT). Re-colors the tone of one of nine fixed base voices, so it captures " +
+              "timbre rather than a person's full identity -- but it is the model that runs on the NPU " +
+              "and iGPU, and it is faster (about 1.5x realtime).",
+      },
+    },
+    modelInfo() {
+      return this.MODEL_INFO[el("voice-model").value] || this.MODEL_INFO.chatterbox;
+    },
+    wireModelChoice() {
+      const model = el("voice-model");
+      const engine = el("voice-engine");
+      const apply = () => {
+        const info = this.modelInfo();
+        el("voice-model-help").textContent = info.help;
+        // A model with one engine has nothing to choose: hide the pair
+        // rather than offering a control whose only value is forced.
+        const oneEngine = info.engines.length === 1;
+        el("voice-engine-field").hidden = oneEngine;
+        el("voice-device-field").hidden = oneEngine;
+        if (oneEngine) engine.value = info.engines[0];
+        for (const option of engine.options) option.disabled = !info.engines.includes(option.value);
+        el("voice-style-field").hidden = !info.styles;
+        el("voice-tau-field").hidden = !info.styles;
+        el("voice-tags-field").hidden = !info.tags.length;
+        renderTagButtons(info.tags);
+      };
+      model.addEventListener("change", apply);
+      apply();
+    },
     async rehydrate() {
       try {
         const status = await fetchJSON("/api/voice-clone-studio/status");
+        if (status.model) el("voice-model").value = status.model;
+        el("voice-model").dispatchEvent(new Event("change"));
         this.setEnrolled(status.enrolled);
       } catch {
         this.setEnrolled(false);
@@ -1488,11 +1568,13 @@ const PANELS = {
       for (const id of ["voice-text", "voice-sample", "voice-style", "voice-tau", "voice-synthesize"]) {
         el(id).disabled = !enrolled;
       }
+      for (const button of document.querySelectorAll("#voice-tags .tag-btn")) button.disabled = !enrolled;
       if (enrolled) paintStatus(el("voice-enroll-status"), "Voice enrolled -- ready to speak", "live");
     },
     wire() {
       el("voice-enroll").addEventListener("click", () => {
         const source = el("voice-source").value;
+        const model = el("voice-model").value;
         const engine = el("voice-engine").value;
         const computeDevice = el("voice-compute-device").value;
         if (source === "upload" && !el("voice-upload").files.length) {
@@ -1510,12 +1592,14 @@ const PANELS = {
               form.append("file", el("voice-upload").files[0]);
               form.append("engine", engine);
               form.append("compute_device", computeDevice);
+              form.append("model", model);
               await fetchJSON("/api/voice-clone-studio/enroll-upload", { method: "POST", body: form });
             } else {
               await postJSON("/api/voice-clone-studio/enroll-record", {
                 seconds: Number(el("voice-record-seconds").value) || 10,
                 engine,
                 compute_device: computeDevice,
+                model,
               });
             }
             this.setEnrolled(true);
@@ -1538,7 +1622,14 @@ const PANELS = {
             const res = await fetch("/api/voice-clone-studio/synthesize", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ text, style: el("voice-style").value, tau: Number(el("voice-tau").value) }),
+              // Sent only when the model has them: the API refuses a
+              // non-default style on a model with no styles, rather than
+              // quietly ignoring what was asked for.
+              body: JSON.stringify(
+                this.modelInfo().styles
+                  ? { text, style: el("voice-style").value, tau: Number(el("voice-tau").value) }
+                  : { text },
+              ),
             });
             if (!res.ok) {
               const body = await res.json().catch(() => ({}));

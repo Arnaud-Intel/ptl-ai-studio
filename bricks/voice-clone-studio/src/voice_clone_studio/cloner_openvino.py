@@ -14,6 +14,12 @@ class OpenVINOCloner:
     several seconds and only needs to happen once per machine; the
     compiled form is cached too (ov_config_for) on the NPU."""
 
+
+    # OpenVoice speaks through one of nine base voices before the tone
+    # conversion, so style and tau are real dials here.
+    supports_styles = True
+    supports_tags = False
+
     def __init__(self, device="CPU", model_path=None, on_downloading=None):
         self.tts, self.converter, self.source_se = voice_model.load_models(
             local_dir=model_path, on_downloading=on_downloading

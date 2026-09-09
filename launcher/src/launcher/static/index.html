@@ -423,18 +423,26 @@
             <span>Reference clip</span>
             <input id="voice-upload" type="file" accept="audio/*" />
           </label>
-          <label class="field">
+          <label class="field field-wide">
+            <span>Voice model</span>
+            <select id="voice-model">
+              <option value="chatterbox">Chatterbox Turbo -- clones a real voice closely (CPU only)</option>
+              <option value="openvoice">OpenVoice -- lower fidelity, but runs on the NPU and iGPU</option>
+            </select>
+          </label>
+          <label class="field" id="voice-engine-field">
             <span>Engine</span>
             <select id="voice-engine">
               <option value="portable">Portable (PyTorch)</option>
               <option value="openvino">OpenVINO</option>
             </select>
           </label>
-          <label class="field">
+          <label class="field" id="voice-device-field">
             <span>Compute device</span>
             <select id="voice-compute-device"></select>
           </label>
         </div>
+        <p class="field-help" id="voice-model-help"></p>
         <div class="run-row">
           <button id="voice-enroll" class="btn btn-primary" type="button">Enroll voice</button>
           <span id="voice-enroll-status" class="run-status" role="status" aria-live="polite">No voice enrolled yet</span>
@@ -447,7 +455,11 @@
             </select>
             <textarea id="voice-text" rows="3" placeholder="Type anything -- it will be spoken in the voice you just enrolled." disabled></textarea>
           </label>
-          <label class="field">
+          <div class="field field-wide" id="voice-tags-field" hidden>
+            <span class="field-label">Sounds you can drop into the text</span>
+            <div id="voice-tags" class="tag-row"></div>
+          </div>
+          <label class="field" id="voice-style-field">
             <span>Delivery style</span>
             <select id="voice-style" disabled>
               <option value="default">default</option>
@@ -461,7 +473,7 @@
               <option value="friendly">friendly</option>
             </select>
           </label>
-          <label class="field">
+          <label class="field" id="voice-tau-field">
             <span>How closely to match the reference tone</span>
             <span class="range-row">
               <input id="voice-tau" type="range" min="0.05" max="1" step="0.05" value="0.3" disabled />

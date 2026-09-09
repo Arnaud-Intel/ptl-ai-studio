@@ -6,16 +6,63 @@ gradient descent, no wait -- enrollment is one inference pass over the
 reference clip you just recorded, and every synthesis after that is another
 inference pass, not a fine-tune.
 
-Like `webcam-effects`, both engines here run the **exact same model** --
-[OpenVoice](https://github.com/myshell-ai/OpenVoice) (MIT License), whose
-two stages are:
+There are **two models**, and they trade off against each other:
 
-- **`BaseSpeakerTTS`** -- a VITS-family model that turns text into speech in
-  one of nine base delivery styles (default, whispering, shouting, excited,
-  cheerful, terrified, angry, sad, friendly).
-- **`ToneColorConverter`** -- takes that speech and re-colors its tone to
-  match a target speaker embedding extracted from your reference clip,
-  leaving the words and delivery untouched.
+| | **Chatterbox Turbo** (default) | **OpenVoice** |
+| --- | --- | --- |
+| Speaker similarity to a real human reference | **0.648** | 0.287 |
+| Runs on | CPU only | CPU, **iGPU, NPU** |
+| Speed on this CPU | ~2.5x realtime | ~1.5x realtime |
+| Download | 536 MB | ~500 MB |
+| Controls | paralinguistic tags in the text | 9 delivery styles + tone strength |
+| License | MIT | MIT |
+
+Those similarity numbers are measured, not claimed: both models cloned the
+same LibriSpeech speaker (so neither had home advantage) and the outputs
+were scored against the original with a neutral
+[ECAPA-TDNN](https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb)
+speaker verifier. The gap is architectural rather than a matter of
+training budget:
+
+- **[OpenVoice](https://github.com/myshell-ai/OpenVoice) v1** is a *tone-color
+  converter*. `BaseSpeakerTTS` (a VITS-family model) speaks your text in one
+  of nine fixed base voices, and `ToneColorConverter` then re-colors that
+  audio toward a speaker embedding taken from your clip. It moves timbre.
+  It cannot move accent, rhythm, or delivery, because those came from the
+  base speaker -- which is why a cloned real voice still sounds like the
+  base speaker wearing a costume.
+- **[Chatterbox Turbo](https://huggingface.co/ResembleAI/chatterbox-turbo-ONNX)**
+  is a 350M zero-shot TTS conditioned on the reference clip itself: a
+  Llama-family model predicts *speech tokens* for your text given that
+  speaker, and a distilled decoder turns them into a waveform in one step
+  (down from ten). Nothing is fixed in advance, so the speaker's own
+  delivery comes through.
+
+Both are still zero-shot: enrollment is one inference pass over the clip
+you just recorded, not a training run.
+
+**Why Chatterbox is CPU-only here.** Its ONNX graphs come in five
+quantizations. OpenVINO reads the fp16 ones but compiles them for CPU
+alone -- the GPU and NPU plugins both reject their dynamic shapes -- and
+fp16 is the *slow* path on a CPU with no native fp16 compute: 1584 MB at
+14.1x realtime, against q4f16's 536 MB at 2.5x. So this model runs on ONNX
+Runtime at q4f16, and OpenVoice remains the one that lights up the NPU and
+iGPU. Picking a model is picking which of those two things you want.
+
+### Paralinguistic tags
+
+Chatterbox understands a handful of sounds written inline in the text --
+`[laugh]`, `[chuckle]`, `[cough]`, `[sigh]`, `[gasp]`, `[sniff]`,
+`[clear_throat]`. They are native to the model, not post-processing:
+
+```
+Oh, that's hilarious! [laugh] Anyway, where were we?
+```
+
+The launcher offers them as buttons that insert at the cursor. OpenVoice
+has no equivalent; it has `--style` instead.
+
+### Engines (OpenVoice only)
 
 - **`portable`** (default) -- plain PyTorch, CPU only.
 - **`openvino`** -- the identical checkpoints, converted to OpenVINO IR,
@@ -24,7 +71,7 @@ two stages are:
 Following Intel's own [OpenVoice -> OpenVINO conversion notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/latest/notebooks/openvoice/openvoice.ipynb)
 as the reference path (see **A real technical finding** below for where it
 needed a fix) confirmed both engines produce near-identical output from the
-same checkpoints -- switching engines here is purely a CPU-vs-NPU/iGPU
+same checkpoints -- switching engines there is purely a CPU-vs-NPU/iGPU
 latency comparison, the same story `webcam-effects` tells for segmentation.
 
 ## Setup
@@ -52,6 +99,18 @@ casual choice -- see **Why PyTorch is unavoidable here** below.
 
 ```bash
 uv run voice-clone-studio --list-devices
+```
+
+Clone a voice from a clip and speak a line (Chatterbox by default):
+
+```bash
+uv run voice-clone-studio --reference me.wav --text "Hello from my own voice. [laugh]"
+```
+
+The older model, on the NPU:
+
+```bash
+uv run voice-clone-studio --reference me.wav --text "Hello." \n    --model openvoice --engine openvino --compute-device NPU --style cheerful
 ```
 
 Enroll from a file and speak a sentence in that voice:

@@ -7,6 +7,8 @@ import sys
 
 from pantherlake_ai_core import audio, engine as engine_mod
 
+from .chatterbox_model import PARALINGUISTIC_TAGS
+from .engine_factory import DEFAULT_MODEL, MODEL_ENGINES, MODELS
 from .pipeline import VoiceCloneSession
 from .samples import SAMPLES
 from .voice_model import STYLES
@@ -25,8 +27,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--text", required=False, help="Text to speak in the cloned voice. If omitted, only enrolls and exits.")
     p.add_argument("--sample", default=None, help="Use a named example text instead (see --list-samples).")
-    p.add_argument("--style", choices=STYLES, default="default", help="Base delivery style before tone cloning. Default: default")
-    p.add_argument("--tau", type=float, default=0.3, help="Tone-conversion strength (higher = closer to the reference tone). Default: 0.3")
+    p.add_argument(
+        "--model", choices=MODELS, default=DEFAULT_MODEL,
+        help="Which voice model. 'chatterbox' (default) is Chatterbox-Turbo: it clones a real "
+             "speaker far more closely (measured speaker similarity 0.65 vs 0.29 against a human "
+             "reference) and takes paralinguistic tags such as "
+             + " ".join(PARALINGUISTIC_TAGS[:3]) + " written into the text -- but it is CPU-only. "
+             "'openvoice' is the older tone-color model, lower fidelity but the one that runs on "
+             "the NPU and iGPU, with nine delivery styles.",
+    )
+    p.add_argument("--style", choices=STYLES, default="default", help="openvoice model only: base delivery style before tone cloning. Default: default")
+    p.add_argument("--tau", type=float, default=0.3, help="openvoice model only: tone-conversion strength (higher = closer to the reference tone). Default: 0.3")
     p.add_argument("--output", default="cloned.wav", help="Output WAV path. Default: cloned.wav")
     p.add_argument(
         "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
@@ -98,13 +109,26 @@ def main(argv: list[str] | None = None) -> int:
     if not args.reference and not args.record:
         parser.error("one of the arguments --reference --record is required")
 
-    engine = engine_mod.resolve_engine(args.engine)
+    # Chatterbox runs on one engine only, so resolving "best available"
+    # would hand it openvino and fail. An engine asked for explicitly is
+    # still passed through, to get the factory's reason rather than a
+    # silent substitution.
+    allowed = MODEL_ENGINES[args.model]
+    engine = engine_mod.resolve_engine(args.engine) if args.engine else (
+        allowed[0] if len(allowed) == 1 else engine_mod.resolve_engine(None)
+    )
     compute_device = args.compute_device or engine_mod.default_device(engine)
 
     reference_path = args.reference or _record_reference(args.record)
 
-    print(f"Loading voice cloner (engine={engine.value}, device={compute_device})... this may download a model on first use.")
-    session = VoiceCloneSession(engine, device=compute_device, model_path=args.model_path)
+    print(f"Loading {args.model} (engine={engine.value}, device={compute_device})... this may download a model on first use.")
+    try:
+        session = VoiceCloneSession(engine, model=args.model, device=compute_device, model_path=args.model_path)
+    except ValueError as exc:
+        # A model/engine pairing that can't work is the user's choice to
+        # correct, so say so and stop -- not a traceback.
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
     print(f"Enrolling voice from '{reference_path}'...")
     session.enroll(reference_path)
@@ -113,8 +137,12 @@ def main(argv: list[str] | None = None) -> int:
     if not args.text:
         return 0
 
-    print(f"Synthesizing (style={args.style}, tau={args.tau})...")
-    audio_out, sample_rate = session.synthesize(args.text, style=args.style, tau=args.tau)
+    if session.supports_styles:
+        print(f"Synthesizing (style={args.style}, tau={args.tau})...")
+        audio_out, sample_rate = session.synthesize(args.text, style=args.style, tau=args.tau)
+    else:
+        print("Synthesizing...")
+        audio_out, sample_rate = session.synthesize(args.text)
 
     import soundfile as sf
 

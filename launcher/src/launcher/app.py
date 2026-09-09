@@ -56,6 +56,7 @@ from pantherlake_ai_core.engine import (
 from pydantic import BaseModel
 from smart_city_monitor import sources as smart_city_sources
 from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
+from voice_clone_studio import engine_factory as voice_clone_models
 
 from . import activity, events, registry
 from .code_review_assist_runner import CodeReviewAssistRunner
@@ -791,20 +792,37 @@ def webcam_effects_stream() -> Response:
 # --- voice-clone-studio -----------------------------------------------------------
 
 
+def _voice_clone_engine(model: str, engine: str | None, device: str | None) -> tuple[Engine, str]:
+    """Engine/device for a voice-clone request, honouring what the chosen
+    model can actually run on. Without this, the usual "best available"
+    rule hands Chatterbox the openvino engine it has no backend for, and
+    the failure surfaces as a model error rather than a bad pairing."""
+    if model not in voice_clone_models.MODELS:
+        raise ValueError(f"Unknown model '{model}'. Choices: {', '.join(voice_clone_models.MODELS)}")
+    allowed = voice_clone_models.MODEL_ENGINES[model]
+    if engine is None and len(allowed) == 1:
+        only = allowed[0]
+        return only, device or default_device(only)
+    return resolve(engine, device)
+
+
 class VoiceCloneStudioEnrollRecordRequest(BaseModel):
     seconds: float = 10.0
     engine: str | None = None
     compute_device: str | None = None
+    model: str = voice_clone_models.DEFAULT_MODEL
 
 
 @app.post("/api/voice-clone-studio/enroll-record")
 async def voice_clone_studio_enroll_record(req: VoiceCloneStudioEnrollRecordRequest) -> JSONResponse:
     def work():
         reference_path = voice_clone_studio_runner.record_reference(req.seconds)
-        voice_clone_studio_runner.enroll(reference_path=reference_path, engine=engine.value, device=device)
+        voice_clone_studio_runner.enroll(
+            reference_path=reference_path, engine=engine.value, device=device, model=req.model
+        )
 
     try:
-        engine, device = resolve(req.engine, req.compute_device)
+        engine, device = _voice_clone_engine(req.model, req.engine, req.compute_device)
         await run_in_threadpool(work)
     except Exception as exc:
         return error_response(exc)
@@ -816,6 +834,7 @@ async def voice_clone_studio_enroll_upload(
     file: UploadFile,
     engine: str | None = Form(None),
     compute_device: str | None = Form(None),
+    model: str = Form(voice_clone_models.DEFAULT_MODEL),
 ) -> JSONResponse:
     file_bytes = await file.read()
     suffix = Path(file.filename or "reference.wav").suffix or ".wav"
@@ -828,7 +847,9 @@ async def voice_clone_studio_enroll_upload(
             tmp.write(file_bytes)
             path = tmp.name
         try:
-            voice_clone_studio_runner.enroll(reference_path=path, engine=resolved.value, device=device)
+            voice_clone_studio_runner.enroll(
+                reference_path=path, engine=resolved.value, device=device, model=model
+            )
         finally:
             try:
                 os.unlink(path)
@@ -836,7 +857,7 @@ async def voice_clone_studio_enroll_upload(
                 pass
 
     try:
-        resolved, device = resolve(engine, compute_device)
+        resolved, device = _voice_clone_engine(model, engine, compute_device)
         await run_in_threadpool(work)
     except Exception as exc:
         return error_response(exc)
@@ -845,7 +866,15 @@ async def voice_clone_studio_enroll_upload(
 
 @app.get("/api/voice-clone-studio/status")
 def voice_clone_studio_status() -> JSONResponse:
-    return JSONResponse({"enrolled": voice_clone_studio_runner.enrolled})
+    """`supports_styles` tells the UI whether to offer the style and tau
+    controls at all -- they belong to OpenVoice, not to every model."""
+    return JSONResponse(
+        {
+            "enrolled": voice_clone_studio_runner.enrolled,
+            "model": voice_clone_studio_runner.model,
+            "supports_styles": voice_clone_studio_runner.supports_styles,
+        }
+    )
 
 
 class VoiceCloneStudioSynthesizeRequest(BaseModel):

@@ -80,10 +80,12 @@ REGISTRY: list[Demo] = [
         category="Speech",
         tagline="Record a short sample, then generate speech in your own voice.",
         description=(
-            "Enrolls a short voice sample into a local tone-cloning model, "
-            "then synthesizes any typed text in that voice -- zero-shot "
-            "cloning, not a training run: no gradient descent and no wait, "
-            "just inference on the reference clip you just recorded."
+            "Enrolls a short voice sample into a local model, then synthesizes any typed text in "
+            "that voice -- zero-shot cloning, not a training run: no gradient descent and no wait, "
+            "just inference on the reference clip you just recorded. Two models to pick between: "
+            "Chatterbox Turbo reproduces a real speaker far more closely (0.65 measured similarity "
+            "against OpenVoice's 0.29) and takes sound tags like [laugh] written into the text, but "
+            "runs on the CPU; OpenVoice is lower fidelity and is the one that runs on the NPU and iGPU."
         ),
         engines=["portable", "openvino"],
         status="available",

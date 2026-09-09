@@ -5,6 +5,12 @@ class PortableCloner:
     """Plain PyTorch, CPU only -- the same checkpoints as the openvino
     engine, run through their native torch forward passes untouched."""
 
+
+    # OpenVoice speaks through one of nine base voices before the tone
+    # conversion, so style and tau are real dials here.
+    supports_styles = True
+    supports_tags = False
+
     def __init__(self, model_path=None, on_downloading=None):
         self.tts, self.converter, self.source_se = voice_model.load_models(
             local_dir=model_path, on_downloading=on_downloading

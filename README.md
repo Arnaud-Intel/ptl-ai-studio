@@ -112,7 +112,7 @@ using.
 | **Live Speech Translation** | Any spoken language, live, straight to English text | CPU / NPU / GPU |
 | **Local Voice Assistant** | Say a wake word, ask a question, hear a spoken answer | CPU / NPU / GPU |
 | **Live Meeting Notes** | Transcribes a call and generates a running summary + action items on demand | CPU / NPU / GPU |
-| **Voice Clone Studio** | Enroll a 10-second voice sample, then speak any text back in that voice | CPU / NPU / GPU |
+| **Voice Clone Studio** | Enroll a 10-second voice sample, then speak any text back in that voice, with `[laugh]`-style sound tags | CPU (Chatterbox) / NPU / GPU (OpenVoice) |
 
 ### Vision
 

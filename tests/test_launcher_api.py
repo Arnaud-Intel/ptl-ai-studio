@@ -284,3 +284,14 @@ def test_a_taken_port_is_reported_as_already_running(monkeypatch):
 
     # and once nothing is listening there, it is free again
     assert app_module.is_already_serving("127.0.0.1", port) is False
+
+
+def test_voice_clone_defaults_to_the_better_cloning_model(client):
+    body = client.get("/api/voice-clone-studio/status").json()
+    assert set(body) >= {"enrolled", "model", "supports_styles"}
+
+
+def test_an_unknown_voice_model_is_a_400(client):
+    res = client.post("/api/voice-clone-studio/enroll-record", json={"seconds": 1, "model": "bogus"})
+    assert res.status_code == 400
+    assert "bogus" in res.json()["error"]
