@@ -45,3 +45,18 @@ pen for things worth doing that aren't being done right now.
   matches CPU. Until then, webcam-effects on an explicit GPU device is
   quietly wrong rather than broken-looking. (filed 2026-09-09, found while
   investigating the smart-city GPU bug)
+
+- [ ] **Smart-city tops out near 25 fps when the pipeline can do ~70.** With
+  detection on the iGPU the per-frame work measured standalone is 9.3 ms
+  detect, 3.9 ms capture, 3.1 ms JPEG encode and 1.4 ms draw -- about 18 ms,
+  so ~55 fps against a source that offers ~30. Through the launcher the
+  producer reached 14.3 fps, and 24.5 fps once the telemetry device poll
+  stopped running back to back (fixed 2026-09-09). The remaining gap to the
+  source rate is unexplained: it is not the GIL from telemetry parsing
+  (0.6 ms per cycle), not the MJPEG poll (two concurrent clients each still
+  got the full rate, so delivery is not the ceiling), and not the source
+  (raw capture sustains 30+ fps). Worth profiling the feed thread inside the
+  running launcher rather than standalone. Encoding a 194 KB JPEG per frame
+  at quality 80 is the next-largest cost after detection and is pure display
+  overhead -- a smaller streamed frame would buy some of it back.
+  (filed 2026-09-09, from the smart-city frame-rate investigation)

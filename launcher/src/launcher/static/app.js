@@ -138,6 +138,19 @@ function preferredLargeModelDevice(openvinoDevices) {
   return discrete.length ? discrete[discrete.length - 1].id : "AUTO";
 }
 
+// The device a live-video model should default to: the integrated GPU, not
+// AUTO. Measured on this machine, YOLO11s over street-camera frames: AUTO
+// 33.6ms, iGPU 7.9ms, NPU 20.8ms, CPU 20.7ms -- identical detections, four
+// times the latency. The discrete card is skipped on purpose: it carries a
+// fixed ~18ms per-frame cost (the frame has to cross PCIe and come back)
+// that no amount of extra compute pays back on a model this small.
+function preferredRealtimeVisionDevice(openvinoDevices) {
+  const available = GPU_DEVICES.filter((g) => (openvinoDevices || []).includes(g.id));
+  const integrated = available.filter((g) => !(g.full_name || "").includes("dGPU"));
+  const pick = integrated[0] || available[0];
+  return pick ? pick.id : "AUTO";
+}
+
 // --- Control wiring ---------------------------------------------------------------
 
 // Every brick whose OCR stage is screen-ocr's OpenVINO engine runs the same
@@ -151,7 +164,13 @@ const OCR_MODEL_UNSUPPORTED = { NPU: "this OCR model doesn't compile for the NPU
 // device list follows the chosen engine (AUTO + every OpenVINO device, or the
 // portable engine's fixed choices), and GPU ids get their friendly names.
 function wireEngineAndDevice(engineSelect, deviceSelect, data, options = {}) {
-  const { portableDevices = ["cpu"], preferLargeModel = false, onChange = null, unsupported = {} } = options;
+  const {
+    portableDevices = ["cpu"],
+    preferLargeModel = false,
+    preferRealtimeVision = false,
+    onChange = null,
+    unsupported = {},
+  } = options;
   const openvinoDevices = data.openvino_devices || [];
   const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
   const hasOpenvino = openvinoDevices.length > 0;
@@ -186,6 +205,7 @@ function wireEngineAndDevice(engineSelect, deviceSelect, data, options = {}) {
       if (deviceSelect.selectedOptions[0]?.disabled) deviceSelect.value = "AUTO";
     }
     if (isOpenvino && preferLargeModel) deviceSelect.value = preferredLargeModelDevice(openvinoDevices);
+    if (isOpenvino && preferRealtimeVision) deviceSelect.value = preferredRealtimeVisionDevice(openvinoDevices);
     const chosen = chosenPerEngine[engineSelect.value];
     if (chosen && [...deviceSelect.options].some((o) => o.value === chosen && !o.disabled)) {
       deviceSelect.value = chosen;
@@ -596,7 +616,7 @@ class StreamPanel extends Panel {
 // pipeline's model_path from the UI.
 const FEED_MODELS = {
   portable: [{ value: "", label: "DETR-ResNet-50 (built-in)" }],
-  openvino: [{ value: "", label: "YOLO11n INT8 (built-in)" }],
+  openvino: [{ value: "", label: "YOLO11s INT8 (built-in)" }],
 };
 const CUSTOM_MODEL = "__custom__";
 
@@ -660,7 +680,7 @@ function wireFeedCard(card) {
 
   // The same helper every other panel uses, just scoped to this card's
   // pair of selects -- so a card gets the engine/device rules for free.
-  if (feedDevicesData) wireEngineAndDevice(engine, device, feedDevicesData);
+  if (feedDevicesData) wireEngineAndDevice(engine, device, feedDevicesData, { preferRealtimeVision: true });
 
   const fillModels = () => {
     const options = [...(FEED_MODELS[engine.value] || []), { value: CUSTOM_MODEL, label: "Custom path..." }];
@@ -1083,7 +1103,7 @@ const PANELS = {
     controls: ["objdet-source", "objdet-source-device", "objdet-engine", "objdet-compute-device"],
     populate(data) {
       wireVideoSource(el("objdet-source"), el("objdet-source-device"), data);
-      wireEngineAndDevice(el("objdet-engine"), el("objdet-compute-device"), data);
+      wireEngineAndDevice(el("objdet-engine"), el("objdet-compute-device"), data, { preferRealtimeVision: true });
     },
     body() {
       const source = el("objdet-source").value;
@@ -1136,7 +1156,7 @@ const PANELS = {
           ? cameras.map((index) => ({ value: String(index), label: `Camera ${index}` }))
           : [{ value: "", label: "No camera found" }],
       );
-      wireEngineAndDevice(el("webcam-engine"), el("webcam-compute-device"), data);
+      wireEngineAndDevice(el("webcam-engine"), el("webcam-compute-device"), data, { preferRealtimeVision: true });
       const effect = el("webcam-effect");
       const colorField = el("webcam-color-field");
       const sync = () => {

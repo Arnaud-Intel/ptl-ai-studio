@@ -144,7 +144,7 @@ REGISTRY: list[Demo] = [
             "network, or a local file -- tracks each object across frames so it's counted once -- not once "
             "per detection -- and reports a live trailing-60-second count per class, combined across "
             "every feed and broken down per feed. Add as many feeds as you like, each with its own "
-            "engine, model and compute device (e.g. YOLO11n on the NPU alongside DETR on the CPU), "
+            "engine, model and compute device (e.g. YOLO11s on the NPU alongside DETR on the CPU), "
             "and watch every chip they use light up on the "
             "telemetry gauges at once, correctly attributed per feed -- the same concurrent-hardware "
             "showcase expense-extract and smart-recall do for their two pipeline stages, generalized "

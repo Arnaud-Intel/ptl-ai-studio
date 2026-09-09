@@ -23,11 +23,21 @@ from pantherlake_ai_core import telemetry
 
 
 class TelemetryPoller:
-    def __init__(self, cpu_interval: float = 0.3, device_interval: float = 0.2):
+    def __init__(self, cpu_interval: float = 0.3, device_interval: float = 1.0):
         # Both are the *gap between* readings, not the period: add ~0.1s for
-        # CPU and ~2.3s for devices to get the real cadence. The device gap
-        # is deliberately small -- the query is already the bottleneck, and
-        # a longer pause only makes the gauges staler.
+        # CPU and 3.5-4.5s for devices to get the real cadence.
+        #
+        # The device gap used to be 0.2s, on the reasoning that the query is
+        # already the bottleneck so a longer pause only makes the gauges
+        # staler. True as far as it goes, but it meant Get-Counter ran back
+        # to back forever, expanding a 650-instance wildcard the whole time
+        # a demo was running. Measured on the smart-city feed: 14.3 fps with
+        # that, 20.7 fps with device polling off -- 45% of a video brick's
+        # frame rate spent on the gauges watching it. Not the GIL (the
+        # parse is 0.6ms); the OS-side work of the query itself.
+        #
+        # At 1.0s the gauges refresh every ~5s instead of ~4s and the frame
+        # rate comes back. Cheap trade.
         self._cpu_interval = cpu_interval
         self._device_interval = device_interval
         self._snapshot = telemetry.Utilization(available=False)

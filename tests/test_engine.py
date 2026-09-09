@@ -71,3 +71,31 @@ def test_only_the_npu_gets_a_compiled_model_cache(monkeypatch, tmp_path):
         assert cache_dir.is_absolute() and cache_dir.is_dir()
     for device in ("GPU", "GPU.0", "GPU.1", "gpu.0", "CPU", "AUTO"):
         assert ov_config_for(device) == {}, f"{device} must not be cached"
+
+
+def test_a_live_video_model_defaults_to_the_integrated_gpu(monkeypatch):
+    """Not AUTO: on 30 identical street-camera frames AUTO took 33.6ms per
+    detection against the iGPU's 7.9ms, for identical results. And not the
+    discrete card either -- it carries a fixed ~18ms per-frame cost that
+    doesn't shrink as the model grows, which is the data path rather than
+    the silicon."""
+    monkeypatch.setattr(
+        engine_mod,
+        "list_gpu_devices",
+        lambda: [GpuDevice("GPU.0", "Intel(R) Arc(TM) B390 GPU (iGPU)", "luid0"),
+                 GpuDevice("GPU.1", "Intel(R) Arc(TM) Pro B60 Graphics (dGPU)", "luid1")],
+    )
+    assert engine_mod.preferred_realtime_vision_device() == "GPU.0"
+
+
+def test_the_discrete_card_is_used_when_it_is_the_only_one(monkeypatch):
+    monkeypatch.setattr(
+        engine_mod, "list_gpu_devices",
+        lambda: [GpuDevice("GPU.0", "Intel(R) Arc(TM) Pro B60 Graphics (dGPU)", "luid1")],
+    )
+    assert engine_mod.preferred_realtime_vision_device() == "GPU.0"
+
+
+def test_without_a_gpu_a_video_model_falls_back_to_auto(monkeypatch):
+    monkeypatch.setattr(engine_mod, "list_gpu_devices", lambda: [])
+    assert engine_mod.preferred_realtime_vision_device() == "AUTO"

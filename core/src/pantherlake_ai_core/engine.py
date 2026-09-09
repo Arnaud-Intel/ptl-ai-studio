@@ -11,6 +11,7 @@ copy of the rules:
     engine = resolve_engine(args.engine)                  # explicit, else the best available
     device = args.compute_device or default_device(engine)
     ov_config_for(device)                                 # OpenVINO compile config (model cache)
+    preferred_realtime_vision_device()                    # best device for a live video model
     print_devices(mics=True, cameras=True)                # a brick's --list-devices output
 """
 from __future__ import annotations
@@ -159,6 +160,42 @@ def preferred_large_model_device() -> str:
     discrete = [g for g in list_gpu_devices() if "dGPU" in g.full_name]
     if discrete:
         return discrete[-1].id
+    return "AUTO"
+
+
+def preferred_realtime_vision_device() -> str:
+    """The OpenVINO device to default a *live video* model to: the
+    integrated GPU if there is one, otherwise "AUTO".
+
+    Not AUTO, which is what every other brick defaults to, because for a
+    small detection model AUTO is measurably the worst real choice. On 30
+    identical frames of a street camera, YOLO11s: AUTO 33.6ms, iGPU 7.9ms,
+    NPU 20.8ms, CPU 20.7ms -- identical detections, four times the latency.
+    AUTO is picking for a different objective than "this frame, now", and a
+    video brick wants the frame now.
+
+    The *integrated* GPU specifically, i.e. the first one, even on a
+    machine with a much larger discrete card. The discrete GPU carries a
+    fixed per-frame penalty here -- measured at +19.6ms, +17.1ms and
+    +18.2ms for YOLO11 n, s and m respectively. That it barely moves as the
+    model triples in cost is the point: a card that were simply slower at
+    compute would fall further behind on the bigger model. A constant
+    penalty is the data path, not the silicon -- every frame is 2.6MB that
+    has to cross to the card and come back, and this machine's dGPU sits on
+    a narrow PCIe link without resizable BAR. Latency on GPU.1 is also far
+    less predictable (p10 11ms, p90 32ms) where the iGPU holds 6.5-7.6ms,
+    which is what transfer contention looks like.
+
+    So the two preferences pull apart cleanly, and both are right: a live
+    video model wants the iGPU, which shares system memory and never makes
+    the trip; a large model wants `preferred_large_model_device()`, where
+    weights are uploaded once and VRAM capacity is the thing that matters,
+    and 18ms amortized over a multi-second generation is nothing.
+    """
+    gpus = list_gpu_devices()
+    if gpus:
+        integrated = [g for g in gpus if "dGPU" not in g.full_name]
+        return (integrated or gpus)[0].id
     return "AUTO"
 
 

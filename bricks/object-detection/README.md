@@ -12,7 +12,7 @@ like for each:
   (ResNet-50 backbone) via ONNX Runtime, CPU only. DETR is a set-prediction
   model, so there's no anchor decoding or non-max suppression to get
   wrong — simpler, easier to trust, at the cost of a heavier backbone.
-- **`openvino`** — [YOLO11n](https://huggingface.co/OpenVINO/YOLO11n-int8-ov)
+- **`openvino`** — [YOLO11s](https://huggingface.co/OpenVINO/YOLO11s-int8-ov)
   via [`openvino-model-api`](https://github.com/open-edge-platform/model_api)
   (Intel's own inference-wrapper package for OpenVINO Model Zoo detection
   models). Targets Intel hardware explicitly: `CPU`, `GPU` (iGPU), or `NPU`.
@@ -98,9 +98,9 @@ Press `Ctrl+C` to stop.
 ## Notes / current limitations
 
 - The two engines use different label vocabularies: DETR here uses
-  COCO-91 (some category-file gaps, filtered out), YOLO11n uses COCO-80.
+  COCO-91 (some category-file gaps, filtered out), YOLO11s uses COCO-80.
   Same idea (common everyday objects), not byte-identical class lists.
-- DETR (portable) is noticeably slower per frame on CPU than YOLO11n
+- DETR (portable) is noticeably slower per frame on CPU than YOLO11s
   (openvino) is on CPU/GPU/NPU -- that gap is itself a fair demonstration
   of what hardware acceleration buys you, not a bug to fix.
 - No frame-skipping/throttling: every captured frame is run through the

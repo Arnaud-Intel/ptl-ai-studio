@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
         help="Inference backend: 'portable' (DETR via ONNX Runtime, CPU) or 'openvino' "
-             "(YOLO11n via OpenVINO, Intel CPU/iGPU/NPU -- requires this brick's `openvino` extra). "
+             "(YOLO11s via OpenVINO, Intel CPU/iGPU/NPU -- requires this brick's `openvino` extra). "
              "Default: openvino if installed and a device is available, otherwise portable.",
     )
     p.add_argument(

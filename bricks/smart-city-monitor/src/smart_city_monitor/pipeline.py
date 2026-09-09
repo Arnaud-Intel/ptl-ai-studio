@@ -21,7 +21,7 @@ from .types import CountSnapshot, FeedSpec, TrackedDetection
 
 # COCO labels relevant to a street/CCTV scene, present with matching
 # spellings in both object-detection engines' vocabularies (DETR's
-# COCO-91 and YOLO11n's COCO-80) -- mapped to the display name shown in
+# COCO-91 and YOLO11s's COCO-80) -- mapped to the display name shown in
 # counts. Detections for anything else are dropped before tracking, so
 # neither the drawn boxes nor the counts are cluttered with e.g. "chair".
 RELEVANT_LABELS: dict[str, str] = {

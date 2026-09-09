@@ -1,4 +1,4 @@
-"""OpenVINO detection backend: YOLO11n via Intel's `openvino-model-api`,
+"""OpenVINO detection backend: YOLO11s via Intel's `openvino-model-api`,
 targeting Intel CPU/iGPU/NPU.
 
 Uses Intel's own `model_api` package (as recommended by the model card)
@@ -15,10 +15,16 @@ import numpy as np
 
 from .types import Detection
 
-_DEFAULT_REPO = "OpenVINO/YOLO11n-int8-ov"
+# YOLO11**s**, not the nano it used to be. Measured on 30 identical frames
+# of a rainy night street: nano found 7.8 relevant objects per frame at the
+# 0.5 threshold, small found 13.6 -- and on this machine's iGPU it costs
+# nothing for them (7.9ms vs 8.3ms), on the NPU about 4ms, and on the CPU
+# 20.7ms against 13.6ms, which is still 48fps. Nano was quietly the reason
+# cars in plain sight went uncounted.
+_DEFAULT_REPO = "OpenVINO/YOLO11s-int8-ov"
 # model_api fetches just the IR pair, never the repo's full snapshot -- so
 # "is it cached" has to be asked about these two files, not the repo.
-_DEFAULT_FILES = ("yolo11n.xml", "yolo11n.bin")
+_DEFAULT_FILES = ("yolo11s.xml", "yolo11s.bin")
 
 
 def _local_ir(model_dir: str) -> Path:

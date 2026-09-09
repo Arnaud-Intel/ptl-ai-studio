@@ -172,7 +172,7 @@
             <span>Engine</span>
             <select id="objdet-engine">
               <option value="portable">Portable (DETR, ONNX Runtime)</option>
-              <option value="openvino">OpenVINO (YOLO11n)</option>
+              <option value="openvino">OpenVINO (YOLO11s)</option>
             </select>
           </label>
           <label class="field">
@@ -209,7 +209,7 @@
             </select>
           </div>
           <p class="field-help">
-            Each feed picks its own engine, model and chip, so one run can have YOLO11n on the NPU and
+            Each feed picks its own engine, model and chip, so one run can have YOLO11s on the NPU and
             DETR on the CPU at the same time -- every gauge they use lights up at once, attributed per
             feed. A feed is either a local video file or a stream URL (RTSP, HLS, or a YouTube live
             page). Public cameras arrive over the internet, but every detection runs on local silicon.
@@ -791,7 +791,7 @@
           <span>Engine</span>
           <select class="feed-engine">
             <option value="portable">Portable (DETR, ONNX Runtime)</option>
-            <option value="openvino">OpenVINO (YOLO11n)</option>
+            <option value="openvino">OpenVINO (YOLO11s)</option>
           </select>
         </label>
         <label class="field">

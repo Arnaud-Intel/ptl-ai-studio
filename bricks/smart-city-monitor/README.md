@@ -36,7 +36,7 @@ an LLM a third time. What it adds on top:
   asking for the same three so it loads exactly once, with each group's
   feeds running on their own threads. Feeds on different devices run, and
   load, genuinely in parallel — and because the engine is part of that key,
-  one run can have YOLO11n on the NPU and DETR on the CPU at the same time.
+  one run can have YOLO11s on the NPU and DETR on the CPU at the same time.
 
 ## Setup
 
@@ -123,6 +123,35 @@ COCO-80 caveat): `person` → Pedestrians, `bicycle` → Bicycles, `car` →
 Cars, `motorcycle` → Motorcycles, `bus` → Buses, `truck` → Trucks.
 Anything else the detector reports is dropped before tracking, so neither
 the drawn boxes nor the counts are cluttered with irrelevant classes.
+
+## Choosing a device
+
+Leave a feed on **AUTO and it will run about four times slower than it
+needs to.** Measured on 30 identical frames of a night street camera, the
+same YOLO11s detection:
+
+| Device | Per frame | Objects found |
+| --- | --- | --- |
+| AUTO | 33.6 ms | 13.6 |
+| **iGPU (GPU.0)** | **7.9 ms** | 13.0 |
+| NPU | 20.8 ms | 13.6 |
+| CPU | 20.7 ms | 13.6 |
+| dGPU (GPU.1) | 48.4 ms | 13.8 |
+
+Identical detections, four times the latency: AUTO is optimizing for
+something other than "this frame, now". The launcher and the CLI therefore
+default a feed to the integrated GPU rather than AUTO.
+
+The discrete card is skipped on purpose, which surprises people who bought
+one. It carries a **fixed** per-frame penalty -- +19.6 ms, +17.1 ms and
++18.2 ms for YOLO11 n, s and m. That it barely moves while the model
+triples in cost is the tell: a card that were simply slower at compute
+would fall further behind on the bigger model. A constant penalty is the
+*data path* -- every frame is 2.6 MB that has to cross to the card and come
+back, over a link that on this machine is narrow and lacks resizable BAR.
+Its latency is also far less predictable (p10 11 ms, p90 32 ms) where the
+iGPU holds 6.5-7.6 ms. Pin a feed to it if you want to watch the dGPU
+gauge move; leave it on the iGPU if you want frames.
 
 ## Notes / current limitations
 

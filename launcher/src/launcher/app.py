@@ -51,6 +51,7 @@ from pantherlake_ai_core.engine import (
     list_gpu_devices,
     list_openvino_devices,
     preferred_large_model_device,
+    preferred_realtime_vision_device,
     resolve_engine,
 )
 from pydantic import BaseModel
@@ -109,17 +110,28 @@ def get_version() -> str:
 # --- shared plumbing --------------------------------------------------------
 
 
-def resolve(engine: str | None, device: str | None, *, large_model: bool = False) -> tuple[Engine, str]:
+def resolve(
+    engine: str | None,
+    device: str | None,
+    *,
+    large_model: bool = False,
+    realtime_vision: bool = False,
+) -> tuple[Engine, str]:
     """Engine + device for a request, by the rule the CLIs use: `engine` if
     given (an unknown name is a ValueError, i.e. a 400), else the best
     available; `device` if given, else the engine's default -- or, for a
     brick whose openvino model needs a discrete GPU's VRAM (`large_model`),
-    the machine's discrete GPU when it has one."""
+    the machine's discrete GPU; or, for one running a small model on live
+    video (`realtime_vision`), the iGPU, because AUTO is four times slower
+    there for identical results."""
     resolved = resolve_engine(engine)
     if device:
         return resolved, device
-    if large_model and resolved == Engine.OPENVINO:
-        return resolved, preferred_large_model_device()
+    if resolved == Engine.OPENVINO:
+        if large_model:
+            return resolved, preferred_large_model_device()
+        if realtime_vision:
+            return resolved, preferred_realtime_vision_device()
     return resolved, default_device(resolved)
 
 
@@ -153,7 +165,10 @@ def mjpeg_stream(latest_jpeg: Callable[[], bytes | None], is_running: Callable[[
             if jpeg is not None and jpeg is not last_sent:
                 yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
                 last_sent = jpeg
-            await asyncio.sleep(0.05)
+            # 20ms, not 50: this poll is the ceiling on delivered frame
+            # rate, and at 50ms it capped every video brick at 20fps no
+            # matter how fast detection ran. Detection on an iGPU is ~8ms.
+            await asyncio.sleep(0.02)
 
     return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
@@ -449,7 +464,7 @@ class ObjectDetectionStartRequest(BaseModel):
 @app.post("/api/object-detection/start")
 async def start_object_detection(req: ObjectDetectionStartRequest) -> JSONResponse:
     try:
-        engine, device = resolve(req.engine, req.compute_device)
+        engine, device = resolve(req.engine, req.compute_device, realtime_vision=True)
         object_detection_runner.start(
             source=req.source,
             camera_index=req.camera_index,
@@ -494,7 +509,7 @@ class SmartCityFeedInput(BaseModel):
     compute_device: str | None = None
     # Per feed, both optional: unset means "whatever the run was started
     # with". Set, they let one run mix backends -- one feed on the NPU with
-    # YOLO11n, another on the CPU with DETR, at the same time.
+    # YOLO11s, another on the CPU with DETR, at the same time.
     engine: str | None = None
     model_path: str | None = None
 
@@ -525,14 +540,16 @@ async def start_smart_city_monitor(req: SmartCityMonitorStartRequest) -> JSONRes
     try:
         if not req.feeds:
             raise ValueError("at least one feed is required")
-        default_engine, default_device = resolve(req.engine, req.compute_device)
+        default_engine, default_device = resolve(req.engine, req.compute_device, realtime_vision=True)
         feeds = []
         for i, f in enumerate(req.feeds, start=1):
             if not f.path.strip():
                 raise ValueError(f"feed {i} has no source -- give it a file path or a URL")
             # Resolved per feed, so an unknown engine name is a 400 naming
             # the feed rather than a failure deep inside the pipeline.
-            feed_engine, feed_device = resolve(f.engine or req.engine, f.compute_device or req.compute_device)
+            feed_engine, feed_device = resolve(
+                f.engine or req.engine, f.compute_device or req.compute_device, realtime_vision=True
+            )
             feeds.append(
                 SmartCityFeedSpec(
                     feed_id=f"feed-{i}",
@@ -743,7 +760,7 @@ class WebcamEffectsStartRequest(BaseModel):
 @app.post("/api/webcam-effects/start")
 async def start_webcam_effects(req: WebcamEffectsStartRequest) -> JSONResponse:
     try:
-        engine, device = resolve(req.engine, req.compute_device)
+        engine, device = resolve(req.engine, req.compute_device, realtime_vision=True)
         webcam_effects_runner.start(
             camera_index=req.camera_index,
             engine=engine,
