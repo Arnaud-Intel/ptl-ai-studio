@@ -42,6 +42,15 @@ That opens `http://127.0.0.1:8765` in your browser. On Windows you can
 also just **double-click `start_launcher.bat`** -- same thing, in a window
 you can leave open and close to stop the server.
 
+Lost that window? **`stop_launcher.bat`** stops whatever is listening on
+8765 (pass a port to stop a copy elsewhere: `stop_launcher.bat 8766`).
+Worth knowing, because a running launcher keeps serving the code it
+started with: the UI updates when you reload, since static files are read
+per request, but the Python behind it does not. The footer says
+`v0.2.30 -- restart to load v0.2.31` when newer code is sitting on disk
+unstarted, and starting a second copy on a taken port refuses with a
+message instead of quietly leaving you on the old one.
+
 <details>
 <summary><b>What you need, and what the flags mean</b></summary>
 
