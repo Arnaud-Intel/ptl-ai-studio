@@ -54,7 +54,37 @@ MELBOURNE = LiveFeed(
     url="https://www.youtube.com/watch?v=gEbrHdFRgpQ",
 )
 
-LIVE_FEEDS: list[LiveFeed] = [SHINJUKU, SHIBUYA, ABBEY_ROAD, MELBOURNE]
+DUBLIN = LiveFeed(
+    name="Dublin, Ireland",
+    description="A busy Dublin street corner -- a steady mix of people on foot and passing cars.",
+    url="https://www.youtube.com/watch?v=3nyPER2kzqk",
+)
+VENICE = LiveFeed(
+    name="Venice, Italy",
+    description="A canal and bridge from a hotel window. Scenic rather than countable -- people are small and far off, so the numbers stay low.",
+    url="https://www.youtube.com/watch?v=mt7uE-n0YPI",
+)
+AMSTERDAM = LiveFeed(
+    name="Amsterdam, Netherlands",
+    description="Damrak at Beursplein, a main city-centre street -- heavy on traffic.",
+    url="https://www.youtube.com/watch?v=43qH0tDA6lM",
+)
+TOKYO = LiveFeed(
+    name="Tokyo, Japan",
+    description="A Shinjuku crossing seen from further back than the Kabukicho camera -- mostly vehicles.",
+    url="https://www.youtube.com/watch?v=6dp-bvQ7RWo",
+)
+
+LIVE_FEEDS: list[LiveFeed] = [
+    SHINJUKU,
+    SHIBUYA,
+    ABBEY_ROAD,
+    MELBOURNE,
+    DUBLIN,
+    VENICE,
+    AMSTERDAM,
+    TOKYO,
+]
 
 SAMPLES: list[Sample] = [
     Sample(name=f.name, description=f.description, feeds=f.url) for f in LIVE_FEEDS

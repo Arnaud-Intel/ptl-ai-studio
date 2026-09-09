@@ -673,6 +673,21 @@ function wireFeedCard(card) {
   });
   fillModels();
 
+  // The curated cameras, offered per feed so a URL can be picked as well as
+  // typed. Only the single-camera samples: a sample naming several feeds
+  // ("two cities, two chips") describes a whole set-up, not one box, and
+  // belongs to the add-a-feed picker instead.
+  const urlSample = card.querySelector(".feed-url-sample");
+  const cameras = (feedDevicesData?.samples || []).filter((entry) => !entry.feeds.includes("\n"));
+  for (const camera of cameras) urlSample.appendChild(option(camera.feeds, `${camera.name} -- ${camera.description}`));
+  urlSample.disabled = !cameras.length;
+  urlSample.addEventListener("change", () => {
+    if (urlSample.value) card.querySelector(".feed-url").value = urlSample.value;
+    // Reset: once it's in the box the URL is the truth, and a stale
+    // selection would keep claiming a camera the user has since edited.
+    urlSample.value = "";
+  });
+
   const showSource = () => {
     const isUrl = type.value === "url";
     card.querySelector(".feed-source-file").hidden = isUrl;
