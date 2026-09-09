@@ -1698,13 +1698,17 @@ function renderTelemetry(data) {
   STATUS.active = data.active || [];
   // data.active is a list, not a dict keyed by demo id: a demo like
   // expense-extract has two entries at once (one per stage, on two devices).
+  // A list per device, not one label: two demos (or two stages, or two
+  // smart-city feeds) can be pinned to the same chip at once, and the old
+  // single-slot version let whichever came last silently win -- so a
+  // shared GPU looked exactly like a GPU with one demo on it.
   const activeByKind = {};
   for (const info of STATUS.active) {
     const kind = matchGaugeKind(info.device);
     if (!kind) continue;
     const demo = demoById(info.demo_id);
     const baseName = demo ? demo.name : info.demo_id;
-    activeByKind[kind] = info.stage_label ? `${baseName} (${info.stage_label})` : baseName;
+    (activeByKind[kind] ||= []).push(info.stage_label ? `${baseName} (${info.stage_label})` : baseName);
   }
 
   const gauges = {
@@ -1730,9 +1734,15 @@ function renderTelemetry(data) {
       fillEl.style.width = `${Math.min(value, 100)}%`;
       gauge.classList.remove("unavailable");
     }
-    const activeLabel = activeByKind[kind];
-    noteEl.textContent = activeLabel || name || "";
-    gauge.classList.toggle("active-gauge", Boolean(activeLabel));
+    const sharing = activeByKind[kind] || [];
+    // The note line is narrow, so lead with the count when a chip is
+    // shared -- that is the fact worth noticing -- and put the full list
+    // on the tooltip, which survives the ellipsis.
+    noteEl.textContent = sharing.length > 1 ? `${sharing.length} demos: ${sharing.join(", ")}` : sharing[0] || name || "";
+    if (sharing.length) noteEl.title = sharing.join(", ");
+    else noteEl.removeAttribute("title");
+    gauge.classList.toggle("active-gauge", sharing.length > 0);
+    gauge.classList.toggle("shared-gauge", sharing.length > 1);
   }
   renderDeviceSummary(data);
   // The chips' device labels come from this poll, not the status one --
@@ -1779,7 +1789,7 @@ async function initTelemetry() {
   }
   initGpuGauges();
   pollTelemetry();
-  setInterval(pollTelemetry, 2000);
+  setInterval(pollTelemetry, 600);
 }
 
 // --- Activity log -------------------------------------------------------------------

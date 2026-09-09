@@ -63,8 +63,12 @@ and `--no-browser` do what they say. Leave it running in a terminal;
   does. A Start during that window is refused with "still stopping --
   try again in a moment", which is a different thing from "already
   running": only one of them clears on its own.
-- **The header gauges** (CPU, one per GPU, NPU) are the only gauges; each
-  is labeled with whichever brick -- and stage -- is driving that device.
+- **The gauges live in a dock fixed to the bottom of the window** (CPU, one
+  per GPU, NPU), so which chip is working never scrolls out of sight. Each
+  is labelled with whichever brick -- and stage -- is driving it, and a
+  device with more than one on it says so ("2 demos: ...") and turns amber:
+  two gauges lit and one gauge doing double duty are very different stories
+  about the hardware.
 
 ### `static/app.js` in one paragraph
 
@@ -125,8 +129,8 @@ extra selects, the request body, how to render its messages -- typically
 
 ## Hardware telemetry
 
-The header shows a live CPU / GPU / NPU gauge strip and highlights whichever
-gauge a running brick is actually using (e.g. starting Live Speech
+A dock fixed to the bottom of the window shows a live CPU / GPU / NPU gauge
+strip and highlights whichever gauge a running brick is actually using (e.g. starting Live Speech
 Translation on the NPU lights up the NPU gauge with "Live Speech
 Translation" underneath it). This is the answer to "what silicon is this
 actually using" -- the whole point of the showcase.

@@ -28,6 +28,7 @@
   --radius: 12px;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
   --page-x: clamp(16px, 4vw, 48px);
+  --dock-height: 96px;
   font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
@@ -46,6 +47,8 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  /* room for the fixed telemetry dock, so nothing hides behind it */
+  padding-bottom: var(--dock-height);
 }
 
 /* One focus treatment for everything keyboard-reachable. */
@@ -169,8 +172,24 @@ body {
 
 /* --- Telemetry gauges ---------------------------------------------------- */
 
+/* Pinned to the bottom of the viewport rather than sitting in the header:
+   which chip is doing the work is the point of the whole showcase, and it
+   was scrolling out of sight exactly when a demo got interesting. */
+.telemetry-dock {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 45;
+  background: linear-gradient(0deg, var(--bg-elevated), var(--bg));
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.45);
+  padding: 10px var(--page-x);
+}
+
 .telemetry-strip {
-  flex: 1 1 440px;
+  max-width: 1180px;
+  margin: 0 auto;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
   gap: 8px;
@@ -1041,10 +1060,10 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 /* --- Responsive --------------------------------------------------------- */
 
 @media (max-width: 760px) {
+  :root { --dock-height: 168px; }
   .brand-logo { height: 52px; }
   .media-layout { grid-template-columns: 1fr; }
   .controls { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
-  .telemetry-strip { flex-basis: 100%; }
   .site-footer-inner, .site-footer-group { justify-content: center; }
 }
 
@@ -1052,3 +1071,13 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
   .chip-dot, .run-status.loading::before, .card-state::before { animation: none; }
   .card { transition: none; }
 }
+
+/* Two or more demos on the same chip: worth seeing at a glance, since
+   "both gauges lit" and "one gauge doing double duty" are very different
+   stories about the hardware. */
+.telemetry-gauge.shared-gauge {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 1px var(--warning) inset, 0 0 16px rgba(245, 166, 35, 0.25);
+}
+
+.telemetry-gauge.shared-gauge .telemetry-gauge-note { color: var(--warning); }

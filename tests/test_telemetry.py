@@ -53,3 +53,28 @@ def test_nothing_in_means_nothing_out():
 def test_a_luid_total_is_capped_at_100():
     samples = {instance(1, DGPU, 0, "3d"): 70.0, instance(2, DGPU, 1, "compute"): 55.0}
     assert telemetry._sum_for_luid(samples, DGPU) == 100.0
+
+
+def test_the_npu_is_found_when_its_engines_are_called_neural(monkeypatch):
+    """A driver update renamed this machine's NPU engine type from
+    "compute" to "neural", which silently lost the NPU gauge: the rule
+    matched one exact name instead of "has no graphics engines"."""
+    monkeypatch.setattr(engine_mod, "list_gpu_devices", lambda: [GpuDevice("GPU.0", "iGPU", IGPU)])
+    samples = {
+        instance(100, NPU, 0, "neural"): 40.0,
+        # the iGPU also exposes a neural engine, so the NPU can't be found
+        # by looking for that type -- only by the absence of graphics ones
+        instance(200, IGPU, 0, "3d"): 10.0,
+        instance(200, IGPU, 1, "neural"): 5.0,
+        instance(200, IGPU, 2, "videodecode"): 1.0,
+    }
+    gpus, npu_luid = telemetry._classify_luids(samples)
+    assert npu_luid == NPU
+    assert [(g.id, g.percent) for g in gpus] == [("GPU.0", 16.0)]
+    assert telemetry._sum_for_luid(samples, npu_luid) == 40.0
+
+
+def test_a_graphics_only_adapter_is_never_mistaken_for_the_npu(monkeypatch):
+    monkeypatch.setattr(engine_mod, "list_gpu_devices", lambda: [])
+    _, npu_luid = telemetry._classify_luids({instance(1, DGPU, 0, "3d"): 50.0})
+    assert npu_luid is None

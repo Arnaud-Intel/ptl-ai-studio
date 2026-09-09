@@ -30,6 +30,7 @@ about what's actually running where.
 """
 from __future__ import annotations
 
+import functools
 import json
 import platform
 import subprocess
@@ -41,19 +42,27 @@ from . import engine as engine_mod
 
 _IS_WINDOWS = platform.system() == "Windows"
 
-# Single sample of every GPU-Engine instance's utilization, plus the
-# human-readable NPU device name, as one compact JSON object -- one process
-# spawn does the whole job instead of several. GPU names come from OpenVINO's
-# FULL_DEVICE_NAME instead (see engine.list_gpu_devices), which is more
-# precise -- it distinguishes an iGPU from a discrete GPU by name.
-_POWERSHELL_SCRIPT = r"""
+# Utilization of every GPU-Engine instance, as one compact JSON object.
+# Deliberately *only* the counters: this is what runs on every poll, and
+# the OS's own wildcard expansion over "GPU Engine(*)" already accounts for
+# ~2s of it (measured -- it is the floor for this reading, not our overhead).
+_COUNTERS_SCRIPT = r"""
 $ErrorActionPreference = 'SilentlyContinue'
 $samples = @{}
 foreach ($s in (Get-Counter -Counter '\GPU Engine(*)\Utilization Percentage').CounterSamples) {
     $samples[$s.InstanceName] = [math]::Round($s.CookedValue, 1)
 }
-$npuName = Get-CimInstance Win32_PnPEntity | Where-Object { $_.Name -match 'NPU|AI Boost' } | Select-Object -First 1 -ExpandProperty Name
-@{ samples = $samples; npu_name = $npuName } | ConvertTo-Json -Compress -Depth 4
+@{ samples = $samples } | ConvertTo-Json -Compress -Depth 4
+"""
+
+# The NPU's human-readable name, split out of the poll and cached: walking
+# Win32_PnPEntity measured ~0.57s -- a fifth of every reading -- to return a
+# string that cannot change while the machine is running. GPU names come
+# from OpenVINO's FULL_DEVICE_NAME instead (see engine.list_gpu_devices),
+# which is more precise: it distinguishes an iGPU from a discrete GPU.
+_NPU_NAME_SCRIPT = r"""
+$ErrorActionPreference = 'SilentlyContinue'
+Get-CimInstance Win32_PnPEntity | Where-Object { $_.Name -match 'NPU|AI Boost' } | Select-Object -First 1 -ExpandProperty Name
 """
 
 
@@ -71,6 +80,11 @@ class Utilization:
     gpus: list[GpuReading] = field(default_factory=list)
     npu_percent: float | None = None
     npu_name: str | None = None
+
+
+# Engine types a compute-only accelerator reports. Anything whose engines
+# are a subset of these has no graphics pipeline, so it is the NPU.
+_NPU_ENGINE_TYPES = {"compute", "neural"}
 
 
 def _engine_types_by_luid(samples: dict[str, float]) -> dict[str, set[str]]:
@@ -91,7 +105,17 @@ def _classify_luids(samples: dict[str, float]) -> tuple[list[GpuReading], str | 
     if not engine_types:
         return [], None
 
-    npu_luid = next((luid for luid, types in engine_types.items() if types == {"compute"}), None)
+    # An adapter with no graphics engines at all is the NPU: NPUs don't do
+    # 3D, video or copy work. Matching the *absence* of graphics rather than
+    # one exact engine name matters -- this driver reports the NPU's engines
+    # as "neural", where an older one said "compute", and pinning the rule to
+    # {"compute"} silently lost the NPU gauge on the newer driver. The iGPU
+    # also exposes a "neural" engine, so it is the full set that decides,
+    # not the presence of any one type.
+    npu_luid = next(
+        (luid for luid, types in engine_types.items() if types <= _NPU_ENGINE_TYPES),
+        None,
+    )
     gpu_candidates = [luid for luid in engine_types if luid != npu_luid]
 
     luid_to_device = {gd.luid: gd for gd in engine_mod.list_gpu_devices() if gd.luid}
@@ -118,37 +142,72 @@ def _sum_for_luid(samples: dict[str, float], luid: str | None) -> float | None:
     return round(min(total, 100.0), 1)
 
 
-def read() -> Utilization:
-    """Take one reading. The GPU/NPU query costs roughly 1-2 seconds on
-    Windows (performance-counter wildcard expansion is inherently slow) --
-    callers should poll this on a background thread, not per web request.
-    """
-    cpu_percent = psutil.cpu_percent(interval=0.1)
-
-    if not _IS_WINDOWS:
-        return Utilization(available=False, cpu_percent=cpu_percent)
-
+def _powershell(script: str) -> str | None:
+    """Run one PowerShell script, or None if it fails for any reason. The
+    spawn itself measured ~0.12s; everything above that is the query."""
     try:
         result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", _POWERSHELL_SCRIPT],
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True,
             text=True,
             timeout=10,
         )
-        data = json.loads(result.stdout) if result.returncode == 0 and result.stdout.strip() else None
-    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return result.stdout if result.returncode == 0 and result.stdout.strip() else None
+
+
+@functools.lru_cache(maxsize=1)
+def npu_name() -> str | None:
+    """The NPU's device name, looked up once per process -- it is fixed
+    hardware, and asking costs ~0.57s."""
+    if not _IS_WINDOWS:
+        return None
+    out = _powershell(_NPU_NAME_SCRIPT)
+    return (out.strip() or None) if out else None
+
+
+def read_cpu() -> float:
+    """CPU utilization. Cheap and cross-platform: ~0.1s, which is the
+    sampling window itself rather than overhead. Kept separate from
+    read_devices() so a live CPU number never waits behind the slow
+    GPU/NPU query."""
+    return psutil.cpu_percent(interval=0.1)
+
+
+def read_devices() -> Utilization:
+    """GPU/NPU utilization -- the expensive half, ~2s on Windows, almost
+    all of it the OS expanding the "GPU Engine(*)" wildcard. Poll it on a
+    background thread, never per web request. `cpu_percent` is left None:
+    see read_cpu()."""
+    if not _IS_WINDOWS:
+        return Utilization(available=False)
+
+    raw = _powershell(_COUNTERS_SCRIPT)
+    try:
+        data = json.loads(raw) if raw else None
+    except json.JSONDecodeError:
         data = None
 
     if not data or "samples" not in data:
-        return Utilization(available=False, cpu_percent=cpu_percent)
+        return Utilization(available=False)
 
     samples = {k: float(v) for k, v in data["samples"].items()}
     gpus, npu_luid = _classify_luids(samples)
 
     return Utilization(
         available=True,
-        cpu_percent=cpu_percent,
         gpus=gpus,
         npu_percent=_sum_for_luid(samples, npu_luid),
-        npu_name=data.get("npu_name"),
+        npu_name=npu_name(),
     )
+
+
+def read() -> Utilization:
+    """One complete reading, both halves together. The launcher polls the
+    two separately (see launcher/telemetry_poller.py) so the CPU gauge
+    isn't stuck behind the device query; this is for callers that just
+    want everything at once."""
+    reading = read_devices()
+    reading.cpu_percent = read_cpu()
+    return reading
