@@ -135,10 +135,11 @@ REGISTRY: list[Demo] = [
         id="smart-city-monitor",
         name="Smart City Monitor",
         category="Vision",
-        tagline="Count pedestrians, cars, and bikes per minute -- across multiple feeds, each on its own chip.",
+        tagline="Count pedestrians, cars, and bikes per minute on live city cameras -- each feed on its own chip.",
         description=(
             "Runs a local object-detection model (the object-detection brick's) over one or more "
-            "video files at once, tracks each object across frames so it's counted once -- not once "
+            "video feeds at once -- a public live city camera, an RTSP/HLS stream from your own "
+            "network, or a local file -- tracks each object across frames so it's counted once -- not once "
             "per detection -- and reports a live trailing-60-second count per class, combined across "
             "every feed and broken down per feed. Pin each feed to its own compute device (e.g. one "
             "feed on the NPU, another on a GPU) and watch every chip it's using light up on the "
@@ -148,6 +149,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
+        samples="smart_city_monitor.samples",
     ),
     Demo(
         id="doc-qa",

@@ -60,11 +60,14 @@ def test_preferred_large_model_device_picks_the_discrete_gpu(monkeypatch):
     assert preferred_large_model_device() == "AUTO"
 
 
-def test_ov_config_caches_compiled_models_for_gpu_and_npu_only(monkeypatch, tmp_path):
+def test_only_the_npu_gets_a_compiled_model_cache(monkeypatch, tmp_path):
+    """A cached GPU model comes back numerically wrong on this hardware --
+    YOLO11n-int8 finds a scene full of objects on the load that compiles it
+    and exactly one on every load from cache, silently. So the GPU gets no
+    CACHE_DIR at all; the NPU keeps it (2.4s to compile, 0.04s cached)."""
     monkeypatch.setattr(engine_mod, "OV_CACHE_DIR", tmp_path / "ov_cache")
-    for device in ("GPU", "GPU.1", "gpu.0", "NPU"):
-        config = ov_config_for(device)
-        cache_dir = Path(config["CACHE_DIR"])
+    for device in ("NPU", "npu"):
+        cache_dir = Path(ov_config_for(device)["CACHE_DIR"])
         assert cache_dir.is_absolute() and cache_dir.is_dir()
-    assert ov_config_for("CPU") == {}
-    assert ov_config_for("AUTO") == {}
+    for device in ("GPU", "GPU.0", "GPU.1", "gpu.0", "CPU", "AUTO"):
+        assert ov_config_for(device) == {}, f"{device} must not be cached"

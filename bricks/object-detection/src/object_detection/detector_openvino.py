@@ -61,9 +61,11 @@ class OpenVINODetector:
         # Assembled by hand rather than via Model.from_pretrained(): that
         # path has no way to pass OpenVINO's compile config (its `cache_dir`
         # is the Hub's), and handing it a Core trips an UnboundLocalError in
-        # create_model. This is the same adapter it would build, plus the
-        # shared compiled-model cache -- a GPU/NPU compile of YOLO11n
-        # (seconds on a GPU, many minutes on the NPU) then happens once.
+        # create_model. This is the same adapter it would build, plus
+        # whatever `ov_config_for` decides this device should get -- for
+        # this model that means the NPU's compiled-model cache and, very
+        # deliberately, no GPU cache: a cached GPU YOLO11n returns one
+        # garbage box instead of a scene full of them (see ov_config_for).
         adapter = OpenvinoAdapter(
             core=create_core(),
             model=str(model_path),

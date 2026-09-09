@@ -7,7 +7,11 @@ dependencies = [
     "pantherlake-ai-core",
     "object-detection",
     "numpy>=1.26",
-    "opencv-python>=4.9",  # imported directly (draw.py, cli.py), not just via core
+    "opencv-python>=4.9",
+    # Resolves a YouTube live page to the HLS stream behind it, for the
+    # public street cameras in samples.py. Pure Python and small; YouTube
+    # changes often enough that this wants to stay current.
+    "yt-dlp>=2024.1",  # imported directly (draw.py, cli.py), not just via core
 ]
 
 [project.optional-dependencies]

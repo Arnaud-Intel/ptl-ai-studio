@@ -14,9 +14,9 @@ from typing import Callable
 
 import numpy as np
 from object_detection.engine_factory import create_detector
-from pantherlake_ai_core import video
 from pantherlake_ai_core.engine import Engine
 
+from . import sources
 from .tracker import Tracker
 from .types import CountSnapshot, FeedSpec, TrackedDetection
 
@@ -157,7 +157,7 @@ def run(
             counters = FeedCounters()
             ready = False
             try:
-                for frame in video.stream_video_file_frames(feed.path, loop=loop, stop_event=stop_event):
+                for frame in sources.open_frames(feed.path, loop=loop, stop_event=stop_event):
                     if not ready:
                         ready = True
                         with bookkeeping_lock:

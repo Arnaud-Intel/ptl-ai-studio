@@ -50,6 +50,7 @@ from pantherlake_ai_core.engine import (
     resolve_engine,
 )
 from pydantic import BaseModel
+from smart_city_monitor import sources as smart_city_sources
 from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
 
 from . import activity, events, registry
@@ -480,7 +481,7 @@ async def start_smart_city_monitor(req: SmartCityMonitorStartRequest) -> JSONRes
                 feed_id=f"feed-{i}",
                 path=f.path,
                 compute_device=f.compute_device or device,
-                name=Path(f.path).name,
+                name=smart_city_sources.display_name(f.path),
             )
             for i, f in enumerate(req.feeds, start=1)
         ]

@@ -157,9 +157,12 @@ not just one.
      session through to the factory: the launcher wires them to its
      "Downloading (first run only)" / "loading -> running" status.
    - `engine.ov_config_for(device)` as the config for every OpenVINO
-     `compile_model` / `openvino_genai` pipeline, so GPU/NPU compiles land in
+     `compile_model` / `openvino_genai` pipeline, so an NPU compile lands in
      the one shared cache under `~/.cache/pantherlake-ai-studio/ov_cache`
-     instead of a per-CWD `ov_cache/`.
+     instead of a per-CWD `ov_cache/`. Don't add `CACHE_DIR` yourself: that
+     helper deliberately gives the GPU no cache, because a cached GPU model
+     comes back numerically wrong on this hardware (see its docstring) --
+     silently, which is far worse than the second it saves.
 4. Flip its entry in [`launcher/src/launcher/registry.py`](launcher/src/launcher/registry.py)
    from `status="planned"` to `status="available"`, declare which hardware
    lists its controls need (`devices=("microphones", "cameras", ...)`) and

@@ -975,10 +975,11 @@ const PANELS = {
     transport: "mjpeg",
     video: "smartcity-video",
     statusKey: "smart-city-monitor:feed-1",
-    controls: ["smartcity-feeds", "smartcity-engine", "smartcity-compute-device", "smartcity-loop"],
+    controls: ["smartcity-feeds", "smartcity-sample", "smartcity-engine", "smartcity-compute-device", "smartcity-loop"],
     feeds: [],
     populate(data) {
       wireEngineAndDevice(el("smartcity-engine"), el("smartcity-compute-device"), data);
+      wireSamplePicker("smartcity-sample", data.samples, { "smartcity-feeds": "feeds" });
       el("smartcity-feed-picker").addEventListener("change", () => this.attachVideo());
     },
     async rehydrate() {

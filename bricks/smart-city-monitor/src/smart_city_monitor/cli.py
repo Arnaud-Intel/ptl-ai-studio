@@ -8,7 +8,7 @@ import time
 
 from pantherlake_ai_core import engine as engine_mod
 
-from . import pipeline
+from . import pipeline, sources
 from .draw import draw_tracks
 from .types import FeedSpec
 
@@ -35,9 +35,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--source", dest="sources", action="append", default=[], metavar="PATH[|DEVICE]",
-        help="A video file to monitor, repeatable for multiple feeds. Optionally suffixed "
-             "'|DEVICE' (e.g. 'clip.mp4|GPU.0') to pin that feed to a specific openvino device; "
-             "omitted, it uses --compute-device. Required (at least one).",
+        help="A feed to monitor, repeatable: a video file, or a live stream URL (RTSP/HTTP/HLS, "
+             "or a YouTube live page). Optionally suffixed '|DEVICE' (e.g. 'clip.mp4|GPU.0') to pin "
+             "that feed to a specific openvino device; omitted, it uses --compute-device. "
+             "Required (at least one).",
     )
     p.add_argument(
         "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
@@ -83,7 +84,9 @@ def main(argv: list[str] | None = None) -> int:
     feeds = []
     for i, raw in enumerate(args.sources, start=1):
         path, device = _parse_source(raw, default_device)
-        feeds.append(FeedSpec(feed_id=f"feed-{i}", path=path, compute_device=device))
+        feeds.append(
+            FeedSpec(feed_id=f"feed-{i}", path=path, compute_device=device, name=sources.display_name(path))
+        )
 
     print(f"Monitoring {len(feeds)} feed(s) (engine={engine.value}):")
     for feed in feeds:

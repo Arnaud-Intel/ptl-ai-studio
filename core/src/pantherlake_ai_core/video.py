@@ -189,3 +189,66 @@ def stream_video_file_frames(path: str, *, loop: bool = True, stop_event: thread
             yield frame
     finally:
         cap.release()
+
+
+# A live stream that drops mid-read is normal, not fatal: wifi blips, the
+# CDN rotates a segment, the publisher restarts. Reconnect rather than
+# ending the feed, backing off a little so a genuinely dead URL doesn't
+# spin.
+_RECONNECT_BACKOFF_SECONDS = 2.0
+_RECONNECT_ATTEMPTS = 5
+
+
+def sleep_unless_stopped(stop_event: threading.Event | None, seconds: float) -> bool:
+    """Sleep for `seconds`, interruptibly if there is an event to
+    interrupt it. Returns True if we were asked to stop (so the caller can
+    `return` straight away), False if the wait simply elapsed."""
+    if stop_event is None:
+        time.sleep(seconds)
+        return False
+    return stop_event.wait(seconds)
+
+
+def stream_live_frames(
+    url: str,
+    *,
+    stop_event: threading.Event | None = None,
+    reconnect: bool = True,
+):
+    """Yield BGR uint8 frames from a live stream URL (RTSP, HTTP MJPEG,
+    HLS `.m3u8`, anything else FFmpeg can open).
+
+    Unlike `stream_video_file_frames` this does **not** pace the frames:
+    a live stream already arrives in real time, so sleeping between reads
+    would only build a growing delay behind the present moment. And there
+    is nothing to loop -- at a drop it reopens the URL instead of seeking
+    back to the start, which is meaningless for a feed with no beginning.
+    """
+    import cv2
+
+    attempts = 0
+    while stop_event is None or not stop_event.is_set():
+        cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+        if not cap.isOpened():
+            cap.release()
+            attempts += 1
+            if not reconnect or attempts >= _RECONNECT_ATTEMPTS:
+                raise RuntimeError(f"Could not open stream: {url}")
+            if sleep_unless_stopped(stop_event, _RECONNECT_BACKOFF_SECONDS):
+                return
+            continue
+
+        attempts = 0  # a successful open resets the budget
+        try:
+            while stop_event is None or not stop_event.is_set():
+                ok, frame = cap.read()
+                if not ok:
+                    break  # dropped -- fall out and reopen
+                yield frame
+        finally:
+            cap.release()
+
+        if not reconnect:
+            return
+        if sleep_unless_stopped(stop_event, _RECONNECT_BACKOFF_SECONDS):
+            return

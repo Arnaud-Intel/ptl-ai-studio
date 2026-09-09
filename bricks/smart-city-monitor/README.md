@@ -1,7 +1,8 @@
 # smart-city-monitor
 
 Counts pedestrians, bicycles, cars, motorcycles, buses, and trucks across
-one or more local video feeds at once — fully on-device. Each feed can be
+one or more video feeds at once — a local file, a camera on your network,
+or a public live city camera — fully on-device. Each feed can be
 pinned to its own compute device (e.g. one feed on the NPU, another on a
 GPU), so N feeds genuinely run in parallel, correctly attributed on the
 telemetry gauges.
@@ -23,6 +24,12 @@ an LLM a third time. What it adds on top:
   a video file is played back at its own frame rate rather than as fast
   as the CPU/GPU can chew through it, so "N per minute" reflects one
   real minute of footage, not processing speed.
+- **Live stream input** ([`sources.py`](src/smart_city_monitor/sources.py)) —
+  a feed can equally be an RTSP/HTTP/HLS URL, read as it arrives and
+  reopened if it drops, or a YouTube live page, resolved to its underlying
+  stream first. [`samples.py`](src/smart_city_monitor/samples.py) ships a
+  short list of public 24/7 city cameras so the demo has something real to
+  count without you sourcing footage.
 - **N feeds, each on its own device** ([`pipeline.py`](src/smart_city_monitor/pipeline.py)) —
   one detector per distinct device among the feeds (shared by every feed
   pinned to it, so a device's model loads exactly once), each device's
@@ -56,6 +63,13 @@ Monitor one video file:
 uv run smart-city-monitor --source intersection.mp4 --engine openvino
 ```
 
+Monitor a live camera — anything FFmpeg can open, including a YouTube
+live page:
+
+```bash
+uv run smart-city-monitor --source "rtsp://camera.local/stream1" --engine openvino
+```
+
 Monitor two feeds at once, each pinned to a different chip, with a live
 annotated window per feed:
 
@@ -71,7 +85,7 @@ Press `Ctrl+C` to stop.
 
 | Flag | Description |
 | --- | --- |
-| `--source PATH[\|DEVICE]` | A video file to monitor, repeatable for multiple feeds. Optional `\|DEVICE` suffix pins that one feed to a specific device (e.g. `clip.mp4\|GPU.0`); omitted, it uses `--compute-device`. Required (at least one). |
+| `--source SOURCE[\|DEVICE]` | A feed to monitor, repeatable for multiple feeds: a video file, a stream URL (RTSP/HTTP/HLS), or a YouTube live page. Optional `\|DEVICE` suffix pins that one feed to a specific device (e.g. `clip.mp4\|GPU.0`); omitted, it uses `--compute-device`. Required (at least one). |
 | `--engine {portable,openvino}` | Inference backend for every feed. Default: `openvino` if installed and a device is available, otherwise `portable`. |
 | `--compute-device NAME` | `openvino` engine only: default device for any `--source` without its own `\|DEVICE`. |
 | `--model-path PATH` | Use a local model file/dir instead of downloading the default. |
@@ -81,10 +95,14 @@ Press `Ctrl+C` to stop.
 
 ## How it works
 
-1. **Capture** — `pantherlake_ai_core.video.stream_video_file_frames`
-   plays a video file back paced to its own `CAP_PROP_FPS`, looping from
-   frame 0 at EOF by default (so a short clip can stand in for a
-   continuous camera feed).
+1. **Capture** — `sources.open_frames` decides what a feed actually is.
+   A file goes through `pantherlake_ai_core.video.stream_video_file_frames`,
+   paced to its own `CAP_PROP_FPS` and looping from frame 0 at EOF by
+   default (so a short clip can stand in for a continuous camera). A URL
+   goes through `stream_live_frames`, which reads frames as they arrive and
+   reopens the stream if it drops rather than seeking backwards. A YouTube
+   URL is resolved to its underlying HLS stream by `yt-dlp` first, and
+   re-resolved on a reconnect, since those links expire.
 2. **Detect** — one `object_detection.engine_factory.create_detector`
    instance per distinct device among the running feeds, guarded by one
    lock per device so feeds sharing a device serialize their inference
@@ -117,6 +135,18 @@ the drawn boxes nor the counts are cluttered with irrelevant classes.
   — not an extrapolated instantaneous rate. It's only meaningful because
   playback is paced to the source video's own frame rate (see above); a
   video file played back faster than real time would inflate it.
+- **The counts currently run high**, by roughly 2.3x on every feed
+  measured — the tracker drops and re-acquires objects that are still on
+  screen, and each re-acquisition counts again. Treat the numbers as
+  relative (this feed is busier than that one) rather than absolute for
+  now; see `BACKLOG.md`.
+- **A live feed is somebody else's camera.** The *video* arrives over the
+  network — detection still runs entirely on local silicon and no frame is
+  sent anywhere — but a public stream can be renamed, rate-limited or taken
+  down without notice, so a local file stays the option that always works.
+  Reading a YouTube page needs `yt-dlp`, which is a declared dependency of
+  this brick and occasionally needs upgrading when YouTube changes
+  (`uv sync --upgrade-package yt-dlp`).
 - **No per-feed engine choice**, only per-feed *device* — every feed uses
   the same model family (`portable` or `openvino`); mixing DETR and
   YOLO11n per feed would add complexity for no real benefit, since the

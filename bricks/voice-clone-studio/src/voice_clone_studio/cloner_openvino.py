@@ -12,7 +12,7 @@ class OpenVINOCloner:
     instead of native PyTorch, on CPU/GPU/NPU. Converted IR is cached on
     disk (voice_model.ir_cache_dir()) since conversion itself takes
     several seconds and only needs to happen once per machine; the
-    compiled form is cached too (ov_config_for) for GPU/NPU targets."""
+    compiled form is cached too (ov_config_for) on the NPU."""
 
     def __init__(self, device="CPU", model_path=None, on_downloading=None):
         self.tts, self.converter, self.source_se = voice_model.load_models(

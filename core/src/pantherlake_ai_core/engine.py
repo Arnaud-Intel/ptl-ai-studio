@@ -164,17 +164,31 @@ def preferred_large_model_device() -> str:
 
 def ov_config_for(device: str) -> dict[str, str]:
     """OpenVINO compile/pipeline config for `device`: the shared on-disk
-    compiled-model cache (OV_CACHE_DIR) for GPU and NPU targets, where
-    recompiling on every run costs seconds to minutes (the NPU especially),
-    and nothing for CPU, which loads fast without it. "AUTO" deliberately
-    gets nothing too: it may land on CPU, whose cache blobs for a large LLM
-    run to gigabytes of disk for no load-time win.
+    compiled-model cache (OV_CACHE_DIR) for the NPU, and nothing for
+    anything else.
+
+    The NPU is where the cache earns its keep -- YOLO11n compiles in 2.4s
+    cold and 0.04s from cache, and a large LLM takes minutes.
+
+    **The GPU deliberately gets no cache**, even though it is slow to
+    compile. On this machine (Arc B390 iGPU) a cached GPU model comes back
+    *numerically wrong* rather than failing: YOLO11n-int8 finds 7-10
+    objects in a street scene when it compiles, and 1 on every subsequent
+    load from cache -- silently, with no error anywhere. It is not stale
+    blobs: a brand-new cache directory does it on its very first hit, and
+    no precision or execution-mode hint changes it. Measured, the cache
+    was buying between nothing and 1.7s there anyway (a cache hit on
+    YOLO11n costs the same 1.73s as compiling from scratch), so this trades
+    an optimization worth ~0-1.7s for correctness.
+
+    CPU loads fast without it, and "AUTO" is excluded too: it may land on
+    CPU, whose cache blobs for a large LLM run to gigabytes of disk for no
+    load-time win.
 
     Use as `core.compile_model(model, device, ov_config_for(device))` or
     `ov_genai.SomePipeline(model_dir, device, **ov_config_for(device))`.
     """
-    upper = device.upper()
-    if upper == "NPU" or "GPU" in upper:
+    if device.upper() == "NPU":
         OV_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         return {"CACHE_DIR": str(OV_CACHE_DIR)}
     return {}

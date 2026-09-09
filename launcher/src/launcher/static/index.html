@@ -183,14 +183,21 @@
       <section id="smartcity-panel" class="brick-panel" hidden>
         <div class="controls">
           <label class="field field-wide">
-            <span>Video feeds (one local file path per line)</span>
-            <textarea id="smartcity-feeds" rows="3" placeholder="C:\videos\intersection.mp4
-C:\videos\crosswalk.mp4|NPU"></textarea>
+            <span>Video feeds (one per line: a live camera, a stream URL, or a local file)</span>
+            <select id="smartcity-sample" class="sample-picker">
+              <option value="">Pick a live city camera...</option>
+            </select>
+            <textarea id="smartcity-feeds" rows="3" placeholder="https://www.youtube.com/watch?v=...
+rtsp://camera.local/stream
+C:\videos\intersection.mp4|NPU"></textarea>
           </label>
           <p class="field-help">
-            Add <code>|DEVICE</code> after a path (for example <code>|GPU.0</code> or <code>|NPU</code>) to pin
-            that feed to one chip; otherwise it uses the compute device below. Pin different feeds to different
-            chips and every gauge they use lights up at once, each attributed to its own feed.
+            A feed can be a public live camera (pick one above), an RTSP or HLS stream from a camera on
+            your own network, or a local video file. Add <code>|DEVICE</code> after a line (for example
+            <code>|GPU.0</code> or <code>|NPU</code>) to pin that feed to one chip; otherwise it uses the
+            compute device below. Pin different feeds to different chips and every gauge they use lights
+            up at once, each attributed to its own feed. The public cameras arrive over the internet --
+            the video is a network stream, but every detection runs on local silicon.
           </p>
           <label class="field">
             <span>Engine</span>
