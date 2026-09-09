@@ -38,6 +38,23 @@
     </div>
   </div>
 
+  <!-- The header in one line, slid in once the real one has scrolled away:
+       brand back to the grid, whatever is running (still clickable, so a
+       demo is always one click away), and whose silicon this is. Not
+       `hidden`, so it can transition -- see .compact-bar in style.css. -->
+  <div id="compact-bar" class="compact-bar">
+    <div class="compact-inner">
+      <a class="compact-brand" href="#/" aria-label="Panther Lake AI Studio -- all demos">
+        <img class="compact-brand-logo" src="/static/panther_lake_ai_studio_darkbg.png" alt="Panther Lake AI Studio" />
+      </a>
+      <div id="compact-chips" class="running-chips compact-chips"></div>
+      <div class="compact-logos">
+        <img class="compact-logo" src="/static/intel-logo.png" alt="Intel" />
+        <img class="compact-logo" src="/static/dell-logo.png" alt="Dell" />
+      </div>
+    </div>
+  </div>
+
   <main id="app" class="app">
     <section id="view-home" class="view">
       <div id="categories"></div>

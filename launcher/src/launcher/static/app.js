@@ -1628,6 +1628,47 @@ function summarizeStatus(entries) {
   return entries.find((e) => e.phase === "error" && nowSeconds - e.at < 120) || null;
 }
 
+// The same chips render in the full strip and in the compact header, so a
+// running demo is one click away whether or not you've scrolled.
+function fillChips(containerId, markup) {
+  const container = el(containerId);
+  if (!container || container.innerHTML === markup) return;
+  container.innerHTML = markup;
+  for (const chip of container.querySelectorAll(".running-chip")) {
+    chip.addEventListener("click", () => {
+      location.hash = `#/brick/${chip.dataset.id}`;
+    });
+  }
+}
+
+// Show the compact header exactly once the real one has left the viewport.
+// Asking the element where it is beats caching a scroll offset: it stays
+// right when the running strip appears, the window resizes, or a wrapped
+// header row changes height.
+let compactFrame = 0;
+
+function updateCompactBar() {
+  const bar = el("compact-bar");
+  const topbar = document.querySelector(".topbar");
+  if (!bar || !topbar) return;
+  const strip = el("running-strip");
+  const anchor = strip && !strip.hidden ? strip : topbar;
+  bar.classList.toggle("is-visible", anchor.getBoundingClientRect().bottom <= 0);
+}
+
+function wireCompactBar() {
+  const onScroll = () => {
+    if (compactFrame) return;  // at most one measure per frame
+    compactFrame = requestAnimationFrame(() => {
+      compactFrame = 0;
+      updateCompactBar();
+    });
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
+  updateCompactBar();
+}
+
 function renderRunningStrip() {
   const groups = new Map();
   for (const [key, entry] of Object.entries(STATUS.snapshot)) {
@@ -1652,17 +1693,11 @@ function renderRunningStrip() {
         `<span class="chip-meta">${escapeHtml(meta)}</span></button>`,
     );
   }
-  const container = el("running-chips");
   const markup = chips.join("");
-  if (container.innerHTML !== markup) {
-    container.innerHTML = markup;
-    for (const chip of container.querySelectorAll(".running-chip")) {
-      chip.addEventListener("click", () => {
-        location.hash = `#/brick/${chip.dataset.id}`;
-      });
-    }
-  }
+  fillChips("running-chips", markup);
+  fillChips("compact-chips", markup);  // the compact header shows the same set
   el("running-strip").hidden = chips.length === 0;
+  updateCompactBar();  // the strip appearing/disappearing moves what we scroll past
 
   for (const card of document.querySelectorAll(".card[data-id]")) {
     const phase = phases.get(card.dataset.id);
@@ -1855,6 +1890,7 @@ async function init() {
   // (Wired the other way round, a single throw in wire() left every card
   // silently doing nothing when clicked, with no clue as to why.)
   window.addEventListener("hashchange", route);
+  wireCompactBar();
 
   el("panel-back").addEventListener("click", () => {
     location.hash = "#/";

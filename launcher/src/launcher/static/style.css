@@ -1081,3 +1081,79 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 }
 
 .telemetry-gauge.shared-gauge .telemetry-gauge-note { color: var(--warning); }
+
+/* --- Compact sticky header ----------------------------------------------
+   The full header is tall on purpose (logo, hardware badges, device
+   summary) and none of it survives a scroll. This is the same header in
+   one line, revealed once you've scrolled past the real one: brand on the
+   left, what's running in the middle, whose silicon it is on the right.
+   It's transform + visibility rather than `hidden` so it can slide, and so
+   it leaves the accessibility tree while it's away. */
+
+.compact-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 55;
+  background: linear-gradient(180deg, var(--bg-elevated), rgba(10, 11, 13, 0.96));
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  transform: translateY(-100%);
+  visibility: hidden;
+  transition: transform 0.18s ease, visibility 0.18s;
+}
+
+.compact-bar.is-visible {
+  transform: none;
+  visibility: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .compact-bar { transition: none; }
+}
+
+.compact-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 8px var(--page-x);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.compact-brand { display: inline-block; line-height: 0; border-radius: 8px; flex-shrink: 0; }
+.compact-brand-logo { display: block; height: 30px; width: auto; }
+
+/* The middle takes the slack and scrolls on its own rather than pushing
+   the logos off a narrow window. */
+.compact-chips {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  padding: 2px 0;
+  justify-content: center;
+}
+
+.compact-chips .running-chip { flex-shrink: 0; }
+
+.compact-logos {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.compact-logo { display: block; height: 20px; width: auto; }
+
+@media (max-width: 760px) {
+  .compact-inner { gap: 10px; }
+  .compact-brand-logo { height: 24px; }
+  .compact-logo { height: 16px; }
+  .compact-logos { gap: 10px; }
+  /* On a narrow window the meta ("running · NPU") is the first thing to
+     go: the demo's name is what makes the chip clickable-with-intent. */
+  .compact-chips .chip-meta { display: none; }
+}
