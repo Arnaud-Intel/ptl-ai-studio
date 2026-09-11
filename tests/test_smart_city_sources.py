@@ -234,3 +234,36 @@ def test_a_later_failed_play_is_a_blip_not_a_dead_feed():
 
     list(video.stream_refreshing_clip("u", stop_event=stop, poll_seconds=0, _version=version, _play=play))
     assert len(calls) == 3  # played, blipped, played the next revision
+
+
+
+def test_no_cookies_unless_the_operator_opts_in(monkeypatch):
+    monkeypatch.delenv(sources.YOUTUBE_COOKIES_ENV, raising=False)
+    assert "cookiefile" not in sources._ytdlp_options()
+
+
+def test_an_opted_in_cookies_file_is_passed_to_yt_dlp(monkeypatch, tmp_path):
+    jar = tmp_path / "youtube-cookies.txt"
+    jar.write_text("# Netscape HTTP Cookie File\n", encoding="utf-8")
+    monkeypatch.setenv(sources.YOUTUBE_COOKIES_ENV, str(jar))
+    assert sources._ytdlp_options()["cookiefile"] == str(jar)
+
+
+def test_a_cookies_setting_that_points_nowhere_says_so(monkeypatch, tmp_path):
+    monkeypatch.setenv(sources.YOUTUBE_COOKIES_ENV, str(tmp_path / "missing.txt"))
+    with pytest.raises(RuntimeError, match="doesn't exist"):
+        sources._ytdlp_options()
+
+
+def test_a_bot_check_without_cookies_mentions_the_opt_in(monkeypatch):
+    monkeypatch.delenv(sources.YOUTUBE_COOKIES_ENV, raising=False)
+    msg = sources._explain_youtube_failure("https://youtu.be/x", "Sign in to confirm you're not a bot")
+    assert sources.YOUTUBE_COOKIES_ENV in msg and "local video" in msg
+
+
+def test_a_bot_check_with_cookies_set_points_at_stale_cookies(monkeypatch, tmp_path):
+    """Configured and still refused: the useful next step is re-exporting,
+    not wondering whether the setting was picked up at all."""
+    monkeypatch.setenv(sources.YOUTUBE_COOKIES_ENV, str(tmp_path / "c.txt"))
+    msg = sources._explain_youtube_failure("https://youtu.be/x", "Sign in to confirm you're not a bot")
+    assert "expired" in msg and "local video" in msg

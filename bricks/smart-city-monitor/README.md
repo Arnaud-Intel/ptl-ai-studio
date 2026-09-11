@@ -209,6 +209,47 @@ box too. California's Caltrans publishes around 1,300 public HLS freeway
 cameras, but in testing only about one camera in ten opened reliably, so
 none are curated.
 
+### Getting past YouTube's wall with a signed-in session
+
+If YouTube is refusing the network, yt-dlp can present a signed-in YouTube
+session instead of an anonymous one. It is off by default and entirely
+opt-in, and it has a real cost: yt-dlp's own documentation warns that *"by
+using your account with yt-dlp, you run the risk of it being banned
+(temporarily or permanently)"* — so **use a throwaway Google account, not
+your main one.**
+
+yt-dlp can no longer read Edge's or Chrome's cookies itself on Windows: both
+now encrypt them with an app-bound key its cookie code can't decrypt, and a
+running browser locks its cookie store besides. So the session goes through a
+file you export yourself, from inside the browser:
+
+1. Install the **Get cookies.txt LOCALLY** extension. Avoid the similarly
+   named "Get cookies.txt" (without "LOCALLY"), which was removed from the
+   Chrome Web Store as malware. Edge installs Chrome Web Store extensions
+   once *Allow extensions from other stores* is switched on.
+2. Open a new **InPrivate** window and sign in to YouTube there.
+3. In that same tab, go to `https://www.youtube.com/robots.txt`.
+4. Export the `youtube.com` cookies with the extension, save the file as
+   `%USERPROFILE%\.config\pantherlake-ai-studio\youtube-cookies.txt`
+   (create the folder if needed), then **close the InPrivate window**.
+   YouTube rotates the cookies of any tab that stays open, which quietly
+   invalidates an export taken from a normal window.
+5. Point the launcher at the file, then restart the launcher so it picks the
+   setting up:
+
+   ```cmd
+   setx PTL_YOUTUBE_COOKIES "%USERPROFILE%\.config\pantherlake-ai-studio\youtube-cookies.txt"
+   ```
+
+The setting is read from the environment only — nothing in the UI or the API
+ever sees it. yt-dlp rewrites the file as YouTube refreshes the session, so it
+must stay writable; and it is a login, so keep it private (`*cookies*.txt` is
+git-ignored in case one ever lands in the repo). If a bot check still happens
+with the setting in place, the error says so: the cookies have most likely
+expired, so export them again. YouTube now also asks for "PO tokens" on some
+requests, so a signed-in session is likely — not guaranteed — to get
+through. The **Other** section keeps working either way.
+
 ## Notes / current limitations
 
 - **The tracker is a pragmatic heuristic, not real multi-object-tracking

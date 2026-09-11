@@ -24,3 +24,7 @@ processed/
 *.log
 .vscode/
 .idea/
+
+# A YouTube session exported for yt-dlp (PTL_YOUTUBE_COOKIES) is a login:
+# never commit one, even if it lands in the repo by mistake.
+*cookies*.txt

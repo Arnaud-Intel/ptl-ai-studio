@@ -19,6 +19,7 @@ silicon. Nothing about the video is sent anywhere.
 """
 from __future__ import annotations
 
+import os
 import re
 import threading
 from pathlib import PureWindowsPath
@@ -84,6 +85,54 @@ def display_name(source: str) -> str:
     return PureWindowsPath(source).name
 
 
+# Opt-in: a Netscape-format cookies.txt exported from a signed-in browser, for
+# when YouTube refuses the network with a bot check. Read from the environment
+# rather than from anything the UI can see or send, so a login never passes
+# through the launcher's API. Unset -> anonymous, exactly as before.
+#
+# Why a file and not yt-dlp's cookies-from-browser: on Windows, Chrome and Edge
+# now encrypt cookies with an app-bound key yt-dlp cannot decrypt (its cookie
+# code handles Chromium's v10/v11 formats only), and a running browser locks
+# its cookie database besides. An extension that exports from inside the
+# browser sidesteps both.
+YOUTUBE_COOKIES_ENV = "PTL_YOUTUBE_COOKIES"
+
+
+def _cookies_path() -> str:
+    return os.environ.get(YOUTUBE_COOKIES_ENV, "").strip()
+
+
+def _cookies_hint() -> str:
+    """The last sentence of a bot-check message: what a signed-in session
+    could do, or -- if one is already configured -- why it didn't."""
+    if _cookies_path():
+        return (
+            f" The signed-in session in {YOUTUBE_COOKIES_ENV} didn't get past it either -- "
+            "its cookies have probably expired; export them again (see the smart-city README)."
+        )
+    return (
+        f" With a signed-in YouTube account you can set {YOUTUBE_COOKIES_ENV} to a "
+        "cookies.txt exported from it (see the smart-city README)."
+    )
+
+
+def _ytdlp_options() -> dict:
+    """Options for resolving a YouTube page: quiet, uncoloured, and with the
+    operator's exported cookies if -- and only if -- they opted in."""
+    # no_color: yt-dlp colours its errors for a terminal, and those escape
+    # codes were landing verbatim in the UI's status line.
+    options = {"quiet": True, "no_warnings": True, "skip_download": True, "no_color": True}
+    cookies = _cookies_path()
+    if cookies:
+        if not os.path.isfile(cookies):
+            raise RuntimeError(
+                f"{YOUTUBE_COOKIES_ENV} points at a file that doesn't exist ({cookies}). "
+                "Export a cookies.txt from a signed-in browser to that path, or unset it."
+            )
+        options["cookiefile"] = cookies
+    return options
+
+
 # YouTube's anti-bot wall, as yt-dlp words it. On 2026-09-11 it hit every
 # curated camera at once from this network: the newest yt-dlp didn't get past
 # it, and neither did any of its alternative player clients -- they either met
@@ -102,7 +151,7 @@ def _explain_youtube_failure(url: str, message: str) -> str:
             f"YouTube is asking this network to sign in to prove it isn't a bot, so {url} "
             "can't be opened right now. Updating yt-dlp won't help -- YouTube is blocking "
             "the connection, the parser isn't out of date. Use a direct camera stream "
-            "(RTSP, or an HLS .m3u8 URL) or a local video file instead."
+            "(RTSP, or an HLS .m3u8 URL) or a local video file instead." + _cookies_hint()
         )
     return (
         f"Couldn't read the YouTube page for {url}: {message}. If this used to work, "
@@ -125,9 +174,7 @@ def _extract_formats(url: str) -> list[dict]:
             "dependencies (`uv sync`), or use a direct stream URL instead."
         ) from None
 
-    # no_color: yt-dlp colours its errors for a terminal, and those escape
-    # codes were landing verbatim in the UI's status line.
-    options = {"quiet": True, "no_warnings": True, "skip_download": True, "no_color": True}
+    options = _ytdlp_options()
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=False)
