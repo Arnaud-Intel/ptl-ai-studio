@@ -52,6 +52,10 @@ count accuracy still need the affected hardware and agreed fixtures. GPU inferen
 is gated rather than claimed repaired, and the historical ~2.3× tracking defect is
 not claimed resolved. Those gates remain open in R01/R03.
 
+**2026-09-11 follow-up:** real NPU naming is verified on the target machine
+(OpenVINO and `/api/telemetry` both report `Intel(R) AI Boost`), so R01 is
+closed. The R03 gates above are unchanged.
+
 For hardware qualification, record OS, GPU/NPU and driver, runtime version, model
 revision, source frames/annotations and cold/warm state. Compare mask finiteness,
 range and CPU numerical similarity, and count error per clip (initial target ≤10%
