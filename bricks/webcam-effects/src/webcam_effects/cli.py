@@ -39,8 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--compute-device", default=None,
-        help="openvino engine only: AUTO, CPU, GPU, or NPU. Default: the integrated GPU, "
-             "which for live video is about four times faster than AUTO for the same result.",
+        help="OpenVINO: CPU (default) or NPU. GPU/AUTO are temporarily disabled due to invalid masks.",
     )
     p.add_argument("--model-path", default=None, help="Use a local model instead of downloading the default.")
     p.add_argument(
@@ -62,10 +61,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     engine = engine_mod.resolve_engine(args.engine)
-    # See preferred_realtime_vision_device: AUTO is four times slower
-    # than the iGPU here, for the same output.
+    # GPU/AUTO remain gated until numerical correctness is qualified.
     compute_device = args.compute_device or (
-        engine_mod.preferred_realtime_vision_device()
+        "CPU"
         if engine == engine_mod.Engine.OPENVINO
         else engine_mod.default_device(engine)
     )

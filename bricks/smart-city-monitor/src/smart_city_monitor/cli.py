@@ -98,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     print(f"Monitoring {len(feeds)} feed(s) (engine={engine.value}):")
+    print("Experimental track counts, not unique objects: lost tracks may be counted again.")
     for feed in feeds:
         print(f"  - {feed.feed_id}: {feed.path} -> {feed.compute_device}")
     print("Press Ctrl+C to stop.\n")

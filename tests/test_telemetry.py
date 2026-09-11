@@ -78,3 +78,29 @@ def test_a_graphics_only_adapter_is_never_mistaken_for_the_npu(monkeypatch):
     monkeypatch.setattr(engine_mod, "list_gpu_devices", lambda: [])
     _, npu_luid = telemetry._classify_luids({instance(1, DGPU, 0, "3d"): 50.0})
     assert npu_luid is None
+
+
+def test_no_npu_never_uses_usb_input_names(monkeypatch):
+    telemetry.npu_name.cache_clear()
+    monkeypatch.setattr(engine_mod, "list_openvino_devices", lambda: ["CPU", "GPU"])
+    monkeypatch.setattr(telemetry, "_powershell", lambda _: "Logitech USB Input Device")
+    assert telemetry.npu_name() is None
+    telemetry.npu_name.cache_clear()
+
+
+def test_known_compute_only_gpu_is_not_reclassified_as_npu(monkeypatch):
+    monkeypatch.setattr(engine_mod, "list_gpu_devices", lambda: [GpuDevice("GPU", "Known GPU", DGPU)])
+    gpus, npu = telemetry._classify_luids({instance(1, DGPU, 0, "compute"): 50.0})
+    assert npu is None and gpus[0].id == "GPU"
+
+
+def test_npu_name_comes_from_verified_runtime_device(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
+    telemetry.npu_name.cache_clear()
+    monkeypatch.setattr(engine_mod, "list_openvino_devices", lambda: ["CPU", "NPU"])
+    monkeypatch.setitem(sys.modules, "openvino", SimpleNamespace(Core=lambda: SimpleNamespace(
+        get_property=lambda device, prop: "Intel AI Boost" if device == "NPU" else "wrong device")))
+    assert telemetry.npu_name() == "Intel AI Boost"
+    telemetry.npu_name.cache_clear()

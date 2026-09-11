@@ -19,7 +19,8 @@ FAKE_OPENVINO_DEVICES = ["CPU", "GPU.0", "NPU"]
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
+    monkeypatch.setattr(launcher_app.events, "LOG_FILE", tmp_path / "events.log")
     monkeypatch.setattr(launcher_app.audio, "list_microphones", lambda: ["Test Mic"])
     monkeypatch.setattr(launcher_app.audio, "list_speakers", lambda: ["Test Speakers"])
     monkeypatch.setattr(launcher_app.video, "list_cameras", lambda: [0])
@@ -45,6 +46,7 @@ def test_hex_to_bgr_rejects_anything_but_rrggbb(bad):
 
 
 def test_resolve_applies_the_cli_rule(monkeypatch):
+    monkeypatch.setattr(launcher_app, "list_openvino_devices", lambda: FAKE_OPENVINO_DEVICES)
     monkeypatch.setattr(launcher_app, "resolve_engine", lambda explicit: Engine(explicit) if explicit else Engine.OPENVINO)
     monkeypatch.setattr(launcher_app, "preferred_large_model_device", lambda: "GPU.1")
     assert launcher_app.resolve(None, None) == (Engine.OPENVINO, "AUTO")
@@ -95,6 +97,19 @@ def test_every_available_demo_has_a_devices_route(client):
 
 def test_unknown_demo_is_a_404(client):
     assert client.get("/api/not-a-brick/devices").status_code == 404
+
+
+def test_unavailable_device_rejected_before_work(client):
+    response = client.post("/api/doc-qa/ingest", json={"folder": "x", "engine": "openvino", "compute_device": "GPU.99"})
+    assert response.status_code == 400 and "unavailable" in response.json()["error"]
+
+
+def test_webcam_gpu_is_disabled_in_controls_and_api(client):
+    devices = client.get("/api/webcam-effects/devices").json()
+    assert {"AUTO", "GPU.0"} <= devices["openvino_unsupported"].keys()
+    for device in ("AUTO", "GPU.0"):
+        response = client.post("/api/webcam-effects/start", json={"engine": "openvino", "compute_device": device})
+        assert response.status_code == 400 and "temporarily unavailable" in response.json()["error"]
 
 
 def test_status_version_and_logs(client):

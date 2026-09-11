@@ -17,7 +17,7 @@ class Segmenter(Protocol):
 def create_segmenter(
     engine: Engine,
     *,
-    device: str = "AUTO",
+    device: str = "CPU",
     model_path: str | None = None,
     on_downloading: Callable[[], None] | None = None,
 ) -> Segmenter:

@@ -132,17 +132,18 @@ REGISTRY: list[Demo] = [
         engines=["portable", "openvino"],
         status="available",
         devices=("cameras", "screens"),
+        samples="screen_ocr.samples",
     ),
     Demo(
         id="smart-city-monitor",
         name="Smart City Monitor",
         category="Vision",
-        tagline="Count pedestrians, cars, and bikes per minute on live city cameras -- each feed on its own chip.",
+        tagline="Experimental pedestrian, car, and bike track counts on city cameras -- each feed on its own chip.",
         description=(
             "Runs a local object-detection model (the object-detection brick's) over one or more "
             "video feeds at once -- a public live city camera, an RTSP/HLS stream from your own "
-            "network, or a local file -- tracks each object across frames so it's counted once -- not once "
-            "per detection -- and reports a live trailing-60-second count per class, combined across "
+            "network, or a local file -- tracks detections across frames and reports experimental "
+            "new-track counts, not unique objects. Lost tracks can be counted again. Counts cover a trailing 60 seconds across "
             "every feed and broken down per feed. Add as many feeds as you like, each with its own "
             "engine, model and compute device (e.g. YOLO11s on the NPU alongside DETR on the CPU), "
             "and watch every chip they use light up on the "

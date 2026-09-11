@@ -21,12 +21,15 @@ from . import matte
 class OpenVINOSegmenter:
     def __init__(
         self,
-        device: str = "AUTO",
+        device: str = "CPU",
         repo_id: str = matte.DEFAULT_REPO,
         filename: str = matte.DEFAULT_FILENAME,
         model_path: str | None = None,
         on_downloading: Callable[[], None] | None = None,
     ):
+        from .capabilities import validate_device
+
+        validate_device(device)
         from openvino import Core
 
         resolved_path = matte.resolve_model_path(repo_id, filename, model_path, on_downloading)

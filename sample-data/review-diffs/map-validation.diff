@@ -1,0 +1,30 @@
+diff --git a/meridian_demo/map_import.py b/meridian_demo/map_import.py
+--- a/meridian_demo/map_import.py
++++ b/meridian_demo/map_import.py
+@@ -1,4 +1,15 @@
+ # FICTIONAL DEMO CODE: a proposed Dock C map-validation change.
+ def import_map(store, payload):
+-    store.replace_map(payload["map"])
++    revision = payload.get("revision")
++    if revision is None:
++        raise ValueError("Map revision is required")
++    if revision <= store.current_revision():
++        raise ValueError("Map revision must be newer")
++    validate_polygons(payload["map"])
++    store.replace_map(payload["map"])
++    store.set_revision(revision)
+     return {"status": "imported"}
++
++def validate_polygons(map_data):
++    if not map_data.get("polygons"):
++        raise ValueError("Map must contain polygons")
+diff --git a/tests/test_map_import.py b/tests/test_map_import.py
+--- a/tests/test_map_import.py
++++ b/tests/test_map_import.py
+@@ -1,2 +1,6 @@
+ def test_imports_new_map(store):
+     assert import_map(store, {"revision": 2, "map": {"polygons": [[1, 2, 3]]}})["status"] == "imported"
++
++def test_rejects_missing_revision(store):
++    with pytest.raises(ValueError, match="revision"):
++        import_map(store, {"map": {"polygons": [[1, 2, 3]]}})

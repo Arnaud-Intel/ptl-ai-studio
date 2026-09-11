@@ -1,7 +1,25 @@
 # expense-extract
 
 Batch-converts a folder of receipt photos into a CSV of structured expense
-lines (vendor, date, amount, category) -- fully on-device.
+lines (vendor, date, amount, currency, category, review status) -- fully on-device.
+
+## Trustworthy output
+
+Amounts use decimal arithmetic. `12,50 EUR` becomes `12.50`, not `1250`;
+ambiguous strings such as `1,234` need review. Currency must be supported and
+present in the OCR text (an explicit code or an unambiguous euro/pound symbol).
+A bare `$` does not establish USD. Missing/invalid dates, unsupported currency,
+ambiguous amounts and amounts not found in the OCR text are flagged.
+
+Only lines passing these field checks contribute to totals, grouped by currency.
+These checks do not verify that the model selected the correct receipt total;
+compare results with the originals. Review flagged lines in the exported CSV;
+there is not yet an in-app correction/approval workflow.
+
+The CSV now includes `currency`, `needs_review` and `review_reasons`. WebSocket
+amounts are exact decimal **strings** (or null), and completion messages contain
+a `totals` object keyed by currency instead of a single `total`. CLI and UI use
+the same validation and aggregation. Update custom consumers of the old format.
 
 This is the workspace's first brick where **two heavy models genuinely
 run at the same time on two different pieces of silicon**, not one

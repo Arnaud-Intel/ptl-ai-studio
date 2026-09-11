@@ -197,7 +197,7 @@ function wireEngineAndDevice(engineSelect, deviceSelect, data, options = {}) {
     // ends up staring at a compiler error from deep inside OpenVINO.
     if (isOpenvino) {
       for (const opt of deviceSelect.options) {
-        const reason = unsupported[opt.value];
+        const reason = unsupported[opt.value] || (data.openvino_unsupported || {})[opt.value];
         if (!reason) continue;
         opt.disabled = true;
         opt.textContent = `${opt.textContent} -- ${reason}`;
@@ -209,6 +209,9 @@ function wireEngineAndDevice(engineSelect, deviceSelect, data, options = {}) {
     const chosen = chosenPerEngine[engineSelect.value];
     if (chosen && [...deviceSelect.options].some((o) => o.value === chosen && !o.disabled)) {
       deviceSelect.value = chosen;
+    }
+    if (!deviceSelect.selectedOptions.length || deviceSelect.selectedOptions[0].disabled) {
+      deviceSelect.value = [...deviceSelect.options].find((o) => !o.disabled)?.value || "";
     }
     if (onChange) onChange(isOpenvino);
   };
@@ -253,7 +256,31 @@ function wireVideoSource(sourceSelect, deviceSelect, data) {
 // fieldMap is {targetElementId: sampleFieldName}; a null sample field leaves
 // the target alone. A <select> target fires change (so show/hide logic runs),
 // everything else fires input.
-function wireSamplePicker(pickerId, samples, fieldMap) {
+function renderDemoAssets(container, assets) {
+  const grid = document.createElement("div");
+  grid.className = "demo-asset-grid";
+  for (const asset of assets || []) {
+    const link = document.createElement("a");
+    link.href = asset.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.className = "demo-asset";
+    if (asset.image) {
+      const image = document.createElement("img");
+      image.src = asset.url;
+      image.alt = `Preview of fictional sample ${asset.name}`;
+      image.loading = "lazy";
+      link.appendChild(image);
+    }
+    const label = document.createElement("span");
+    label.textContent = asset.name;
+    link.appendChild(label);
+    grid.appendChild(link);
+  }
+  container.appendChild(grid);
+}
+
+function wireSamplePicker(pickerId, samples, fieldMap, onSelect = null) {
   const picker = el(pickerId);
   if (!picker) return;
   while (picker.options.length > 1) picker.remove(1);
@@ -261,6 +288,16 @@ function wireSamplePicker(pickerId, samples, fieldMap) {
     picker.appendChild(option(sample.name, `${sample.name} — ${sample.description}`));
   }
   picker.disabled = !(samples || []).length;
+  const panel = picker.closest(".brick-panel");
+  let details = el(`${pickerId}-details`);
+  if (!details) {
+    details = document.createElement("div");
+    details.id = `${pickerId}-details`;
+    details.className = "demo-sample-details";
+    details.hidden = true;
+    // Keep the run action above the gallery, even for the complete receipt pack.
+    (panel?.querySelector(".run-row") || panel?.querySelector(".controls") || picker).after(details);
+  }
   picker.onchange = () => {
     const sample = (samples || []).find((s) => s.name === picker.value);
     if (sample) {
@@ -271,8 +308,19 @@ function wireSamplePicker(pickerId, samples, fieldMap) {
         target.value = value;
         target.dispatchEvent(new Event(target.tagName === "SELECT" ? "change" : "input"));
       }
+      details.replaceChildren();
+      details.hidden = false;
+      const title = document.createElement("h3");
+      title.textContent = sample.name;
+      const text = document.createElement("p");
+      text.textContent = `${sample.description} ${sample.next_step || ""}`;
+      details.append(title, text);
+      renderDemoAssets(details, sample.assets);
+      if (onSelect) onSelect(sample);
+    } else {
+      details.hidden = true;
+      if (onSelect) onSelect(null);
     }
-    picker.value = "";
   };
 }
 
@@ -396,6 +444,18 @@ class Panel {
       try {
         const data = await fetchJSON(`/api/${this.id}/devices`);
         this.populate(data);
+        if (data.demo_guide) {
+          const root = el(`${this.prefix}-panel`);
+          const guide = document.createElement("details");
+          guide.className = "demo-guide";
+          const summary = document.createElement("summary");
+          summary.textContent = `Demo guide · ${data.demo_guide.title}`;
+          const content = document.createElement("p");
+          content.textContent = data.demo_guide.text;
+          guide.append(summary, content);
+          renderDemoAssets(guide, data.demo_guide.assets);
+          root?.prepend(guide);
+        }
         this.populated = true;
       } catch (err) {
         this.setStatus(`Error: ${err.message}`, "error");
@@ -977,12 +1037,14 @@ const PANELS = {
         if (line.error) {
           appendLine(box, "line-answer", `${line.source_file}: skipped (${line.error})`);
         } else {
-          const amount = line.amount !== null && line.amount !== undefined ? `$${line.amount.toFixed(2)}` : "?";
-          appendLine(box, "line-answer", `${line.source_file}: ${line.vendor || "?"} -- ${line.date || "?"} -- ${amount} -- ${line.category}`);
+          const amount = line.amount !== null && line.amount !== undefined ? `${line.currency || "Unknown currency"} ${line.amount}` : "Unknown amount";
+          const review = line.needs_review ? ` -- Needs review: ${(line.review_reasons || []).join("; ")}` : " -- Fields validated; verify against receipt";
+          appendLine(box, "line-answer", `${line.source_file}: ${line.vendor || "?"} -- ${line.date || "?"} -- ${amount} -- ${line.category}${review}`);
         }
       } else if (message.type === "done") {
         this.setRunning(false);
-        this.setStatus(`Done -- ${message.structured}/${message.count} structured, total $${message.total.toFixed(2)}`, "live");
+        const totals = Object.entries(message.totals || {}).map(([currency, amount]) => `${currency} ${amount}`).join(" · ");
+        this.setStatus(`Done -- ${message.structured}/${message.count} structured; ${message.needs_review || 0} need review. Validated-field totals: ${totals || "none"}`, "live");
       }
     },
   }),
@@ -1156,7 +1218,7 @@ const PANELS = {
           ? cameras.map((index) => ({ value: String(index), label: `Camera ${index}` }))
           : [{ value: "", label: "No camera found" }],
       );
-      wireEngineAndDevice(el("webcam-engine"), el("webcam-compute-device"), data, { preferRealtimeVision: true });
+      wireEngineAndDevice(el("webcam-engine"), el("webcam-compute-device"), data);
       const effect = el("webcam-effect");
       const colorField = el("webcam-color-field");
       const sync = () => {
@@ -1441,10 +1503,14 @@ const PANELS = {
     id: "screen-ocr",
     prefix: "ocr",
     populate(data) {
+      this.sampleImageUrl = null;
+      wireSamplePicker("ocr-sample", data.samples, { "ocr-source": "source" }, (sample) => {
+        this.sampleImageUrl = sample?.image_url || null;
+      });
       const source = el("ocr-source");
       const sync = () => {
         const isUpload = source.value === "upload";
-        el("ocr-source-device-field").hidden = isUpload;
+        el("ocr-source-device-field").hidden = isUpload || source.value === "sample";
         el("ocr-upload-field").hidden = !isUpload;
       };
       wireVideoSource(source, el("ocr-source-device"), data);
@@ -1469,18 +1535,28 @@ const PANELS = {
           this.setStatus("Choose an image file first.", "error");
           return;
         }
+        if (source === "sample" && !this.sampleImageUrl) {
+          this.setStatus("Choose a bundled sample first.", "error");
+          return;
+        }
+        const sampleImageUrl = this.sampleImageUrl;
         this.run({
           button: el("ocr-extract"),
           key: "screen-ocr",
           busy: source === "upload" ? "Uploading and reading…" : "Capturing and reading…",
           work: async () => {
             let data;
-            if (source === "upload") {
+            if (source === "upload" || source === "sample") {
               const form = new FormData();
-              form.append("file", el("ocr-upload").files[0]);
+              if (source === "sample") {
+                const response = await fetch(sampleImageUrl);
+                if (!response.ok) throw new Error("Could not load the bundled sample image.");
+                form.append("file", await response.blob(), "fictional-demo.png");
+              } else {
+                form.append("file", el("ocr-upload").files[0]);
+              }
               form.append("engine", engine);
               form.append("compute_device", computeDevice);
-              form.append("model", model);
               form.append("translate", translate);
               data = await fetchJSON("/api/screen-ocr/extract-upload", { method: "POST", body: form });
             } else {
@@ -2140,7 +2216,7 @@ function renderDeviceSummary(telemetry) {
   if (deviceSummaryDone) return;
   const parts = ["CPU", ...GPU_DEVICES.map((g) => shortGpuName(g.full_name))];
   if (telemetry.npu_percent !== null && telemetry.npu_percent !== undefined) parts.push("NPU");
-  el("device-summary").textContent = `Inference devices: ${parts.join(" · ")}`;
+  el("device-summary").textContent = `Monitored hardware: ${parts.join(" · ")}. Inference support depends on the selected engine.`;
   deviceSummaryDone = true;
 }
 
@@ -2201,7 +2277,7 @@ async function openLogViewer() {
       .map(
         (entry) =>
           `<div class="log-entry${entry.phase === "error" ? " error" : ""}">` +
-          `<span class="log-entry-time">${new Date(entry.at * 1000).toLocaleTimeString()}</span>` +
+          `<span class="log-entry-time">${new Date(entry.at * 1000).toLocaleString()}</span>` +
           `<span class="log-entry-demo">${escapeHtml(logDemoLabel(entry.demo_id))}</span>` +
           `<span class="log-entry-message">${escapeHtml(entry.message || entry.phase)}</span></div>`,
       )

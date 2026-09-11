@@ -23,7 +23,7 @@
     </div>
     <div class="hardware-row">
       <div class="hardware-strip">
-        <span class="hw-label">Running on</span>
+        <span class="hw-label">Designed for</span>
         <span class="hw-badge">Dell</span>
         <span class="hw-badge">Intel&reg; Core&trade; Ultra 3</span>
         <span class="hw-badge">Panther Lake NPU</span>
@@ -223,6 +223,7 @@
           <button id="smartcity-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
           <span id="smartcity-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
+        <p class="field-help">Experimental track counts, not unique people or vehicles. Lost tracks can be counted again; accuracy is not yet qualified for live traffic.</p>
         <div class="controls" id="smartcity-picker-row" hidden>
           <label class="field">
             <span>Viewing feed</span>
@@ -242,6 +243,12 @@
 
       <!-- screen-ocr -->
       <section id="ocr-panel" class="brick-panel" hidden>
+        <label class="field field-wide">
+          <span>Fictional demo images</span>
+          <select id="ocr-sample" class="sample-picker" aria-label="Choose a fictional OCR sample">
+            <option value="">Choose a receipt to read...</option>
+          </select>
+        </label>
         <div class="controls">
           <label class="field">
             <span>Source</span>
@@ -249,6 +256,7 @@
               <option value="screen">Screen capture</option>
               <option value="webcam">Webcam</option>
               <option value="upload">Upload a photo</option>
+              <option value="sample">Bundled fictional sample</option>
             </select>
           </label>
           <label class="field" id="ocr-source-device-field">
@@ -597,6 +605,12 @@
 
       <!-- code-review-assist -->
       <section id="cra-panel" class="brick-panel" hidden>
+        <label class="field field-wide">
+          <span>Fictional demo changes</span>
+          <select id="cra-sample" class="sample-picker">
+            <option value="">Choose a realistic sample diff...</option>
+          </select>
+        </label>
         <div class="controls">
           <label class="field">
             <span>Diff source</span>
@@ -616,9 +630,6 @@
           </label>
           <label class="field field-wide" id="cra-diff-text-field" hidden>
             <span>Diff text</span>
-            <select id="cra-sample" class="sample-picker">
-              <option value="">Try a sample diff...</option>
-            </select>
             <textarea id="cra-diff-text" rows="6" placeholder="Paste the output of 'git diff' here"></textarea>
           </label>
           <label class="field">

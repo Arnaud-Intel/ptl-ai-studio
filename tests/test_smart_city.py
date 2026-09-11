@@ -38,6 +38,14 @@ def test_two_objects_get_two_ids():
     assert len({t.track_id for t in tracks}) == 2
 
 
+def test_strong_match_is_not_stolen_by_earlier_ambiguous_detection():
+    tracker = Tracker()
+    initial = tracker.update([det("car", (0, 0, 100, 100)), det("car", (70, 0, 170, 100))], now=0)
+    after = tracker.update([det("car", (20, 0, 120, 100)), det("car", (0, 0, 100, 100))], now=.1)
+    assert [t.track_id for t in after] == [initial[1].track_id, initial[0].track_id]
+    assert not any(t.is_new for t in after)
+
+
 def test_a_track_unseen_for_over_a_second_expires_instead_of_being_reused():
     tracker = Tracker()
     (before,) = tracker.update([det("car", (0, 0, 100, 100))], now=0.0)

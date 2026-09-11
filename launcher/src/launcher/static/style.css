@@ -1319,3 +1319,13 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 }
 
 .feed-counts .placeholder { margin: 0; }
+/* Bundled demo kits stay inside each brick, with inspectable source files. */
+.demo-guide, .demo-sample-details { margin: 16px 0; padding: 18px 22px; border: 1px solid var(--border); border-radius: 12px; background: rgba(80, 140, 140, .07); }
+.demo-guide summary { cursor: pointer; font-weight: 650; }
+.demo-guide p, .demo-sample-details p { line-height: 1.65; max-width: 90ch; }
+.demo-sample-details h3 { margin: 0 0 8px; }
+.demo-asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
+.demo-asset { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; color: inherit; text-decoration: none; min-width: 0; }
+.demo-asset:hover, .demo-asset:focus-visible { outline: 2px solid #63bab0; }
+.demo-asset img { width: 100%; height: 195px; object-fit: contain; background: #e9ece5; border-radius: 4px; }
+.demo-asset span { font-size: 12px; overflow-wrap: anywhere; }

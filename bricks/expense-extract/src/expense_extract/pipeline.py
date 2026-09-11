@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import queue
 import threading
+from datetime import date
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -19,7 +21,7 @@ from doc_qa.engine_factory import create_llm
 from pantherlake_ai_core.engine import Engine
 from screen_ocr.pipeline import OcrSession
 
-from .parsing import coerce_amount, parse_expense_json
+from .parsing import CURRENCIES, coerce_amount, currency_from_text, parse_expense_json
 from .types import ExpenseLine
 
 SUPPORTED_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
@@ -29,10 +31,11 @@ _SYSTEM_PROMPT = (
     "may include OCR errors or misread characters. Respond with ONLY a "
     "single JSON object -- no other words, no markdown fencing -- with "
     'exactly these keys: "vendor" (string), "date" (string, "YYYY-MM-DD" '
-    'if you can tell, else your best guess), "amount" (number, the final '
-    'total paid), "category" (one of: "Meals", "Travel", "Lodging", '
-    '"Office Supplies", "Software", "Other"). If the text barely looks '
-    "like a receipt, still return your best-guess JSON."
+    'if explicit, otherwise null), "amount" (string preserving the printed separators, the final '
+    'total paid, or null), "currency" (explicit ISO currency code, or null if ambiguous), '
+    '"category" (one of: "Meals", "Travel", "Lodging", '
+    '"Office Supplies", "Software", "Other"). Never guess missing fields. '
+    "A bare $ does not establish USD. If the text is not a receipt, return null fields."
 )
 
 # Small enough to bound memory, large enough that a faster OCR stage can
@@ -62,12 +65,42 @@ def _structure(llm, raw_text: str, source_name: str) -> ExpenseLine:
             raw_text=raw_text, error="Could not parse a structured response from the LLM",
         )
 
+    amount = coerce_amount(parsed.get("amount"))
+    currency = str(parsed.get("currency") or "").upper().strip() or None
+    evidence_currency = currency_from_text(raw_text)
+    reasons = []
+    if currency not in CURRENCIES or currency != evidence_currency:
+        currency = evidence_currency
+    if currency is None:
+        reasons.append("Currency is missing, unsupported or ambiguous")
+    if amount is None:
+        reasons.append("Amount is missing or ambiguous")
+    elif currency in {"JPY", "KRW"} and amount != amount.to_integral_value():
+        reasons.append("Fractional amount for a zero-decimal currency")
+    elif not any(coerce_amount(token) == amount for token in re.findall(r"-?\d[\d., \u00a0\u202f]*\d|-?\d", raw_text)):
+        reasons.append("Amount could not be matched to the receipt text")
+    date_text = str(parsed.get("date") or "")
+    try:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_text):
+            raise ValueError
+        date.fromisoformat(date_text)
+    except ValueError:
+        reasons.append("Date is missing or invalid")
+        date_text = ""
+    if not parsed.get("vendor"):
+        reasons.append("Vendor is missing")
+    category = str(parsed.get("category") or "Other")
+    if category not in {"Meals", "Travel", "Lodging", "Office Supplies", "Software", "Other"}:
+        reasons.append("Category is invalid")
+        category = "Other"
     return ExpenseLine(
         source_file=source_name,
         vendor=str(parsed.get("vendor") or ""),
-        date=str(parsed.get("date") or ""),
-        amount=coerce_amount(parsed.get("amount")),
-        category=str(parsed.get("category") or "Other"),
+        date=date_text,
+        amount=amount,
+        currency=currency,
+        review_reasons=reasons,
+        category=category,
         raw_text=raw_text,
     )
 

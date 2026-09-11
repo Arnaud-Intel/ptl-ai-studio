@@ -50,3 +50,5 @@ class CountSnapshot:
     per_feed_last_60s: dict[str, dict[str, int]] = field(default_factory=dict)
     per_feed_total: dict[str, dict[str, int]] = field(default_factory=dict)
     active_feeds: list[str] = field(default_factory=list)
+    count_basis: str = "new_tracks"
+    accuracy_warning: str = "Experimental track counts, not unique objects. Lost tracks can be counted again."

@@ -9,8 +9,15 @@ families, because the model file itself (a small ONNX graph) loads
 directly into either runtime:
 
 - **`portable`** (default) -- ONNX Runtime, CPU only.
-- **`openvino`** -- raw OpenVINO `Core`, targeting `CPU`, `GPU` (iGPU),
-  or `NPU` explicitly.
+- **`openvino`** -- raw OpenVINO `Core`, targeting `CPU` (current default)
+  or `NPU` explicitly. GPU and AUTO are temporarily disabled in the API, UI
+  and backend because invalid GPU masks were reported. This conservative gate
+  applies to all OpenVINO GPUs until affected model/runtime/driver combinations
+  are qualified; it does not claim every GPU is broken.
+
+Non-finite, malformed or out-of-range masks now stop the run with an actionable
+error instead of displaying corrupt effects. The GPU precision fix and numerical
+CPU/GPU comparison remain hardware-validation work; no FP32 fix is assumed.
 
 Both load
 [`onnx-community/mediapipe_selfie_segmentation`](https://huggingface.co/onnx-community/mediapipe_selfie_segmentation)
@@ -18,7 +25,7 @@ Both load
 ~224KB quantized) -- see [`matte.py`](src/webcam_effects/matte.py) for the
 shared pre/postprocessing both backends call. That makes this demo a
 clean "same model, different silicon" comparison: switching engines is
-purely a CPU-vs-NPU/iGPU question, not a model-quality one. OpenVINO's
+currently a CPU-vs-NPU comparison; GPU remains gated as noted above. OpenVINO's
 `Core().read_model()` reads `.onnx` files directly -- no separate IR
 conversion step needed.
 
@@ -69,7 +76,7 @@ Press `Ctrl+C` to stop.
 | `--effect {blur,replace}` | Background treatment. Default: `blur`. |
 | `--color "R,G,B"` | `replace` effect only: solid background color. Default: `0,104,181` (Intel blue). |
 | `--engine {portable,openvino}` | Inference backend. Default: `portable`. |
-| `--compute-device NAME` | `openvino` engine only: `AUTO`, `CPU`, `GPU`, `NPU`. |
+| `--compute-device NAME` | OpenVINO: `CPU` (default), `NPU`. `GPU`/`AUTO` are temporarily disabled. |
 | `--model-path PATH` | Use a local model file instead of downloading the default. |
 | `--show` | Also open a live preview window (`cv2.imshow`) -- off by default so this works headlessly (e.g. over SSH, in the launcher's background thread). |
 | `--list-devices` | List cameras and inference devices, then exit. |

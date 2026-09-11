@@ -38,7 +38,11 @@ def preprocess(frame_bgr: np.ndarray) -> np.ndarray:
 
 def postprocess(alpha_output: np.ndarray, orig_width: int, orig_height: int) -> np.ndarray:
     """alpha_output: (1, 1, 256, 256) -> a smoothed (H, W) float32 mask in [0, 1]."""
-    mask = alpha_output[0, 0]
+    if (alpha_output.ndim != 4 or alpha_output.shape[:2] != (1, 1)
+            or alpha_output.size == 0 or not np.isfinite(alpha_output).all()
+            or alpha_output.min() < -0.001 or alpha_output.max() > 1.001):
+        raise RuntimeError("Segmentation returned an invalid mask. Stop and select the portable CPU engine.")
+    mask = alpha_output[0, 0].astype(np.float32)
     mask = cv2.resize(mask, (orig_width, orig_height), interpolation=cv2.INTER_LINEAR)
     mask = cv2.GaussianBlur(mask, (21, 21), 0)  # soften the cutout edge
     return np.clip(mask, 0.0, 1.0)

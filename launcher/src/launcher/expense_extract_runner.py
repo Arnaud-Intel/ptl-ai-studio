@@ -14,9 +14,9 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from dataclasses import asdict
 
 from expense_extract import pipeline
+from expense_extract.types import totals_by_currency
 from pantherlake_ai_core.engine import Engine
 
 from . import activity, events, worker
@@ -59,7 +59,7 @@ class ExpenseExtractRunner:
             emit({"type": "ocr_progress", "file": path.name, "index": index, "total": total})
 
         def on_structured(line) -> None:
-            emit({"type": "structured", "line": asdict(line)})
+            emit({"type": "structured", "line": line.to_dict()})
 
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=ocr_engine.value, device=ocr_device, stage="ocr", stage_label="OCR")
@@ -78,8 +78,8 @@ class ExpenseExtractRunner:
                     stop_event=stop_event,
                 )
                 ok = [r for r in results if r.error is None]
-                total = sum(r.amount for r in ok if r.amount is not None)
-                emit({"type": "done", "count": len(results), "structured": len(ok), "total": total})
+                emit({"type": "done", "count": len(results), "structured": len(ok),
+                      "needs_review": sum(r.needs_review for r in results), "totals": totals_by_currency(results)})
             except Exception as exc:  # surfaced to the UI, not silently dropped
                 self.error = str(exc)
                 for stage in _STAGES:

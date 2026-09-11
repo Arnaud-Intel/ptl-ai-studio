@@ -60,6 +60,8 @@ from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
 from voice_clone_studio import engine_factory as voice_clone_models
 
 from . import activity, events, registry
+from . import demo_assets
+from pantherlake_ai_core.demo_samples import SAMPLE_ROOT
 from .code_review_assist_runner import CodeReviewAssistRunner
 from .doc_qa_runner import DocQARunner
 from .errors import Conflict
@@ -126,6 +128,18 @@ def resolve(
     there for identical results."""
     resolved = resolve_engine(engine)
     if device:
+        if resolved == Engine.OPENVINO:
+            available = list_openvino_devices()
+            normalized = device.upper()
+            if normalized != "AUTO" and normalized not in available and not (
+                normalized == "GPU" and any(d.startswith("GPU.") for d in available)
+            ):
+                raise ValueError(f"OpenVINO device {device!r} is unavailable; choose from {', '.join(available)}")
+            if not available:
+                raise ValueError("No OpenVINO devices are available; choose the portable engine")
+            device = normalized
+        elif device.lower() != "cpu" and not (device.lower() == "cuda" or device.lower().startswith("cuda:")):
+            raise ValueError("Portable engines support cpu or a compatible CUDA device, not OpenVINO device IDs")
         return resolved, device
     if resolved == Engine.OPENVINO:
         if large_model:
@@ -223,6 +237,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Panther Lake AI Studio", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/demo-assets", StaticFiles(directory=SAMPLE_ROOT, follow_symlink=False), name="demo-assets")
 
 live_translation_runner = LiveTranslationRunner()
 doc_qa_runner = DocQARunner()
@@ -351,10 +366,17 @@ def demo_devices(demo_id: str) -> JSONResponse:
     if demo is None or demo.status != "available":
         return JSONResponse({"error": f"unknown demo '{demo_id}'"}, status_code=404)
     payload: dict[str, Any] = {"openvino_devices": list_openvino_devices()}
+    if demo_id == "webcam-effects":
+        from webcam_effects.capabilities import GPU_REASON
+
+        payload["openvino_unsupported"] = {
+            d: GPU_REASON for d in ["AUTO", *payload["openvino_devices"]] if d == "AUTO" or d.startswith("GPU")
+        }
     for kind in demo.devices:
         payload[kind] = _DEVICE_SOURCES[kind]()
     if demo.samples:
-        payload["samples"] = [asdict(s) for s in importlib.import_module(demo.samples).SAMPLES]
+        payload["samples"] = [demo_assets.enrich_sample(asdict(s)) for s in importlib.import_module(demo.samples).SAMPLES]
+    payload["demo_guide"] = demo_assets.guide(demo_id)
     return JSONResponse(payload)
 
 
@@ -760,7 +782,11 @@ class WebcamEffectsStartRequest(BaseModel):
 @app.post("/api/webcam-effects/start")
 async def start_webcam_effects(req: WebcamEffectsStartRequest) -> JSONResponse:
     try:
-        engine, device = resolve(req.engine, req.compute_device, realtime_vision=True)
+        engine, device = resolve(req.engine, req.compute_device or ("cpu" if req.engine == "portable" else "CPU"))
+        if engine == Engine.OPENVINO:
+            from webcam_effects.capabilities import validate_device
+
+            validate_device(device)
         webcam_effects_runner.start(
             camera_index=req.camera_index,
             engine=engine,

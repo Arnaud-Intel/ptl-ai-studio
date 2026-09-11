@@ -1,0 +1,260 @@
+{
+  "fictional": true,
+  "currency_totals": {
+    "EUR": "1048.20",
+    "USD": "49.00"
+  },
+  "quick_start_totals": {
+    "EUR": "215.10"
+  },
+  "receipts": [
+    {
+      "file": "01-lanterne-cafe.png",
+      "vendor": "Lanterne Cafe",
+      "kind": "CAFE RECEIPT",
+      "date": "2026-09-03",
+      "currency": "EUR",
+      "amount": "38.40",
+      "category": "Meals",
+      "items": [
+        [
+          "Working lunch - 2 guests",
+          "29.00"
+        ],
+        [
+          "Coffee - 2 cups",
+          "6.40"
+        ],
+        [
+          "Sparkling water",
+          "3.00"
+        ]
+      ],
+      "note": "Project M-FR-26 / customer workshop lunch",
+      "style": "till"
+    },
+    {
+      "file": "02-atelier-quay-hotel.png",
+      "vendor": "Atelier Quay Hotel",
+      "kind": "GUEST FOLIO",
+      "date": "2026-09-05",
+      "currency": "EUR",
+      "amount": "426.00",
+      "category": "Lodging",
+      "items": [
+        [
+          "Room / 2 nights at EUR 180.00",
+          "360.00"
+        ],
+        [
+          "Breakfast / 2 mornings",
+          "36.00"
+        ],
+        [
+          "Local accommodation levy",
+          "30.00"
+        ]
+      ],
+      "note": "Alex Morgan / arrival Sep 03 / departure Sep 05",
+      "style": "invoice"
+    },
+    {
+      "file": "03-northwind-air.png",
+      "vendor": "Northwind Air Demo",
+      "kind": "PASSENGER RECEIPT",
+      "date": "2026-09-02",
+      "currency": "EUR",
+      "amount": "248.60",
+      "category": "Travel",
+      "items": [
+        [
+          "Demo route Paris - Lyon / flexible fare",
+          "205.00"
+        ],
+        [
+          "Airport and service charges",
+          "43.60"
+        ]
+      ],
+      "note": "Traveler: Alex Morgan / reference DEMO-AIR-026",
+      "style": "ticket"
+    },
+    {
+      "file": "04-veloria-rail.png",
+      "vendor": "Veloria Rail",
+      "kind": "RAIL TRAVEL RECEIPT",
+      "date": "2026-09-04",
+      "currency": "EUR",
+      "amount": "82.00",
+      "category": "Travel",
+      "items": [
+        [
+          "Lyon - Valence / 2 demo tickets",
+          "82.00"
+        ]
+      ],
+      "note": "Customer site transfer / reference DEMO-RAIL-041",
+      "style": "ticket"
+    },
+    {
+      "file": "05-rive-transfer.png",
+      "vendor": "Rive Transfer",
+      "kind": "TRANSFER RECEIPT",
+      "date": "2026-09-03",
+      "currency": "EUR",
+      "amount": "46.80",
+      "category": "Travel",
+      "items": [
+        [
+          "Demo station - customer site",
+          "38.00"
+        ],
+        [
+          "Evening service supplement",
+          "8.80"
+        ]
+      ],
+      "note": "Pickup 19:15 / travel time 28 min / distance 14 km",
+      "style": "till"
+    },
+    {
+      "file": "06-workbench-supply.png",
+      "vendor": "Workbench Supply",
+      "kind": "ITEMIZED RECEIPT",
+      "date": "2026-09-04",
+      "currency": "EUR",
+      "amount": "129.90",
+      "category": "Office Supplies",
+      "items": [
+        [
+          "USB-C demo adapter kit",
+          "59.90"
+        ],
+        [
+          "Workshop headset",
+          "70.00"
+        ]
+      ],
+      "note": "M-FR-26 / replacement equipment for site training",
+      "style": "invoice"
+    },
+    {
+      "file": "07-netscope-sandbox.png",
+      "vendor": "NetScope Sandbox",
+      "kind": "SUBSCRIPTION INVOICE",
+      "date": "2026-09-01",
+      "currency": "USD",
+      "amount": "49.00",
+      "category": "Software",
+      "items": [
+        [
+          "Team demo workspace / September",
+          "49.00"
+        ]
+      ],
+      "note": "Billing account DEMO-MERIDIAN / no real subscription",
+      "style": "invoice"
+    },
+    {
+      "file": "08-workbench-credit.png",
+      "vendor": "Workbench Supply",
+      "kind": "CREDIT NOTE / REFUND",
+      "date": "2026-09-05",
+      "currency": "EUR",
+      "amount": "-18.00",
+      "category": "Office Supplies",
+      "items": [
+        [
+          "Returned spare cable / original sale DEMO-080",
+          "-18.00"
+        ]
+      ],
+      "note": "Refund issued / reduces reimbursable expenses",
+      "style": "till"
+    },
+    {
+      "file": "09-maison-mistral.png",
+      "vendor": "Maison Mistral",
+      "kind": "DINNER RECEIPT",
+      "date": "2026-09-04",
+      "currency": "EUR",
+      "amount": "94.50",
+      "category": "Meals",
+      "items": [
+        [
+          "Seasonal plates / 2 guests",
+          "48.00"
+        ],
+        [
+          "Vegetarian main / 2 guests",
+          "36.00"
+        ],
+        [
+          "Coffee and water",
+          "10.50"
+        ]
+      ],
+      "note": "Alex Morgan + 3 fictional customer attendees",
+      "style": "till"
+    }
+  ],
+  "review_cases": [
+    {
+      "file": "01-unknown-dollar.png",
+      "vendor": "Harbor Kiosk",
+      "kind": "RECEIPT / REVIEW CASE",
+      "date": "2026-09-04",
+      "currency": null,
+      "amount": "24.00",
+      "display": "$24.00",
+      "category": "Meals",
+      "items": [
+        [
+          "Workshop refreshments",
+          "24.00"
+        ]
+      ],
+      "note": "Only a dollar sign is printed. Country not specified.",
+      "style": "till",
+      "reason": "Currency is ambiguous; do not assume USD"
+    },
+    {
+      "file": "02-ambiguous-separator.png",
+      "vendor": "Demo Equipment Desk",
+      "kind": "RECEIPT / REVIEW CASE",
+      "date": "2026-09-04",
+      "currency": "EUR",
+      "amount": null,
+      "display": "EUR 1,234",
+      "category": "Office Supplies",
+      "items": [
+        [
+          "Equipment rental - source amount ambiguous",
+          "1,234"
+        ]
+      ],
+      "note": "Separator intentionally ambiguous; do not normalize blindly.",
+      "style": "invoice",
+      "reason": "Amount 1,234 is ambiguous"
+    },
+    {
+      "file": "03-invalid-date.png",
+      "vendor": "Lanterne Cafe",
+      "kind": "RECEIPT / REVIEW CASE",
+      "date": "2026-02-30",
+      "currency": "EUR",
+      "amount": "18.50",
+      "category": "Meals",
+      "items": [
+        [
+          "Breakfast meeting",
+          "18.50"
+        ]
+      ],
+      "note": "The printed calendar date is intentionally invalid.",
+      "style": "till",
+      "reason": "Printed date does not exist"
+    }
+  ],
+  "note": "Ground truth, not measured OCR/model results. Keep outside folders ingested as receipts."
+}

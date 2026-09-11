@@ -9,6 +9,7 @@ import sys
 from pantherlake_ai_core import engine as engine_mod
 
 from . import pipeline
+from .types import totals_by_currency
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -83,7 +84,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[{ts}] LLM   {line.source_file}: SKIPPED ({line.error})")
         else:
             print(f"[{ts}] LLM   {line.source_file}: {line.vendor or '?'} -- {line.date or '?'} -- "
-                  f"${line.amount if line.amount is not None else '?'} -- {line.category}")
+                  f"{line.currency or 'Unknown currency'} {line.amount if line.amount is not None else '?'} -- {line.category}"
+                  + (f" -- NEEDS REVIEW: {'; '.join(line.review_reasons)}" if line.needs_review else ""))
 
     try:
         results = pipeline.run(
@@ -101,22 +103,17 @@ def main(argv: list[str] | None = None) -> int:
 
     with open(args.output, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["source_file", "vendor", "date", "amount", "category", "error"])
+        writer.writerow(["source_file", "vendor", "date", "amount", "currency", "category", "needs_review", "review_reasons", "error"])
         for line in results:
-            writer.writerow([line.source_file, line.vendor, line.date, line.amount, line.category, line.error or ""])
+            writer.writerow([line.source_file, line.vendor, line.date, line.amount, line.currency or "", line.category,
+                             line.needs_review, "; ".join(line.review_reasons), line.error or ""])
 
     ok = [r for r in results if r.error is None]
-    total_amount = sum(r.amount for r in ok if r.amount is not None)
-    print(f"\nWrote {args.output}: {len(results)} receipt(s), {len(ok)} structured cleanly, total ${total_amount:.2f}.")
-
-    by_category: dict[str, float] = {}
-    for r in ok:
-        if r.amount is not None:
-            by_category[r.category] = by_category.get(r.category, 0.0) + r.amount
-    if by_category:
-        print("By category:")
-        for category, amount in sorted(by_category.items(), key=lambda kv: -kv[1]):
-            print(f"  {category}: ${amount:.2f}")
+    print(f"\nWrote {args.output}: {len(results)} receipt(s), {len(ok)} structured, "
+          f"{sum(r.needs_review for r in results)} need review.")
+    print("Validated-field totals (verify against originals):")
+    for currency, amount in totals_by_currency(results).items():
+        print(f"  {currency}: {amount}")
 
     return 0
 

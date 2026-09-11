@@ -1,0 +1,18 @@
+diff --git a/meridian_demo/export_jobs.py b/meridian_demo/export_jobs.py
+--- a/meridian_demo/export_jobs.py
++++ b/meridian_demo/export_jobs.py
+@@ -1,7 +1,12 @@
+ # FICTIONAL DEMO CODE: a proposed change for review, not production code.
+ def export_jobs(db, current_user, request):
+-    jobs = db.jobs.filter(tenant_id=current_user.tenant_id)
+-    return csv_response(jobs.limit(500))
++    tenant_id = request.query.get("tenant_id", current_user.tenant_id)
++    jobs = db.jobs.filter(tenant_id=tenant_id)
++    if request.query.get("include_archived"):
++        jobs = jobs.include_archived()
++    rows = list(jobs)
++    logger.info("Exported jobs: %s", rows)
++    return csv_response(rows)
+ 
+ def csv_response(jobs):
+     return encode_csv(jobs)

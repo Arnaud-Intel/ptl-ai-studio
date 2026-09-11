@@ -1,5 +1,12 @@
 # smart-city-monitor
 
+**Accuracy status:** experimental new-track counts, not unique people/vehicles.
+Track loss can overcount. Frame-wide strongest-overlap matching now prevents a
+weaker early detection from stealing a stronger match, with a synthetic regression
+fixture. The historical ~2.3× live-feed overcount has not been reproduced or
+resolved on an annotated real clip yet; do not treat these counts as validated
+traffic statistics. The API snapshot includes `count_basis` and `accuracy_warning`.
+
 Counts pedestrians, bicycles, cars, motorcycles, buses, and trucks across
 one or more video feeds at once — a local file, a camera on your network,
 or a public live city camera — fully on-device. Each feed can be

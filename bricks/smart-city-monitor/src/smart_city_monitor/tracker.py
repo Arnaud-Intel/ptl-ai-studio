@@ -67,18 +67,23 @@ class Tracker:
             by_label.setdefault(track.label, []).append(track_id)
 
         results: list[TrackedDetection] = []
+        # Strongest pair first, across the entire frame. A lower-confidence
+        # overlap must not steal a track before its exact match is considered.
+        pairs = []
+        for index, det in enumerate(detections):
+            for track_id in by_label.get(det.label, []):
+                score = _iou(self._tracks[track_id].box, det.box)
+                if score >= _IOU_MATCH_THRESHOLD:
+                    pairs.append((-score, track_id, index))
+        matches: dict[int, int] = {}
         matched_track_ids: set[int] = set()
-        for det in detections:
-            candidates = by_label.get(det.label, [])
-            best_id, best_iou = None, 0.0
-            for track_id in candidates:
-                if track_id in matched_track_ids:
-                    continue
-                iou = _iou(self._tracks[track_id].box, det.box)
-                if iou > best_iou:
-                    best_id, best_iou = track_id, iou
-
-            if best_id is not None and best_iou >= _IOU_MATCH_THRESHOLD:
+        for _, track_id, index in sorted(pairs):
+            if index not in matches and track_id not in matched_track_ids:
+                matches[index] = track_id
+                matched_track_ids.add(track_id)
+        for index, det in enumerate(detections):
+            best_id = matches.get(index)
+            if best_id is not None:
                 track = self._tracks[best_id]
                 track.box = det.box
                 track.last_seen = now

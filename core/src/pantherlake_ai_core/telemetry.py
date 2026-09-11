@@ -55,17 +55,6 @@ foreach ($s in (Get-Counter -Counter '\GPU Engine(*)\Utilization Percentage').Co
 @{ samples = $samples } | ConvertTo-Json -Compress -Depth 4
 """
 
-# The NPU's human-readable name, split out of the poll and cached: walking
-# Win32_PnPEntity measured ~0.57s -- a fifth of every reading -- to return a
-# string that cannot change while the machine is running. GPU names come
-# from OpenVINO's FULL_DEVICE_NAME instead (see engine.list_gpu_devices),
-# which is more precise: it distinguishes an iGPU from a discrete GPU.
-_NPU_NAME_SCRIPT = r"""
-$ErrorActionPreference = 'SilentlyContinue'
-Get-CimInstance Win32_PnPEntity | Where-Object { $_.Name -match 'NPU|AI Boost' } | Select-Object -First 1 -ExpandProperty Name
-"""
-
-
 @dataclass
 class GpuReading:
     id: str  # e.g. "GPU.0" -- matches the id a brick's --compute-device takes
@@ -112,13 +101,13 @@ def _classify_luids(samples: dict[str, float]) -> tuple[list[GpuReading], str | 
     # {"compute"} silently lost the NPU gauge on the newer driver. The iGPU
     # also exposes a "neural" engine, so it is the full set that decides,
     # not the presence of any one type.
+    luid_to_device = {gd.luid: gd for gd in engine_mod.list_gpu_devices() if gd.luid}
     npu_luid = next(
-        (luid for luid, types in engine_types.items() if types <= _NPU_ENGINE_TYPES),
+        (luid for luid, types in engine_types.items() if types <= _NPU_ENGINE_TYPES and luid not in luid_to_device),
         None,
     )
     gpu_candidates = [luid for luid in engine_types if luid != npu_luid]
 
-    luid_to_device = {gd.luid: gd for gd in engine_mod.list_gpu_devices() if gd.luid}
     matched = [
         GpuReading(id=luid_to_device[luid].id, name=luid_to_device[luid].full_name, percent=_sum_for_luid(samples, luid))
         for luid in gpu_candidates
@@ -159,12 +148,16 @@ def _powershell(script: str) -> str | None:
 
 @functools.lru_cache(maxsize=1)
 def npu_name() -> str | None:
-    """The NPU's device name, looked up once per process -- it is fixed
-    hardware, and asking costs ~0.57s."""
-    if not _IS_WINDOWS:
+    """Name a verified OpenVINO NPU, never a substring of a peripheral name."""
+    devices = [d for d in engine_mod.list_openvino_devices() if d.upper().split('.')[0] == 'NPU']
+    if not devices:
         return None
-    out = _powershell(_NPU_NAME_SCRIPT)
-    return (out.strip() or None) if out else None
+    try:
+        from openvino import Core
+
+        return str(Core().get_property(devices[0], "FULL_DEVICE_NAME"))
+    except Exception:
+        return devices[0]  # A verified runtime device, never a substring of a USB device name.
 
 
 def read_cpu() -> float:
@@ -195,11 +188,12 @@ def read_devices() -> Utilization:
     samples = {k: float(v) for k, v in data["samples"].items()}
     gpus, npu_luid = _classify_luids(samples)
 
+    verified_npu = npu_name()
     return Utilization(
         available=True,
         gpus=gpus,
-        npu_percent=_sum_for_luid(samples, npu_luid),
-        npu_name=npu_name(),
+        npu_percent=_sum_for_luid(samples, npu_luid) if verified_npu else None,
+        npu_name=verified_npu,
     )
 
 
