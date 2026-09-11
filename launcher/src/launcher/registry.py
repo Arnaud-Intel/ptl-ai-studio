@@ -173,13 +173,12 @@ REGISTRY: list[Demo] = [
         id="expense-extract",
         name="Expense Report Extractor",
         category="Productivity",
-        tagline="Photograph a receipt, get a structured expense line -- no retyping.",
+        tagline="Extract receipts, review the fields, and export approved expenses.",
         description=(
-            "Runs OCR (the screen-ocr brick) and a local LLM (the doc-qa "
-            "brick) over a folder of receipt photos, pulling out vendor, "
-            "date, amount, and category into a CSV -- the two stages run "
-            "concurrently on two independently chosen devices (e.g. NPU "
-            "for OCR, GPU for structuring), not one after the other."
+            "Extract vendor, date, amount, currency and category from a folder of receipts. "
+            "Review each image beside editable fields, resolve possible duplicates, and "
+            "export approved expenses to CSV. Refunds reduce totals, currencies stay separate, "
+            "and your review is saved locally."
         ),
         engines=["portable", "openvino"],
         status="available",

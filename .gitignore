@@ -1,4 +1,6 @@
 .venv/
+logs/expense-review.json
+logs/expense-review.tmp
 .venv-ci/
 __pycache__/
 *.pyc

@@ -13,13 +13,14 @@ ambiguous amounts and amounts not found in the OCR text are flagged.
 
 Only lines passing these field checks contribute to totals, grouped by currency.
 These checks do not verify that the model selected the correct receipt total;
-compare results with the originals. Review flagged lines in the exported CSV;
-there is not yet an in-app correction/approval workflow.
+compare results with the originals. The launcher now provides an in-app
+correction and approval workspace; its totals include only human-approved rows.
 
 The CSV now includes `currency`, `needs_review` and `review_reasons`. WebSocket
 amounts are exact decimal **strings** (or null), and completion messages contain
 a `totals` object keyed by currency instead of a single `total`. CLI and UI use
-the same validation and aggregation. Update custom consumers of the old format.
+the same extraction validation. Launcher review/export adds explicit human
+approval after extraction. Update custom consumers of the old format.
 
 This is the workspace's first brick where **two heavy models genuinely
 run at the same time on two different pieces of silicon**, not one
@@ -147,3 +148,31 @@ something wrong with this brick's own pipeline code.
 - Results come back in completion order, not file order (a natural
   consequence of two threads racing) -- the CSV is written in whatever
   order `run()` returns, not alphabetical by filename.
+## Launcher review workflow
+
+Choose a sample or receipt folder and press **Start**. When extraction finishes
+(or is stopped), the review workspace shows each original receipt beside editable
+vendor, date, amount, currency and category fields. Original extraction and OCR
+text remain available in the disclosure below the editor.
+
+- **Save pending** keeps corrections without approving the expense.
+- **Approve & next** validates the fields, includes the receipt in currency-specific
+  totals, and advances to the next pending receipt. Refunds use negative amounts.
+- **Exclude** removes a receipt from totals and export; it can be reopened later.
+- Identical image bytes or matching vendor/date/amount/currency produce a possible
+  duplicate warning. Exclude the duplicate or record why it is a separate expense.
+  Newly introduced matches reopen prior approvals for review. This is a heuristic,
+  not a guarantee that every duplicate is detected.
+- **Export approved CSV** exports only approved records and their review notes.
+  Pending and excluded counts remain visible. Text cells are escaped against
+  spreadsheet formula interpretation; numeric refund amounts remain numeric.
+
+The latest batch, corrections and original extraction are saved atomically in
+`logs/expense-review.json` (ignored by Git), including local image paths and OCR
+text. Refreshes and launcher restarts retain the review; interrupted extraction
+is labeled accordingly. Source images stay in their original folder and must
+remain unchanged for preview, approval and export. Starting a new batch replaces
+the saved review after a browser confirmation; export before replacing it.
+This is a single-operator, single-batch workspace, not a multi-user approval system.
+The CLI retains its existing extraction CSV behavior; human approval applies to
+the launcher review/export flow.

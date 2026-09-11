@@ -998,6 +998,47 @@ class ExpenseExtractStartRequest(BaseModel):
     llm_compute_device: str | None = None
 
 
+class ExpenseReviewRequest(BaseModel):
+    batch_id: str
+    revision: int
+    fields: dict[str, str]
+    status: str
+    duplicate_note: str = ""
+
+
+@app.get("/api/expense-extract/review")
+def get_expense_review():
+    return expense_extract_runner.review.snapshot()
+
+
+@app.post("/api/expense-extract/review/{item_id}")
+def update_expense_review(item_id: str, req: ExpenseReviewRequest):
+    try:
+        return expense_extract_runner.review.update(item_id=item_id, **req.model_dump())
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/api/expense-extract/review/{batch_id}/{item_id}/image")
+def expense_review_image(batch_id: str, item_id: str):
+    try:
+        return FileResponse(expense_extract_runner.review.image(batch_id, item_id),
+                            headers={"Cache-Control": "no-store"})
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/api/expense-extract/review/{batch_id}/export")
+def export_expense_review(batch_id: str, revision: int):
+    try:
+        content = expense_extract_runner.review.export(batch_id, revision)
+        return Response(content, media_type="text/csv", headers={
+            "Content-Disposition": 'attachment; filename="reviewed-expenses.csv"',
+            "Cache-Control": "no-store"})
+    except Exception as exc:
+        return error_response(exc)
+
+
 @app.post("/api/expense-extract/start")
 async def start_expense_extract(req: ExpenseExtractStartRequest) -> JSONResponse:
     try:

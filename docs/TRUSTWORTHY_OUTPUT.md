@@ -57,3 +57,11 @@ revision, source frames/annotations and cold/warm state. Compare mask finiteness
 range and CPU numerical similarity, and count error per clip (initial target ≤10%
 for clips with at least 20 reference objects). Re-enable a device only after this
 evidence passes; do not remove the gate based solely on a successful compilation.
+## Expense review follow-up
+
+The launcher now adds a saved receipt review workspace after extraction: editable
+fields beside source images, pending/approved/excluded decisions, duplicate
+warnings, and approved-only CSV export. Review totals use decimal arithmetic and
+remain separated by currency. The original extraction is retained. This
+supersedes the earlier limitation that corrections required editing the CSV.
+See the expense brick README for persistence and single-batch limitations.

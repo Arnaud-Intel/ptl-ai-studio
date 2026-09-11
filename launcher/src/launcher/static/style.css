@@ -1329,3 +1329,24 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 .demo-asset:hover, .demo-asset:focus-visible { outline: 2px solid #63bab0; }
 .demo-asset img { width: 100%; height: 195px; object-fit: contain; background: #e9ece5; border-radius: 4px; }
 .demo-asset span { font-size: 12px; overflow-wrap: anywhere; }
+.expense-review { margin: 24px 0; padding: 22px; border: 1px solid #354654; border-radius: 14px; background: #101b25; }
+.expense-review h2 { margin-top: 0; }
+.expense-help { color: #b5c5d3; max-width: 85ch; }
+.expense-review-bar, .expense-review-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.expense-totals { color: #95e4cd; font-size: 1.1rem; }
+.expense-warning { padding: 12px; border-left: 3px solid #e5b66c; background: #342b1e; color: #ffe1b1; }
+.expense-review-layout { display: grid; grid-template-columns: minmax(140px, .65fr) minmax(220px, 1.2fr) minmax(260px, 1fr); gap: 20px; align-items: start; }
+.expense-receipt-list { display: grid; gap: 8px; max-height: 720px; overflow: auto; }
+.expense-receipt-list button { white-space: pre-line; text-align: left; overflow-wrap: anywhere; }
+.expense-receipt-list button.selected { border-color: #66d7ba; background: #183b39; }
+.expense-image-panel { min-width: 0; }
+.expense-image-panel a { color: #95e4cd; }
+.expense-review input[type="date"] { color-scheme: dark; background: #0d1117; color: #eee; border: 1px solid #354654; border-radius: 8px; padding: 10px 12px; width: 100%; font: inherit; }
+.expense-image-panel img { width: 100%; margin-top: 12px; border-radius: 6px; }
+.expense-review fieldset { padding: 0; border: 0; min-width: 0; display: grid; gap: 14px; }
+.expense-review textarea { min-height: 75px; width: 100%; }
+.expense-review pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; }
+.expense-review details { margin-top: 20px; }
+.expense-review [role="status"] { color: #ffe1b1; }
+@media (max-width: 1050px) { .expense-review-layout { grid-template-columns: 1fr 1fr; } .expense-receipt-list { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); max-height: 190px; } }
+@media (max-width: 650px) { .expense-review-layout { grid-template-columns: 1fr; } .expense-review { padding: 14px; } }

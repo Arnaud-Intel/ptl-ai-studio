@@ -296,7 +296,7 @@ function wireSamplePicker(pickerId, samples, fieldMap, onSelect = null) {
     details.className = "demo-sample-details";
     details.hidden = true;
     // Keep the run action above the gallery, even for the complete receipt pack.
-    (panel?.querySelector(".run-row") || panel?.querySelector(".controls") || picker).after(details);
+    (panel?.querySelector(".expense-review") || panel?.querySelector(".run-row") || panel?.querySelector(".controls") || picker).after(details);
   }
   picker.onchange = () => {
     const sample = (samples || []).find((s) => s.name === picker.value);
@@ -1033,10 +1033,12 @@ const PANELS = {
       if (anyGpu) el("expx-ocr-device").value = anyGpu;
       if (devices.includes("NPU")) el("expx-llm-device").value = "NPU";
       wireSamplePicker("expx-sample", data.samples, { "expx-folder": "folder" });
+      ExpenseReviewUI.refresh();
     },
     body() {
       const folder = el("expx-folder").value.trim();
       if (!folder) throw new Error("Enter a folder of receipt photos first.");
+      if (!ExpenseReviewUI.confirmNewBatch()) throw new Error("Current review kept. Export it before starting another batch.");
       rememberPath("expx-folder");
       return {
         folder,
@@ -1047,8 +1049,10 @@ const PANELS = {
       };
     },
     onStarted() {
+      ExpenseReviewUI.refresh(true);
       showPlaceholder(el("expx-transcript"), "Each receipt's vendor, date, amount, and category will appear here as it is structured.");
     },
+    onRunning() { ExpenseReviewUI.refresh(); },
     onMessage(message) {
       const box = el("expx-transcript");
       if (message.type === "ocr_progress") {
@@ -1064,8 +1068,8 @@ const PANELS = {
         }
       } else if (message.type === "done") {
         this.setRunning(false);
-        const totals = Object.entries(message.totals || {}).map(([currency, amount]) => `${currency} ${amount}`).join(" · ");
-        this.setStatus(`Done -- ${message.structured}/${message.count} structured; ${message.needs_review || 0} need review. Validated-field totals: ${totals || "none"}`, "live");
+        ExpenseReviewUI.refresh();
+        this.setStatus(`Extraction finished — review and approve receipts below.`, "live");
       }
     },
   }),
