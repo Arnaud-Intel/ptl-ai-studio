@@ -731,6 +731,27 @@ async function uploadFeedVideo(card, file) {
   }
 }
 
+// A <select>'s options grouped under an <optgroup> per item.group, after
+// whatever placeholder option it already leads with. The curated cameras
+// use it to separate YouTube from everything else -- which matters the day
+// YouTube refuses the whole network, and only the other section still works.
+function fillGroupedSelect(select, items, valueOf, labelOf) {
+  const placeholder = select.options[0] && select.options[0].value === "" ? select.options[0] : null;
+  const groups = new Map();
+  for (const item of items) {
+    const key = item.group || "Other";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
+  }
+  const sections = [...groups].map(([label, entries]) => {
+    const section = document.createElement("optgroup");
+    section.label = label;
+    for (const entry of entries) section.appendChild(option(valueOf(entry), labelOf(entry)));
+    return section;
+  });
+  select.replaceChildren(...(placeholder ? [placeholder] : []), ...sections);
+}
+
 function wireFeedCard(card) {
   const engine = card.querySelector(".feed-engine");
   const device = card.querySelector(".feed-device");
@@ -759,7 +780,7 @@ function wireFeedCard(card) {
   // belongs to the add-a-feed picker instead.
   const urlSample = card.querySelector(".feed-url-sample");
   const cameras = (feedDevicesData?.samples || []).filter((entry) => !entry.feeds.includes("\n"));
-  for (const camera of cameras) urlSample.appendChild(option(camera.feeds, `${camera.name} -- ${camera.description}`));
+  fillGroupedSelect(urlSample, cameras, (c) => c.feeds, (c) => `${c.name} -- ${c.description}`);
   urlSample.disabled = !cameras.length;
   urlSample.addEventListener("change", () => {
     if (urlSample.value) card.querySelector(".feed-url").value = urlSample.value;
@@ -1288,8 +1309,7 @@ const PANELS = {
       // two chips" arrives as two cards already pinned to their chips.
       const picker = el("smartcity-sample");
       const samples = data.samples || [];
-      while (picker.options.length > 1) picker.remove(1);
-      for (const sample of samples) picker.appendChild(option(sample.name, `${sample.name} -- ${sample.description}`));
+      fillGroupedSelect(picker, samples, (entry) => entry.name, (entry) => `${entry.name} -- ${entry.description}`);
       picker.disabled = !samples.length;
       picker.onchange = () => {
         const sample = samples.find((entry) => entry.name === picker.value);

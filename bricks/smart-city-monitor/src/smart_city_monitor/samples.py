@@ -24,6 +24,11 @@ class LiveFeed:
     name: str
     description: str
     url: str
+    # Which picker section it sits in. Not decoration: YouTube can refuse a
+    # whole network at once ("confirm you're not a bot", seen 2026-09-11 on
+    # every camera here), and when it does, the operator needs to see at a
+    # glance which cameras don't go through YouTube at all.
+    group: str = "YouTube"
 
 
 @dataclass
@@ -31,6 +36,7 @@ class Sample:
     name: str
     description: str
     feeds: str  # what goes in the feeds box: one source per line
+    group: str = "YouTube"
 
 
 SHINJUKU = LiveFeed(
@@ -75,6 +81,42 @@ TOKYO = LiveFeed(
     url="https://www.youtube.com/watch?v=6dp-bvQ7RWo",
 )
 
+# London traffic cameras from TfL's open-data JamCams ("Powered by TfL Open
+# Data"): no YouTube, no account, and daylight during European show hours.
+# Each is a ~10-second clip TfL replaces every few minutes, played once
+# per revision (video.stream_refreshing_clip) -- so the picture pauses between
+# clips instead of replaying one and counting the same cars again. At 352x288
+# they count vehicles well and people poorly -- TfL downsamples the footage for GDPR on purpose; measured per sampled frame on
+# 2026-09-11: Piccadilly/St James's 7.8 vehicles, Tower Bridge 6.1, Westminster
+# Bridge 4.6, Piccadilly Circus 1.5 vehicles and 1.5 people.
+_JAMCAM = "https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/{}.mp4"
+_JAMCAM_NOTE = "TfL JamCam: a 10-second clip refreshed every few minutes and downsampled by TfL for privacy, so it counts vehicles far better than people."
+
+PICCADILLY_ST_JAMES = LiveFeed(
+    name="Piccadilly / St James's St, London",
+    description=f"Buses and black cabs on Piccadilly. {_JAMCAM_NOTE}",
+    url=_JAMCAM.format("00001.06592"),
+    group="Other",
+)
+TOWER_BRIDGE = LiveFeed(
+    name="Tower Bridge approach, London",
+    description=f"Traffic queuing for Tower Bridge. {_JAMCAM_NOTE}",
+    url=_JAMCAM.format("00001.03500"),
+    group="Other",
+)
+WESTMINSTER_BRIDGE = LiveFeed(
+    name="Westminster Bridge, London",
+    description=f"The approach to Westminster Bridge. {_JAMCAM_NOTE}",
+    url=_JAMCAM.format("00001.04502"),
+    group="Other",
+)
+PICCADILLY_CIRCUS = LiveFeed(
+    name="Piccadilly Circus, London",
+    description=f"Iconic, but sparse at this resolution. {_JAMCAM_NOTE}",
+    url=_JAMCAM.format("00001.07450"),
+    group="Other",
+)
+
 LIVE_FEEDS: list[LiveFeed] = [
     SHINJUKU,
     SHIBUYA,
@@ -84,15 +126,25 @@ LIVE_FEEDS: list[LiveFeed] = [
     VENICE,
     AMSTERDAM,
     TOKYO,
+    PICCADILLY_ST_JAMES,
+    TOWER_BRIDGE,
+    WESTMINSTER_BRIDGE,
+    PICCADILLY_CIRCUS,
 ]
 
 SAMPLES: list[Sample] = [
-    Sample(name=f.name, description=f.description, feeds=f.url) for f in LIVE_FEEDS
+    Sample(name=f.name, description=f.description, feeds=f.url, group=f.group) for f in LIVE_FEEDS
 ] + [
     Sample(
         name="Two cities, two chips",
         description="Tokyo on the NPU and Melbourne on the GPU at once -- watch both gauges light up.",
         feeds=f"{SHINJUKU.url}|NPU\n{MELBOURNE.url}|GPU",
+    ),
+    Sample(
+        name="London, two chips",
+        description="Two TfL cameras at once, one on the NPU and one on the GPU -- works even when YouTube blocks the network.",
+        feeds=f"{PICCADILLY_ST_JAMES.url}|NPU\n{TOWER_BRIDGE.url}|GPU",
+        group="Other",
     ),
 ]
 

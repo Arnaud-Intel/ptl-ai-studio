@@ -37,10 +37,12 @@ an LLM a third time. What it adds on top:
   real minute of footage, not processing speed.
 - **Live stream input** ([`sources.py`](src/smart_city_monitor/sources.py)) —
   a feed can equally be an RTSP/HTTP/HLS URL, read as it arrives and
-  reopened if it drops, or a YouTube live page, resolved to its underlying
-  stream first. [`samples.py`](src/smart_city_monitor/samples.py) ships a
-  short list of public 24/7 city cameras so the demo has something real to
-  count without you sourcing footage.
+  reopened if it drops; a video-clip URL its publisher replaces in place,
+  played once per revision; or a YouTube live page, resolved to its
+  underlying stream first. [`samples.py`](src/smart_city_monitor/samples.py)
+  ships public city cameras in two sections — YouTube, and Other (London's
+  TfL JamCams) — so the demo has something real to count without you
+  sourcing footage. See **Where the live cameras come from** below.
 - **N feeds, each on its own engine, model and device**
   ([`pipeline.py`](src/smart_city_monitor/pipeline.py)) — one detector per
   distinct `(engine, device, model)` among the feeds, shared by every feed
@@ -83,6 +85,12 @@ live page:
 uv run smart-city-monitor --source "rtsp://camera.local/stream1" --engine openvino
 ```
 
+Monitor a London traffic camera (a TfL JamCam clip, played once per revision):
+
+```bash
+uv run smart-city-monitor --source "https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/00001.03500.mp4" --engine openvino
+```
+
 Monitor two feeds at once, each pinned to a different chip, with a live
 annotated window per feed:
 
@@ -98,7 +106,7 @@ Press `Ctrl+C` to stop.
 
 | Flag | Description |
 | --- | --- |
-| `--source SOURCE[\|DEVICE]` | A feed to monitor, repeatable for multiple feeds: a video file, a stream URL (RTSP/HTTP/HLS), or a YouTube live page. Optional `\|DEVICE` suffix pins that one feed to a specific device (e.g. `clip.mp4\|GPU.0`); omitted, it uses `--compute-device`. Required (at least one). |
+| `--source SOURCE[\|DEVICE]` | A feed to monitor, repeatable for multiple feeds: a video file, a stream URL (RTSP/HTTP/HLS), a video-clip URL, or a YouTube live page. Optional `\|DEVICE` suffix pins that one feed to a specific device (e.g. `clip.mp4\|GPU.0`); omitted, it uses `--compute-device`. Required (at least one). |
 | `--engine {portable,openvino}` | Default inference backend for the run. Default: `openvino` if installed and a device is available, otherwise `portable`. (The CLI applies it to every feed; the launcher UI sets one per feed.) |
 | `--compute-device NAME` | `openvino` engine only: default device for any `--source` without its own `\|DEVICE`. |
 | `--model-path PATH` | Use a local model file/dir instead of downloading the default. |
@@ -112,7 +120,12 @@ Press `Ctrl+C` to stop.
    A file goes through `pantherlake_ai_core.video.stream_video_file_frames`,
    paced to its own `CAP_PROP_FPS` and looping from frame 0 at EOF by
    default (so a short clip can stand in for a continuous camera). A URL
-   goes through `stream_live_frames`, which reads frames as they arrive and
+   to a whole video file served over HTTP — an `.mp4` a publisher
+   overwrites in place, like a TfL JamCam — goes through
+   `stream_refreshing_clip`: each revision plays once at its own frame
+   rate, then the reader waits for the file's ETag to change. A clip ends,
+   and replaying it would count the same objects again. Any other URL goes
+   through `stream_live_frames`, which reads frames as they arrive and
    reopens the stream if it drops rather than seeking backwards. A YouTube
    URL is resolved to its underlying HLS stream by `yt-dlp` first, and
    re-resolved on a reconnect, since those links expire.
@@ -125,8 +138,8 @@ Press `Ctrl+C` to stop.
    assigning a persistent id; an unmatched detection becomes a new track
    — the actual "count" event.
 4. **Count** — each new track increments that feed's per-class trailing-
-   60-second window and running total; the launcher/CLI read a combined
-   snapshot summed across every active feed, plus each feed's own numbers.
+   60-second window and running total; the launcher and CLI report each
+   feed's own numbers, and the snapshot still carries a combined total.
 
 Relevant classes (present in both engines' vocabularies with matching
 label strings — see `object-detection`'s own README for the COCO-91 vs
@@ -164,6 +177,38 @@ Its latency is also far less predictable (p10 11 ms, p90 32 ms) where the
 iGPU holds 6.5-7.6 ms. Pin a feed to it if you want to watch the dGPU
 gauge move; leave it on the iGPU if you want frames.
 
+## Where the live cameras come from
+
+The launcher's camera picker has two sections.
+
+**YouTube** — public 24/7 city cameras, resolved to their HLS stream with
+`yt-dlp`. YouTube can refuse a whole network at once with *"Sign in to
+confirm you're not a bot"*. On 2026-09-11 it did exactly that for every
+curated camera from this machine; neither the newest `yt-dlp` nor any of
+its alternative player clients got past it without a signed-in session.
+A feed that hits the wall now fails with a message that says so, instead
+of suggesting a `yt-dlp` upgrade that wouldn't help.
+
+**Other** — cameras that don't go through YouTube. Today these are four
+Transport for London JamCams, plus a "London, two chips" pair that keeps
+the dual-chip showcase working when YouTube is blocked. A JamCam is a
+~10-second clip TfL replaces every few minutes, so each revision is played
+once: one clip stays up long enough for ~30 replays, and replaying would
+count the same vehicles on every pass. Measured against the Tower Bridge
+camera: one 232-frame burst at 25.1 fps, then nothing until the clip
+changed. Between clips the picture holds its last frame and the
+per-minute counts decay. TfL deliberately downsamples the footage for GDPR,
+so these cameras count vehicles well and people poorly.
+
+JamCam footage is TfL open data — **Powered by TfL Open Data**. TfL staff
+have confirmed on TfL's developer forum that running vehicle detection and
+similar ML over the feeds is permitted, provided TfL is credited.
+
+Any other RTSP, HLS (`.m3u8`) or HTTP video-clip URL works in a feed's URL
+box too. California's Caltrans publishes around 1,300 public HLS freeway
+cameras, but in testing only about one camera in ten opened reliably, so
+none are curated.
+
 ## Notes / current limitations
 
 - **The tracker is a pragmatic heuristic, not real multi-object-tracking
@@ -188,7 +233,8 @@ gauge move; leave it on the iGPU if you want frames.
   down without notice, so a local file stays the option that always works.
   Reading a YouTube page needs `yt-dlp`, which is a declared dependency of
   this brick and occasionally needs upgrading when YouTube changes
-  (`uv sync --upgrade-package yt-dlp`).
+  (`uv sync --upgrade-package yt-dlp`) — though not when YouTube is
+  blocking the network outright; see **Where the live cameras come from**.
 - **A feed dropped onto the launcher UI is copied, not referenced.** A
   browser never tells a page where a dropped file actually lives, so the
   only way drag-and-drop can work at all is to send the bytes to the

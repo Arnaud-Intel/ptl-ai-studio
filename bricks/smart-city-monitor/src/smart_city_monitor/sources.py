@@ -1,6 +1,6 @@
 """Where a feed's frames come from.
 
-A feed is one of three things, and the difference matters to how it is
+A feed is one of four things, and the difference matters to how it is
 read, not to anything downstream -- so it is resolved here and the
 pipeline just asks for frames:
 
@@ -8,6 +8,8 @@ pipeline just asks for frames:
   short clip can stand in for a continuous camera;
 - a **live stream URL** (RTSP from a camera on your network, HTTP MJPEG,
   an HLS `.m3u8`), read as fast as it arrives and reopened if it drops;
+- a **clip URL** (an .mp4 over HTTP that is replaced in place, like a
+  TfL JamCam), played once per revision rather than replayed;
 - a **YouTube live URL**, which is a web page rather than a stream, so it
   is resolved to its underlying HLS URL first.
 
@@ -17,6 +19,7 @@ silicon. Nothing about the video is sent anywhere.
 """
 from __future__ import annotations
 
+import re
 import threading
 from pathlib import PureWindowsPath
 from urllib.parse import urlparse
@@ -45,6 +48,22 @@ def is_youtube(source: str) -> bool:
     return is_url(source) and urlparse(source).hostname in _YOUTUBE_HOSTS
 
 
+# A finite media file served over HTTP, as opposed to a stream playlist. TfL's
+# JamCams are the case in point: an .mp4 per camera, overwritten in place.
+_CLIP_EXTENSIONS = (".mp4", ".m4v", ".mov", ".webm", ".mkv", ".avi")
+
+
+def is_clip_url(source: str) -> bool:
+    """An http(s) URL to a whole video file -- which ends, and is replaced
+    rather than streamed -- not a live stream and not a YouTube page."""
+    parsed = urlparse(source)
+    return (
+        parsed.scheme in ("http", "https")
+        and not is_youtube(source)
+        and parsed.path.lower().endswith(_CLIP_EXTENSIONS)
+    )
+
+
 def display_name(source: str) -> str:
     """A short label for a feed, for the viewer's picker and the per-feed
     counts.
@@ -65,6 +84,32 @@ def display_name(source: str) -> str:
     return PureWindowsPath(source).name
 
 
+# YouTube's anti-bot wall, as yt-dlp words it. On 2026-09-11 it hit every
+# curated camera at once from this network: the newest yt-dlp didn't get past
+# it, and neither did any of its alternative player clients -- they either met
+# the same wall or came back with no video at all. So the usual "upgrade
+# yt-dlp" advice is wrong for this failure, and repeating it wastes the time
+# of whoever is standing in front of the demo.
+_BOT_CHECK_MARKERS = ("not a bot", "Sign in to confirm")
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _explain_youtube_failure(url: str, message: str) -> str:
+    """An operator-facing reason for a YouTube page that wouldn't resolve."""
+    message = _ANSI.sub("", message).strip()  # belt and braces with no_color
+    if any(marker in message for marker in _BOT_CHECK_MARKERS):
+        return (
+            f"YouTube is asking this network to sign in to prove it isn't a bot, so {url} "
+            "can't be opened right now. Updating yt-dlp won't help -- YouTube is blocking "
+            "the connection, the parser isn't out of date. Use a direct camera stream "
+            "(RTSP, or an HLS .m3u8 URL) or a local video file instead."
+        )
+    return (
+        f"Couldn't read the YouTube page for {url}: {message}. If this used to work, "
+        "YouTube has probably changed something -- try `uv sync --upgrade-package yt-dlp`."
+    )
+
+
 def _extract_formats(url: str) -> list[dict]:
     """Ask yt-dlp what streams sit behind a YouTube live page.
 
@@ -80,15 +125,14 @@ def _extract_formats(url: str) -> list[dict]:
             "dependencies (`uv sync`), or use a direct stream URL instead."
         ) from None
 
-    options = {"quiet": True, "no_warnings": True, "skip_download": True}
+    # no_color: yt-dlp colours its errors for a terminal, and those escape
+    # codes were landing verbatim in the UI's status line.
+    options = {"quiet": True, "no_warnings": True, "skip_download": True, "no_color": True}
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=False)
     except Exception as exc:
-        raise RuntimeError(
-            f"Couldn't read the YouTube page for {url}: {exc}. If this used to work, "
-            "YouTube has probably changed something -- try `uv sync --upgrade-package yt-dlp`."
-        ) from exc
+        raise RuntimeError(_explain_youtube_failure(url, str(exc))) from exc
     return info.get("formats", []) if info else []
 
 
@@ -114,6 +158,12 @@ def open_frames(source: str, *, loop: bool = True, stop_event: threading.Event |
     """Yield BGR frames from whatever kind of source this is."""
     if not is_url(source):
         yield from video.stream_video_file_frames(source, loop=loop, stop_event=stop_event)
+        return
+
+    if is_clip_url(source):
+        # Played once per revision -- replaying an unchanged clip would count
+        # the same objects again every pass. See video.stream_refreshing_clip.
+        yield from video.stream_refreshing_clip(source, stop_event=stop_event)
         return
 
     if not is_youtube(source):

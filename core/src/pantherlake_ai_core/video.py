@@ -252,3 +252,102 @@ def stream_live_frames(
             return
         if sleep_unless_stopped(stop_event, _RECONNECT_BACKOFF_SECONDS):
             return
+
+
+# A clip URL the publisher overwrites in place -- e.g. a traffic authority's
+# camera that posts a ten-second clip every few minutes. It is not a stream:
+# it ends. Replaying it until the next one lands would count the same cars on
+# every pass (measured on TfL's JamCams: one clip stays up ~5-7 minutes, so
+# ~30 replays of the same ten seconds). So each revision plays exactly once,
+# at its own frame rate, and then the reader waits for the resource to change.
+_CLIP_POLL_SECONDS = 15.0
+_CLIP_FALLBACK_WAIT = 300.0  # the server won't say whether it changed: wait a full refresh
+_CLIP_HEAD_TIMEOUT = 10.0
+_HTTP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0) PantherLakeAIStudio"
+
+
+def http_clip_version(url: str) -> str | None:
+    """What identifies this revision of a clip -- ETag, else Last-Modified,
+    else Content-Length, whichever the server offers. None if it won't say
+    (or can't be reached), which the caller treats as "unknown", never as
+    "changed"."""
+    import urllib.request
+
+    request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": _HTTP_USER_AGENT})
+    try:
+        with urllib.request.urlopen(request, timeout=_CLIP_HEAD_TIMEOUT) as response:
+            headers = response.headers
+            return headers.get("ETag") or headers.get("Last-Modified") or headers.get("Content-Length")
+    except Exception:
+        return None
+
+
+def _play_clip_once(url: str, stop_event: threading.Event | None = None):
+    """One pass over a clip URL, paced to its frame rate the same way
+    `stream_video_file_frames` paces a local file -- an HTTP clip decodes as
+    fast as the CPU allows otherwise, and ten seconds of footage would
+    flash past in one, taking "per minute" with it."""
+    import cv2
+
+    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+    if not cap.isOpened():
+        cap.release()
+        raise RuntimeError(f"Could not open clip: {url}")
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_interval = 1.0 / fps if fps and fps > 0 else 1.0 / _DEFAULT_FILE_FPS
+        next_frame_at = time.monotonic()
+        while stop_event is None or not stop_event.is_set():
+            ok, frame = cap.read()
+            if not ok:
+                return
+            now = time.monotonic()
+            if next_frame_at > now:
+                time.sleep(next_frame_at - now)
+            next_frame_at = max(next_frame_at, now) + frame_interval
+            yield frame
+    finally:
+        cap.release()
+
+
+def stream_refreshing_clip(
+    url: str,
+    *,
+    stop_event: threading.Event | None = None,
+    poll_seconds: float = _CLIP_POLL_SECONDS,
+    _version=http_clip_version,
+    _play=_play_clip_once,
+):
+    """Yield frames from a clip URL that is replaced in place, playing each
+    revision of it exactly once.
+
+    Between revisions nothing is yielded: the picture holds its last frame
+    and per-minute counts decay honestly, instead of climbing on a replay.
+    The first play is allowed to fail loudly (a bad URL should fail the
+    feed); a later one that fails is treated as a blip and retried at the
+    next poll, since the clip was demonstrably there a few minutes ago.
+    """
+    played = False
+    last_version: object = None  # what we last played; a sentinel if unknown
+    unknown = object()
+    while stop_event is None or not stop_event.is_set():
+        current = _version(url)
+        if played and current is not None and current == last_version:
+            if sleep_unless_stopped(stop_event, poll_seconds):
+                return
+            continue
+        if played and current is None:
+            # Can't tell whether it changed. Replaying on a hunch is the
+            # over-count this reader exists to prevent, so wait it out.
+            if sleep_unless_stopped(stop_event, _CLIP_FALLBACK_WAIT):
+                return
+        try:
+            yield from _play(url, stop_event)
+        except RuntimeError:
+            if not played:
+                raise
+            if sleep_unless_stopped(stop_event, poll_seconds):
+                return
+            continue
+        played = True
+        last_version = current if current is not None else unknown
