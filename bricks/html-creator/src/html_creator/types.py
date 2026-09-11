@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pantherlake_ai_core.types import GenerationStats
+
 
 @dataclass
 class HtmlResult:
@@ -12,3 +14,4 @@ class HtmlResult:
     source_truncated: bool
     fence_stripped: bool
     html_truncated: bool
+    stats: GenerationStats | None = None

@@ -466,15 +466,24 @@ body {
   white-space: nowrap;
 }
 
-.badge-dgpu {
-  border-color: var(--warning);
-  background: var(--warning-soft);
-  color: var(--warning);
+/* A large model's size and memory: a fact about the demo, not a warning. */
+.badge-model {
+  border-color: var(--accent-hover);
+  background: var(--accent-soft);
+  color: var(--text);
   font-weight: 600;
   cursor: help;
 }
 
 .badge-planned { color: var(--text-faint); }
+
+/* How fast a generated answer came, and on which chip (BACKLOG R20). */
+.gen-stats {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.gen-stats strong { color: var(--accent-hover); }
 
 /* --- Buttons ------------------------------------------------------------ */
 

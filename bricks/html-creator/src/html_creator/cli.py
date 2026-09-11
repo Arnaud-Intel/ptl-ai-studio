@@ -12,9 +12,9 @@ from .session import HtmlCreatorSession
 
 
 def _default_device(engine: engine_mod.Engine) -> str:
-    # This brick's default openvino model is a 30B coder that needs real
-    # VRAM: the discrete GPU when the machine has one, else AUTO -- never
-    # one dev machine's card id baked in as everyone's default.
+    # This brick's default openvino model is a 30B coder: the discrete GPU
+    # when the machine has one (faster), else the integrated GPU, which holds
+    # it in shared memory -- never one dev machine's card id baked in.
     if engine == engine_mod.Engine.OPENVINO:
         return engine_mod.preferred_large_model_device()
     return engine_mod.default_device(engine)

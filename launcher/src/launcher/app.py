@@ -122,8 +122,8 @@ def resolve(
     """Engine + device for a request, by the rule the CLIs use: `engine` if
     given (an unknown name is a ValueError, i.e. a 400), else the best
     available; `device` if given, else the engine's default -- or, for a
-    brick whose openvino model needs a discrete GPU's VRAM (`large_model`),
-    the machine's discrete GPU; or, for one running a small model on live
+    brick with a large openvino model (`large_model`), the machine's fastest
+    GPU, discrete if it has one, else integrated; or, for one running a small model on live
     video (`realtime_vision`), the iGPU, because AUTO is four times slower
     there for identical results."""
     resolved = resolve_engine(engine)
@@ -651,6 +651,7 @@ def _serialize_extraction(result) -> dict:
         "text": result.text,
         "translated_text": result.translated_text,
         "regions": [{"text": r.text, "confidence": r.confidence, "box": list(r.box)} for r in result.regions],
+        "stats": asdict(result.stats) if result.stats else None,
     }
 
 
@@ -1161,6 +1162,7 @@ async def code_review_assist_review(req: CodeReviewRequest) -> JSONResponse:
             "review_notes": result.review_notes,
             "diff_char_count": result.diff_char_count,
             "diff_truncated": result.diff_truncated,
+            "stats": asdict(result.stats) if result.stats else None,
         }
     )
 
@@ -1198,6 +1200,7 @@ async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
             "source_truncated": result.source_truncated,
             "fence_stripped": result.fence_stripped,
             "html_truncated": result.html_truncated,
+            "stats": asdict(result.stats) if result.stats else None,
         }
     )
 

@@ -7,9 +7,11 @@ import threading
 import time
 
 import pytest
+from code_review_assist.types import ReviewResult
 from fastapi.testclient import TestClient
 from object_detection import pipeline as object_detection_pipeline
 from pantherlake_ai_core.engine import Engine
+from pantherlake_ai_core.types import GenerationStats
 
 from launcher import app as launcher_app
 from launcher.errors import Conflict
@@ -78,7 +80,7 @@ def test_error_policy(exc, status):
 def test_demos_is_the_registry(client):
     demos = client.get("/api/demos").json()
     assert [d["id"] for d in demos] == [d.id for d in REGISTRY]
-    assert {"id", "name", "status", "devices", "samples", "requires_dgpu"} <= set(demos[0])
+    assert {"id", "name", "status", "devices", "samples", "large_model"} <= set(demos[0])
 
 
 def test_every_available_demo_has_a_devices_route(client):
@@ -310,3 +312,28 @@ def test_an_unknown_voice_model_is_a_400(client):
     res = client.post("/api/voice-clone-studio/enroll-record", json={"seconds": 1, "model": "bogus"})
     assert res.status_code == 400
     assert "bogus" in res.json()["error"]
+
+
+def test_large_model_badges_state_a_measured_fact():
+    """R20: no card claims a discrete GPU is required -- a large model says
+    what it takes instead, and where that was measured."""
+    badged = {d.id: d.large_model for d in REGISTRY if d.large_model}
+    assert {"code-review-assist", "html-creator", "screen-ocr"} <= set(badged)
+    for model in badged.values():
+        assert model.label and model.gpu_memory_gb > 0 and model.measured_on
+    assert not any(hasattr(d, "requires_dgpu") for d in REGISTRY)
+
+
+def test_code_review_reports_how_fast_the_answer_came(client, monkeypatch):
+    stats = GenerationStats(device="GPU.0", tokens=300, seconds=8.1, tokens_per_second=38.2, first_token_seconds=0.4)
+    monkeypatch.setattr(
+        launcher_app.code_review_assist_runner,
+        "review",
+        lambda **kwargs: ReviewResult("feat: x", "- none", 10, False, stats=stats),
+    )
+    body = client.post(
+        "/api/code-review-assist/review", json={"source": "diff_text", "diff_text": "x", "engine": "portable"}
+    ).json()
+    assert body["stats"] == {
+        "device": "GPU.0", "tokens": 300, "seconds": 8.1, "tokens_per_second": 38.2, "first_token_seconds": 0.4,
+    }

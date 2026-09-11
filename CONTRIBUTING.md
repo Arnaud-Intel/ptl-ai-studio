@@ -147,8 +147,9 @@ not just one.
    - `engine.resolve_engine(args.engine)` and `engine.default_device(engine)`
      for the `--engine` / `--compute-device` defaults. The launcher applies
      the same two, so "no choice" means the same thing in the UI and on the
-     command line. `preferred_large_model_device()` is only for a model that
-     genuinely needs a discrete GPU's VRAM (see code-review-assist).
+     command line. `preferred_large_model_device()` is for a model of tens
+     of GB (see code-review-assist): the discrete GPU when there is one,
+     else the integrated GPU, which holds such models in shared memory.
    - `engine.print_devices(mics=..., cameras=..., ...)` for `--list-devices`.
    - `model_cache.resolve_snapshot(repo_id, local_dir=args.model_path,
      on_downloading=...)` / `resolve_file(...)` to turn a Hub repo id (or the

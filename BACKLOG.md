@@ -61,11 +61,11 @@ The demos should make five claims visible:
 | Voice clone studio | C5 | The more faithful model, Chatterbox, is CPU-only |
 | Webcam effects | C5 | iGPU gated off after NaN masks (R03) |
 | Object detection | C5 | Detector licence (R17) |
-| Screen OCR | C3 (7B vision-language model) | Defaults to the discrete GPU (R20) |
+| Screen OCR | C3 (7B vision-language model, 6 GB on the iGPU) | -- |
 | Smart city | C1 (a chip per feed), C5 | Counts not yet trustworthy (R03); live feeds can vanish (R27) |
 | Document Q&A | C4 | Stale answers after documents change (R06) |
 | Expense extraction | C1 (two stages, two chips), C4 | -- |
-| Code review, HTML creator | C3 (30B model), C4 | Badged "discrete GPU" although the iGPU runs them (R20) |
+| Code review, HTML creator | C3 (30B model on the iGPU, ~40 tokens/s), C4 | Each loads its own copy of the model (R11) |
 | Screen memory | C1, C4 | Out of the pilot until retention lands (R08) |
 
 Missing altogether: nothing measures power, so **C2 has no proof** (R18);
@@ -94,8 +94,8 @@ nothing shows the local agents Intel's own launch pitches (R26).
 ## Now -- P1, in this order
 
 R17 comes first because later measurements depend on which models survive
-it; R20 and R18 next because each is small and gives a headline claim its
-first proof; then the fixes that stop a demo showing something wrong, and
+it; R18 next because it is small and gives the efficiency claim its first
+proof (R20, the other quick proof, is done); then the fixes that stop a demo showing something wrong, and
 the release gate.
 
 - [ ] **R17 · P1 · Settle model licences before measuring on the models.**
@@ -117,28 +117,6 @@ the release gate.
   second review: FLUX.1-schnell, gpt-oss-20b, Qwen3-30B-A3B and Qwen3-VL
   (Apache-2.0 on Intel's pre-converted cards) and LCM Dreamshaper v7 (MIT);
   SD 1.5 and SDXL are OpenRAIL, with use restrictions.
-
-- [ ] **R20 · P1 · Show the big models on the laptop's own GPU.** *Proves C3.*
-  Code review and HTML creator carry a "Discrete GPU" badge (`requires_dgpu`),
-  and they and screen OCR's 7B vision model default to the discrete GPU when
-  one is plugged in, else to `AUTO`. The B60 on this desk is external: on
-  stage the XPS 14 is alone, and the badge tells the audience the opposite of
-  the story. It is also not true -- the iGPU addresses about 36 GB.
-  **Evidence (2026-09-11):** Qwen3-Coder-30B-A3B int4, one 256-token coding
-  prompt: the iGPU loads it in 21.6 s, gives the first token in 0.39 s and
-  streams about 38 tokens/s; the B60 takes 31.7 s, 0.40 s, about 65 tokens/s.
-  The discrete card is faster, not required. Only ~3B of the 30B parameters
-  are active per token, which is why it streams this fast from shared memory
-  -- worth saying on stage.
-  **Done:** with no discrete GPU the large-model default is the iGPU, chosen
-  explicitly rather than left to `AUTO`; the badge becomes a measured memory
-  requirement, with "faster on a discrete GPU" only where measured; code
-  review, HTML creator and screen OCR each complete their sample on the XPS 14
-  alone; the panel shows tokens/s so the audience sees the number.
-  **Estimate:** 1 day. **Depends on:** none; re-measure if R17 swaps a model.
-  **Files:** `core/src/pantherlake_ai_core/engine.py`
-  (`preferred_large_model_device`), registry and badge, code-review-assist,
-  html-creator, screen-ocr. (filed 2026-09-11, backlog review)
 
 - [ ] **R18 · P1 · Measure power and show energy per result.** *Proves C2.*
   Nothing in the app measures power, so the efficiency story -- the reason an
@@ -384,6 +362,11 @@ the release gate.
   **Estimate:** 3–4 days. **Depends on:** R05, R10.
   **Files:** model-owning runners, shared lifecycle/capacity helpers.
   (filed 2026-09-10, architecture review; memory behavior requires measurement)
+  **Seen 2026-09-11:** code review and HTML creator each keep their own copy
+  of the same 30B model loaded, 17 GB apiece, so using both and then screen
+  OCR asks for about 40 GB against the ~36 GB the iGPU can address. It
+  worked in the R20 run, but one loaded model shared between bricks is the
+  first thing to fix here.
 
 - [ ] **R12 · P2 · Profile before optimizing video and screen history.**
   Covers the original smart-city throughput report. Instrument capture, infer,
@@ -509,7 +492,7 @@ the release gate.
 
 ## Done
 
-R01, R02 and R04 were implemented on 2026-09-10 (see the
+R20 landed on 2026-09-11. R01, R02 and R04 were implemented on 2026-09-10 (see the
 [validation notes](docs/TRUSTWORTHY_OUTPUT.md)); R01's hardware gate was
 verified on 2026-09-11. For R02, manual correction remains through the CSV;
 no in-app approval flow is claimed. R04 restores history without resurrecting
@@ -558,6 +541,39 @@ previously active workers.
   **Estimate:** 1–2 days. **Depends on:** none.
   **Files:** `launcher/src/launcher/events.py`, log API and viewer.
   (filed 2026-09-10, original report and code review)
+
+- [x] **R20 · P1 · Show the big models on the laptop's own GPU.** *Proves C3.*
+  Code review and HTML creator carry a "Discrete GPU" badge (`requires_dgpu`),
+  and they and screen OCR's 7B vision model default to the discrete GPU when
+  one is plugged in, else to `AUTO`. The B60 on this desk is external: on
+  stage the XPS 14 is alone, and the badge tells the audience the opposite of
+  the story. It is also not true -- the iGPU addresses about 36 GB.
+  **Evidence (2026-09-11):** Qwen3-Coder-30B-A3B int4, one 256-token coding
+  prompt: the iGPU loads it in 21.6 s, gives the first token in 0.39 s and
+  streams about 38 tokens/s; the B60 takes 31.7 s, 0.40 s, about 65 tokens/s.
+  The discrete card is faster, not required. Only ~3B of the 30B parameters
+  are active per token, which is why it streams this fast from shared memory
+  -- worth saying on stage.
+  **Done:** with no discrete GPU the large-model default is the iGPU, chosen
+  explicitly rather than left to `AUTO`; the badge becomes a measured memory
+  requirement, with "faster on a discrete GPU" only where measured; code
+  review, HTML creator and screen OCR each complete their sample on the XPS 14
+  alone; the panel shows tokens/s so the audience sees the number.
+  **Estimate:** 1 day. **Depends on:** none; re-measure if R17 swaps a model.
+  **Files:** `core/src/pantherlake_ai_core/engine.py`
+  (`preferred_large_model_device`), registry and badge, code-review-assist,
+  html-creator, screen-ocr. (filed 2026-09-11, backlog review)
+  **Done 2026-09-11:** large models default to the discrete GPU when there is
+  one, else to the integrated GPU by name, in core and in the UI, with tests;
+  the badge states the model and its measured memory ("30B model · 17 GB",
+  "7B vision model · 6 GB"), with the discrete-GPU comparison in its tooltip;
+  code review, HTML creator and screen OCR show tokens/s, token count and
+  first-token time under each answer, from OpenVINO's own metrics. Verified
+  through the launcher pinned to the iGPU (the B60 attached but unused):
+  code review 445 tokens at 44.4 tokens/s, first token 0.77 s; HTML creator
+  a complete 8.8 KB page, 2,175 tokens at 40.5 tokens/s; screen OCR read a
+  receipt correctly at 23.2 tokens/s. Memory once loaded: 16.9 GB (30B) and
+  5.9 GB (7B) of shared memory.
 
 ## Original reports
 

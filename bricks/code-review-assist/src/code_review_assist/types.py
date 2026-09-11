@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pantherlake_ai_core.types import GenerationStats
+
 
 @dataclass
 class ReviewResult:
@@ -10,3 +12,4 @@ class ReviewResult:
     review_notes: str
     diff_char_count: int
     diff_truncated: bool
+    stats: GenerationStats | None = None  # both answers together

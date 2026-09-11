@@ -124,4 +124,5 @@ class HtmlCreatorSession:
             source_truncated=truncated,
             fence_stripped=fence_stripped,
             html_truncated=not html.rstrip().lower().endswith("</html>"),
+            stats=self._llm.last_stats,
         )

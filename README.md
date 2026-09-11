@@ -88,7 +88,7 @@ it from disk after, running, or stopping -- instead of a static "please
 wait".
 
 **Leaving a demo doesn't stop it.** Start object detection on the iGPU, go
-back to the grid, open the code review assistant on the discrete GPU: the
+back to the grid, open live translation on the NPU: the
 "Now running" strip under the header keeps both in view wherever you are,
 each gauge names the demo driving it, and reopening a demo picks up exactly
 where it is -- the video reattaches, an index built five minutes ago is
@@ -145,10 +145,13 @@ vision-language model. Its NPU compile fails on this hardware, so the NPU
 is offered but disabled with the reason shown, rather than left to fail
 with a compiler error -- see [`screen-ocr`'s README](bricks/screen-ocr/README.md).
 
-‡ These two ask for a 30B-parameter coding model on the OpenVINO engine
-(~15 GB) -- too large for an iGPU's or NPU's memory budget, so that path
-wants a real **discrete** GPU with its own VRAM (flagged with an amber
-"Discrete GPU" tag in the launcher). The portable engine still runs
+‡ These two ask for a 30B-parameter coding model on the OpenVINO engine, a
+mixture of experts with ~3B parameters active per token. It takes about
+17 GB of GPU memory, which Panther Lake's integrated GPU draws from shared
+system memory: on the Dell XPS 14's Arc B390 it streams ~38 tokens/s, first
+token in under half a second (tagged "30B model · 17 GB" in the launcher).
+A discrete GPU is faster -- ~65 tokens/s on an Arc Pro B60 -- and is used
+when present, but it isn't needed. The portable engine still runs
 everywhere, with a much smaller model.
 
 ### The concurrency showcase

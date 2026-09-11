@@ -47,8 +47,10 @@ default, comfortably fits the B60's 24GB either way).
 The OpenVINO engine defaults to the machine's **discrete GPU** when it has
 one (`pantherlake_ai_core.engine.preferred_large_model_device()` -- on
 this dev machine that's `GPU.1`, the Arc B60 with 24GB VRAM; the model
-needs ~15GB, comfortable headroom), and to `AUTO` otherwise, like every
-other brick. Override with `--compute-device` (CLI) or the compute-device
+takes ~17GB once loaded), and to the **integrated GPU** otherwise, which
+holds it in shared system memory. Measured on the Dell XPS 14 on 2026-09-11:
+the Arc B390 streams ~38 tokens/s with the first token in under half a
+second, the B60 ~65 tokens/s -- faster, not required. Override with `--compute-device` (CLI) or the compute-device
 dropdown (launcher), which pre-selects the same card. The model isn't split across both
 GPUs: `openvino_genai.LLMPipeline` targets a single device string, and
 there's no good way to shard one model's weights across the

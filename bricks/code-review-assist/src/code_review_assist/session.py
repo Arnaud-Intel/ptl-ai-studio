@@ -15,6 +15,7 @@ from typing import Callable
 
 from doc_qa.engine_factory import create_llm
 from pantherlake_ai_core.engine import Engine
+from pantherlake_ai_core.types import combine_stats
 
 from . import diff
 from .types import ReviewResult
@@ -23,8 +24,8 @@ from .types import ReviewResult
 # a general-purpose small model is noticeably weaker at code review than at
 # document Q&A, but a large dense coding model would be slow token-by-token.
 # MoE gives large-model code knowledge at small-model decode cost. Verified
-# loadable via openvino_genai.LLMPipeline on this machine's Arc B60 -- see
-# README.md for the verification run and the dense fallback if a future
+# on the XPS 14's Arc B390 iGPU (16.9 GB of shared memory, ~38 tokens/s) and
+# on an Arc B60 dGPU -- see README.md for the runs and the dense fallback if a future
 # openvino_genai version regresses qwen3_moe support.
 _DEFAULT_OPENVINO_REPO = "OpenVINO/Qwen3-Coder-30B-A3B-Instruct-int4-ov"
 _DEFAULT_PORTABLE_REPO = "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"
@@ -88,10 +89,13 @@ class CodeReviewSession:
             on_ready()
 
         commit_message = self._llm.answer(_COMMIT_MESSAGE_SYSTEM_PROMPT, text, max_tokens=120).strip()
+        stats = [self._llm.last_stats]
         review_notes = self._llm.answer(_REVIEW_NOTES_SYSTEM_PROMPT, text, max_tokens=max_tokens).strip()
+        stats.append(self._llm.last_stats)
         return ReviewResult(
             commit_message=commit_message,
             review_notes=review_notes,
             diff_char_count=len(raw),
             diff_truncated=truncated,
+            stats=combine_stats([s for s in stats if s is not None]),
         )

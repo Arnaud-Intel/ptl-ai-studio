@@ -8,6 +8,35 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+@dataclass(frozen=True)
+class LargeModel:
+    """A model big enough to be worth a badge, described by what it takes
+    on the demo machine. It replaces a "Discrete GPU" badge that the
+    integrated GPU disproved (BACKLOG R20): the card now states a fact."""
+
+    label: str  # the badge, e.g. "30B model"
+    gpu_memory_gb: float  # GPU memory once loaded; an integrated GPU takes it from shared system memory
+    measured_on: str
+    # How a discrete GPU compared, when one was measured -- a measured
+    # claim about speed, never a requirement.
+    discrete_gpu: str | None = None
+
+
+_MEASURED_ON = "a Dell XPS 14 (Core Ultra X7 358H, Arc B390 iGPU) on 2026-09-11"
+_CODER_30B = LargeModel(
+    label="30B model",
+    gpu_memory_gb=17,
+    measured_on=_MEASURED_ON,
+    discrete_gpu="An Arc Pro B60 streams it faster, about 65 tokens/s against 38, but starts no sooner.",
+)
+_OCR_VLM_7B = LargeModel(
+    label="7B vision model",
+    gpu_memory_gb=6,
+    measured_on=_MEASURED_ON,
+    discrete_gpu="An Arc Pro B60 writes about 2.5 times faster (50 tokens/s against 20); the iGPU starts sooner.",
+)
+
+
 @dataclass
 class Demo:
     id: str
@@ -17,11 +46,10 @@ class Demo:
     description: str
     engines: list[str] = field(default_factory=list)
     status: str = "planned"  # "available" | "planned"
-    # True if the openvino engine's model is too large to fit an iGPU's or
-    # NPU's memory budget -- needs an actual discrete GPU with its own
-    # VRAM. Doesn't mean the demo itself can't run at all elsewhere: the
-    # portable engine still works everywhere with a much smaller model.
-    requires_dgpu: bool = False
+    # Set when the openvino engine's model is large enough to say so on the
+    # card -- with what it measurably takes, never a blanket "needs a
+    # discrete GPU" (see LargeModel).
+    large_model: LargeModel | None = None
     # What GET /api/<id>/devices enumerates from the machine for this demo's
     # controls, any of: "microphones", "speakers", "cameras", "screens",
     # "wake_words". Every available demo gets "openvino_devices" regardless.
@@ -132,6 +160,7 @@ REGISTRY: list[Demo] = [
         engines=["portable", "openvino"],
         status="available",
         devices=("cameras", "screens"),
+        large_model=_OCR_VLM_7B,
         samples="screen_ocr.samples",
     ),
     Demo(
@@ -212,7 +241,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
-        requires_dgpu=True,
+        large_model=_CODER_30B,
         samples="code_review_assist.samples",
     ),
     Demo(
@@ -230,7 +259,7 @@ REGISTRY: list[Demo] = [
         ),
         engines=["portable", "openvino"],
         status="available",
-        requires_dgpu=True,
+        large_model=_CODER_30B,
         samples="html_creator.samples",
     ),
     Demo(

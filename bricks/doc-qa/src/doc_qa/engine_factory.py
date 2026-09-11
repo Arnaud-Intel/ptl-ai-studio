@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Callable, Protocol
 
 from pantherlake_ai_core.engine import Engine
+from pantherlake_ai_core.types import GenerationStats
 
 
 class Embedder(Protocol):
@@ -14,6 +15,10 @@ class Embedder(Protocol):
 
 
 class LLM(Protocol):
+    # The last answer's speed (None before the first, or if unknown) --
+    # what the bricks composing this one show the audience.
+    last_stats: GenerationStats | None
+
     def answer(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str: ...
 
 

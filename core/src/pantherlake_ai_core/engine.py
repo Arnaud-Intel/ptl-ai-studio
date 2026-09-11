@@ -145,21 +145,32 @@ def resolve_engine(explicit: str | Engine | None = None) -> Engine:
 def default_device(engine: Engine | str) -> str:
     """Where a model goes when the user doesn't say: OpenVINO's "AUTO" (it
     picks the best device it has -- a GPU when present, else CPU) or the
-    portable engine's "cpu". A brick whose openvino model needs a discrete
-    GPU's VRAM should use preferred_large_model_device() for that case
-    instead of this."""
+    portable engine's "cpu". A brick with a large openvino model (tens of
+    GB) should use preferred_large_model_device() instead of this."""
     return "AUTO" if Engine(engine) == Engine.OPENVINO else "cpu"
 
 
 def preferred_large_model_device() -> str:
-    """The OpenVINO device to default a *large* model to (one that needs
-    its own VRAM, e.g. a 30B coding LLM): a discrete GPU if the machine has
-    one, otherwise "AUTO" -- so a brick never hardcodes one dev machine's
-    card id (GPU.1) as everyone's default. Empty/unknown GPU list -> "AUTO".
+    """The OpenVINO device to default a *large* model to (a 30B coding LLM,
+    a 7B vision model): the discrete GPU if the machine has one, since it
+    is faster, otherwise the integrated GPU -- named, not left to "AUTO".
+    No GPU at all -> "AUTO". Never one dev machine's card id (GPU.1) baked
+    in as everyone's default.
+
+    The iGPU is not a consolation prize. Measured on the Dell XPS 14
+    (2026-09-11): Qwen3-Coder-30B-A3B int4 takes 16.9 GB of the Arc B390's
+    shared memory and streams ~38 tokens/s, first token in under 0.4 s; an
+    Arc Pro B60 streams ~65 but starts no sooner. The Qwen2.5-VL-7B OCR
+    model takes 5.9 GB and writes 20 tokens/s on the iGPU against 50 on the
+    B60, while the iGPU reaches its first token sooner (2.0 s vs 2.5 s). A
+    discrete GPU is faster; it is not required.
     """
-    discrete = [g for g in list_gpu_devices() if "dGPU" in g.full_name]
+    gpus = list_gpu_devices()
+    discrete = [g for g in gpus if "dGPU" in g.full_name]
     if discrete:
         return discrete[-1].id
+    if gpus:
+        return gpus[0].id
     return "AUTO"
 
 

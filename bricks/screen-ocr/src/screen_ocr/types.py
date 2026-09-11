@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from pantherlake_ai_core.types import GenerationStats
+
 
 @dataclass
 class TextRegion:
@@ -16,3 +18,4 @@ class ExtractionResult:
     text: str
     regions: list[TextRegion] = field(default_factory=list)  # empty when the engine doesn't localize text (e.g. a VLM)
     translated_text: str | None = None
+    stats: GenerationStats | None = None  # the vision-language model's speed; None for dedicated OCR models

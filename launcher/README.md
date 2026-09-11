@@ -31,7 +31,8 @@ and `--no-browser` do what they say. Leave it running in a terminal;
 ## How the UI is put together
 
 - **Home** is the card grid: one card per brick (name, tagline, and only a
-  badge that actually distinguishes it -- "Discrete GPU" or "Coming soon").
+  badge that actually distinguishes it -- a large model's size and memory,
+  e.g. "30B model · 17 GB", or "Coming soon").
   A card whose brick is running or loading says so on the card.
 - **Opening a brick** (`#/brick/<id>`) swaps the grid for that brick's
   panel: its description, its controls, its output. Browser Back, Escape, or

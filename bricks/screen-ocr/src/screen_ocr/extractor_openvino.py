@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 from pantherlake_ai_core.engine import ov_config_for
 from pantherlake_ai_core.model_cache import resolve_snapshot
+from pantherlake_ai_core.types import GenerationStats
 
 # openvino itself is imported where it's used, not here: this brick's
 # `openvino` extra is optional, and importing this module must not require
@@ -47,17 +48,18 @@ def resolve_device(device: str) -> str:
     AUTO is the launcher's and the CLI's default device, which made the
     OpenVINO engine of this brick fail out of the box.
 
-    A GPU is preferred (the discrete one if the machine has both, matching
-    core.engine.preferred_large_model_device -- this is a 7B model), else
-    CPU. The NPU is never chosen automatically: this model's NPU compile
-    fails on this hardware, which is documented in this brick's README.
+    A GPU is preferred -- core.engine.preferred_large_model_device's pick:
+    the discrete one if the machine has one, else the integrated one, since
+    this 7B model's ~6 GB sit fine in an iGPU's shared memory -- else CPU.
+    The NPU is never chosen automatically: this model's NPU compile fails
+    on this hardware, which is documented in this brick's README.
     """
     if device.upper() != "AUTO":
         return device
-    from pantherlake_ai_core.engine import list_gpu_devices
+    from pantherlake_ai_core.engine import preferred_large_model_device
 
-    gpus = list_gpu_devices()
-    return gpus[-1].id if gpus else "CPU"
+    pick = preferred_large_model_device()
+    return "CPU" if pick == "AUTO" else pick
 
 
 class OpenVINOExtractor:
@@ -79,7 +81,8 @@ class OpenVINOExtractor:
         prompt = _TRANSLATE_PROMPT if translate else _EXTRACT_PROMPT
         result = self.pipeline.generate(prompt, images=[tensor], max_new_tokens=512)
         text = result.texts[0].strip()
+        stats = GenerationStats.from_openvino(result, self.device)
 
         if translate:
-            return ExtractionResult(text="", regions=[], translated_text=text)
-        return ExtractionResult(text=text, regions=[])
+            return ExtractionResult(text="", regions=[], translated_text=text, stats=stats)
+        return ExtractionResult(text=text, regions=[], stats=stats)

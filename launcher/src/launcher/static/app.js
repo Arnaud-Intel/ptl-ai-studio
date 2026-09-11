@@ -127,15 +127,16 @@ function deviceLabel(id) {
   return id;
 }
 
-// The OpenVINO device to default a *large* model to (one that needs its own
-// VRAM, e.g. a 30B coding LLM): the machine's discrete GPU if it has one and
-// it's among the brick's offered devices, else AUTO. Mirrors
+// The OpenVINO device to default a *large* model to (a 30B coding LLM, a 7B
+// vision model): the discrete GPU if the machine has one among the brick's
+// offered devices, since it's faster; otherwise the integrated GPU, which
+// holds these models in shared memory; AUTO only with no GPU at all. Mirrors
 // pantherlake_ai_core.engine.preferred_large_model_device().
 function preferredLargeModelDevice(openvinoDevices) {
-  const discrete = GPU_DEVICES.filter(
-    (g) => (g.full_name || "").includes("dGPU") && (openvinoDevices || []).includes(g.id),
-  );
-  return discrete.length ? discrete[discrete.length - 1].id : "AUTO";
+  const offered = GPU_DEVICES.filter((g) => (openvinoDevices || []).includes(g.id));
+  const discrete = offered.filter((g) => (g.full_name || "").includes("dGPU"));
+  if (discrete.length) return discrete[discrete.length - 1].id;
+  return offered.length ? offered[0].id : "AUTO";
 }
 
 // The device a live-video model should default to: the integrated GPU, not
@@ -149,6 +150,21 @@ function preferredRealtimeVisionDevice(openvinoDevices) {
   const integrated = available.filter((g) => !(g.full_name || "").includes("dGPU"));
   const pick = integrated[0] || available[0];
   return pick ? pick.id : "AUTO";
+}
+
+// One line under a generated answer: how fast it came and on which chip --
+// the number the audience is meant to see (BACKLOG R20). Empty without stats.
+function generationStatsHtml(stats) {
+  if (!stats) return "";
+  const where = shortGpuName(deviceLabel(stats.device));
+  const parts = [
+    `<strong>${stats.tokens_per_second.toFixed(1)} tokens/s</strong> on ${escapeHtml(where)}`,
+    `${stats.tokens} tokens in ${stats.seconds.toFixed(1)} s`,
+  ];
+  if (stats.first_token_seconds !== null && stats.first_token_seconds !== undefined) {
+    parts.push(`first token after ${stats.first_token_seconds.toFixed(2)} s`);
+  }
+  return `<p class="gen-stats">${parts.join(" · ")}</p>`;
 }
 
 // --- Control wiring ---------------------------------------------------------------
@@ -1606,7 +1622,7 @@ const PANELS = {
         html += '<p class="section-label">Detected regions</p>';
         html += data.regions.map((r) => statRow(r.text, `${Math.round(r.confidence * 100)}%`)).join("");
       }
-      container.innerHTML = html;
+      container.innerHTML = html + generationStatsHtml(data.stats);
     },
   }),
 
@@ -1829,7 +1845,7 @@ const PANELS = {
       }
       html += `<p class="section-label">Commit message</p><pre class="text-block">${escapeHtml(data.commit_message)}</pre>`;
       html += `<p class="section-label">Review notes</p><p class="text-block">${escapeHtml(data.review_notes)}</p>`;
-      el("cra-result").innerHTML = html;
+      el("cra-result").innerHTML = generationStatsHtml(data.stats) + html;
     },
   }),
 
@@ -1893,7 +1909,7 @@ const PANELS = {
     renderResult(data) {
       this.currentHtml = data.html;
       const container = el("htmlc-result");
-      container.innerHTML = "";
+      container.innerHTML = generationStatsHtml(data.stats);
       if (data.html_truncated) {
         container.insertAdjacentHTML("beforeend", '<p class="section-label">Output doesn\'t end with </html> -- it may have been cut off.</p>');
       }
@@ -1924,12 +1940,16 @@ const PANELS = {
 
 function renderBadges(container, demo) {
   container.innerHTML = "";
-  if (demo.requires_dgpu) {
+  if (demo.large_model) {
+    const model = demo.large_model;
     const badge = document.createElement("span");
-    badge.className = "badge badge-dgpu";
-    badge.textContent = "Discrete GPU";
+    badge.className = "badge badge-model";
+    badge.textContent = `${model.label} · ${model.gpu_memory_gb} GB`;
     badge.title =
-      "The OpenVINO engine's model here needs a real discrete GPU with its own VRAM -- too large for an iGPU's or NPU's memory budget. The portable engine still runs everywhere.";
+      `The OpenVINO engine runs a ${model.label} here. It takes about ${model.gpu_memory_gb} GB of GPU memory once loaded, ` +
+      "which an integrated GPU draws from shared system memory -- no discrete GPU needed. " +
+      (model.discrete_gpu ? `${model.discrete_gpu} ` : "") +
+      `Measured on ${model.measured_on}.`;
     container.appendChild(badge);
   }
   if (demo.status !== "available") {

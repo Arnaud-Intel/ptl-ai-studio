@@ -51,11 +51,12 @@ def test_default_device_per_engine():
     assert default_device("openvino") == "AUTO"
 
 
-def test_preferred_large_model_device_picks_the_discrete_gpu(monkeypatch):
+def test_preferred_large_model_device_picks_the_discrete_gpu_then_the_integrated_one(monkeypatch):
     monkeypatch.setattr(engine_mod, "list_gpu_devices", lambda: [IGPU, DGPU])
     assert preferred_large_model_device() == "GPU.1"
+    # The laptop on its own: the iGPU by name, not AUTO (BACKLOG R20).
     monkeypatch.setattr(engine_mod, "list_gpu_devices", lambda: [IGPU])
-    assert preferred_large_model_device() == "AUTO"
+    assert preferred_large_model_device() == "GPU.0"
     monkeypatch.setattr(engine_mod, "list_gpu_devices", lambda: [])
     assert preferred_large_model_device() == "AUTO"
 
