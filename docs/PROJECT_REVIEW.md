@@ -8,7 +8,7 @@ This is a compelling local AI demonstration suite with a sound reusable foundati
 
 The project is suitable for supervised demonstrations today. This review does **not** establish readiness for unattended capture, business-critical extraction, or network deployment. Those uses expose gaps in persistence, validation, resource limits, and access boundaries that matter less during a short single-operator demonstration.
 
-The [implementation backlog](../BACKLOG.md#implementation-roadmap--2026-09-10) sequences a proposed 12-week improvement cycle. No application behavior was changed during this review.
+The [implementation backlog](../BACKLOG.md) sequences the follow-up work (proposed as a 12-week cycle; reorganised into Now / Next / Later on 2026-09-11). No application behavior was changed during this review.
 
 ## Evidence and limits
 
