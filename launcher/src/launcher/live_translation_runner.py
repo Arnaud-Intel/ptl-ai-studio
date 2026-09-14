@@ -12,7 +12,7 @@ from live_translation import pipeline
 from pantherlake_ai_core.engine import Engine
 from pantherlake_ai_core.types import TranslationResult
 
-from . import activity, events, worker
+from . import activity, energy, events, worker
 
 _DEMO_ID = "live-translation"
 
@@ -44,11 +44,22 @@ class LiveTranslationRunner:
         self._stop_event = threading.Event()
         stop_event = self._stop_event
 
+        # Each line carries the energy spent since the previous one (or since
+        # the model was ready): listening, voice detection and translation
+        # together, above the idle baseline (BACKLOG R18).
+        window = [None]
+
         def on_result(result: TranslationResult) -> None:
-            asyncio.run_coroutine_threadsafe(queue.put({"type": "result", **asdict(result)}), loop)
+            message = {"type": "result", **asdict(result)}
+            now = energy.mark()
+            if window[0] is not None and now is not None:
+                message["energy"] = energy.between(window[0], now, _DEMO_ID)
+            window[0] = now
+            asyncio.run_coroutine_threadsafe(queue.put(message), loop)
 
         def on_ready() -> None:
             events.set_phase(_DEMO_ID, "running", "Listening and translating...")
+            window[0] = energy.mark()
 
         def on_downloading() -> None:
             events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine.value})...")

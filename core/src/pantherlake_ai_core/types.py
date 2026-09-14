@@ -23,6 +23,9 @@ class GenerationStats:
     seconds: float
     tokens_per_second: float
     first_token_seconds: float | None = None
+    # Filled in by the launcher, which owns the energy meter (BACKLOG R18):
+    # package joules over the answer and the part above the idle baseline.
+    energy: dict | None = None
 
     @classmethod
     def from_openvino(cls, result, device: str) -> GenerationStats | None:

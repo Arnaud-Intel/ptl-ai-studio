@@ -484,6 +484,16 @@ body {
   color: var(--text-dim);
 }
 .gen-stats strong { color: var(--accent-hover); }
+.gen-stats .energy { color: var(--text); cursor: help; }
+
+/* What one transcript line cost in energy (BACKLOG R18). */
+.line-energy {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--accent-hover);
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
 
 /* --- Buttons ------------------------------------------------------------ */
 

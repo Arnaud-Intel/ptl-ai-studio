@@ -69,13 +69,37 @@ function appendLine(container, className, content, { html = false } = {}) {
   container.scrollTop = container.scrollHeight;
 }
 
-function appendTimedLine(container, time, lang, text) {
+function appendTimedLine(container, time, lang, text, energy = null) {
+  // `energy`, when the runner measured it: what this line cost (BACKLOG R18).
+  const cost = energy
+    ? `<span class="line-energy" title="${escapeHtml(energyTitle(energy))}">${escapeHtml(energyText(energy))}</span>`
+    : "";
   appendLine(
     container,
     "line",
-    `<span class="line-time">${escapeHtml(time)}</span><span class="line-lang">(${escapeHtml((lang || "auto").toUpperCase())})</span>${escapeHtml(text)}`,
+    `<span class="line-time">${escapeHtml(time)}</span><span class="line-lang">(${escapeHtml((lang || "auto").toUpperCase())})</span>${escapeHtml(text)}${cost}`,
     { html: true },
   );
+}
+
+// What a result cost: joules above the idle baseline once the launcher has
+// learned one, else the processor package's total (BACKLOG R18).
+function energyText(energy) {
+  const above = energy.above_idle_joules !== null && energy.above_idle_joules !== undefined;
+  const joules = above ? energy.above_idle_joules : energy.joules;
+  const shown = joules >= 100 ? `${Math.round(joules)} J` : `${joules.toFixed(1)} J`;
+  return above ? `+${shown}` : shown;
+}
+
+function energyTitle(energy) {
+  let title = `Processor package energy over ${energy.seconds.toFixed(1)} s: ${energy.joules.toFixed(1)} J`;
+  title +=
+    energy.above_idle_joules !== null && energy.above_idle_joules !== undefined
+      ? `, ${energy.above_idle_joules.toFixed(1)} J of it above the idle baseline.`
+      : " (no idle baseline yet: it needs a few seconds with no demo running).";
+  const others = (energy.shared_with || []).map((id) => (demoById(id) || {}).name || id);
+  if (others.length) title += ` ${others.join(", ")} ran at the same time, so it isn't this demo's alone.`;
+  return title;
 }
 
 function statRow(label, value) {
@@ -163,6 +187,13 @@ function generationStatsHtml(stats) {
   ];
   if (stats.first_token_seconds !== null && stats.first_token_seconds !== undefined) {
     parts.push(`first token after ${stats.first_token_seconds.toFixed(2)} s`);
+  }
+  if (stats.energy) {
+    const above = stats.energy.above_idle_joules !== null && stats.energy.above_idle_joules !== undefined;
+    parts.push(
+      `<span class="energy" title="${escapeHtml(energyTitle(stats.energy))}">${escapeHtml(energyText(stats.energy))}` +
+        `${above ? " above idle" : " (processor package)"}</span>`,
+    );
   }
   return `<p class="gen-stats">${parts.join(" · ")}</p>`;
 }
@@ -952,7 +983,7 @@ const PANELS = {
     },
     onMessage(message) {
       if (message.type === "result") {
-        appendTimedLine(el("lt-transcript"), new Date().toLocaleTimeString(), message.detected_language, message.text);
+        appendTimedLine(el("lt-transcript"), new Date().toLocaleTimeString(), message.detected_language, message.text, message.energy);
       }
     },
   }),
@@ -2244,10 +2275,45 @@ function renderTelemetry(data) {
     gauge.classList.toggle("active-gauge", sharing.length > 0);
     gauge.classList.toggle("shared-gauge", sharing.length > 1);
   }
+  renderPower(data.power);
   renderDeviceSummary(data);
   // The chips' device labels come from this poll, not the status one --
   // refresh them now rather than up to 1.5s later.
   renderRunningStrip();
+}
+
+// Watts for the whole processor package, from its RAPL energy counters
+// (BACKLOG R18). Hidden -- never zero -- on a machine without them. The bar is
+// scaled to the chip's 80 W maximum turbo power; the note carries the number
+// that matters, how far above idle the running demos push it.
+const POWER_SCALE_W = 80;
+
+function renderPower(power) {
+  const gauge = document.querySelector('.telemetry-gauge[data-device="power"]');
+  if (!gauge) return;
+  gauge.hidden = !(power && power.available);
+  if (gauge.hidden) return;
+  const fmt = (w) => (w === null || w === undefined ? "?" : `${w.toFixed(1)} W`);
+  const hasIdle = power.idle_w !== null && power.idle_w !== undefined;
+  gauge.querySelector(".telemetry-gauge-value").textContent = fmt(power.package_w);
+  gauge.querySelector(".telemetry-bar-fill").style.width = `${Math.min((power.package_w / POWER_SCALE_W) * 100, 100)}%`;
+  const notes = [];
+  if (hasIdle) notes.push(`+${Math.max(power.package_w - power.idle_w, 0).toFixed(1)} W over idle`);
+  const battery = power.battery;
+  if (battery && !battery.plugged) notes.push(`on battery, ${battery.percent}%`);
+  gauge.querySelector(".telemetry-gauge-note").textContent = notes.join(" · ") || "processor package";
+  let title =
+    `Processor package ${fmt(power.package_w)}: CPU cores ${fmt(power.cores_w)}, graphics ${fmt(power.graphics_w)}, ` +
+    `rest of the chip ${fmt(power.rest_w)} (the NPU, memory controller and I/O -- the NPU has no rail of its own). ` +
+    `Memory ${fmt(power.memory_w)}.`;
+  title += hasIdle ? ` Idle baseline ${fmt(power.idle_w)}.` : " Idle baseline not learned yet.";
+  if (battery) {
+    title += battery.plugged
+      ? ` Battery ${battery.percent}%, plugged in.`
+      : ` Battery ${battery.percent}%` + (battery.seconds_left ? `, about ${Math.round(battery.seconds_left / 60)} min left.` : ".");
+  }
+  gauge.title = title;
+  gauge.classList.toggle("active-gauge", STATUS.active.length > 0);
 }
 
 let deviceSummaryDone = false;

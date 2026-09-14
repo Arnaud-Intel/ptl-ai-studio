@@ -336,4 +336,12 @@ def test_code_review_reports_how_fast_the_answer_came(client, monkeypatch):
     ).json()
     assert body["stats"] == {
         "device": "GPU.0", "tokens": 300, "seconds": 8.1, "tokens_per_second": 38.2, "first_token_seconds": 0.4,
+        "energy": None,
     }
+
+
+def test_telemetry_reports_power_or_says_it_cannot(client):
+    """R18: the dock's power gauge needs to know whether there is a reading
+    at all -- never a zero standing in for "no counters"."""
+    power = client.get("/api/telemetry").json()["power"]
+    assert "available" in power and "battery" in power

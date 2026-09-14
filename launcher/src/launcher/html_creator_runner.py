@@ -10,7 +10,7 @@ from html_creator.session import HtmlCreatorSession
 from html_creator.types import HtmlResult
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, events
+from . import activity, energy, events
 
 _DEMO_ID = "html-creator"
 
@@ -35,8 +35,13 @@ class HtmlCreatorRunner:
                     self._engine = engine
                     self._device = device
 
+                started = []
+
                 def on_ready() -> None:
                     events.set_phase(_DEMO_ID, "running", "Generating HTML...")
+                    # The answer's energy window opens here, once the model is
+                    # loaded: loading a 30B model isn't what an answer costs.
+                    started.append(energy.mark())
 
                 def on_downloading() -> None:
                     events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine})...")
@@ -49,6 +54,8 @@ class HtmlCreatorRunner:
                 except Exception as exc:
                     events.set_phase(_DEMO_ID, "error", str(exc))
                     raise
+                if result.stats is not None and started:
+                    result.stats.energy = energy.since(started[-1], _DEMO_ID)
                 events.clear_phase(_DEMO_ID)
                 return result
             finally:

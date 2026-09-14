@@ -252,7 +252,7 @@ expense_extract_runner = ExpenseExtractRunner()
 smart_recall_runner = SmartRecallRunner()
 code_review_assist_runner = CodeReviewAssistRunner()
 html_creator_runner = HtmlCreatorRunner()
-telemetry_poller = TelemetryPoller()
+telemetry_poller = TelemetryPoller(is_idle=lambda: not activity.snapshot())
 
 
 @app.exception_handler(RequestValidationError)
@@ -306,7 +306,7 @@ def api_version() -> JSONResponse:
 
 @app.get("/api/telemetry")
 def telemetry_snapshot() -> JSONResponse:
-    """CPU/GPU/NPU utilization (from the background poller's cache -- see
+    """CPU/GPU/NPU utilization and processor power (from the background poller's cache -- see
     telemetry_poller.py for why this isn't queried fresh per request),
     plus which demo (if any) is currently driving each device."""
     payload = telemetry_poller.snapshot()

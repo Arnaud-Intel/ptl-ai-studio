@@ -55,20 +55,21 @@ The demos should make five claims visible:
 
 | Demo | Proves today | What holds it back |
 | --- | --- | --- |
-| Live speech translation | C4, C5 | Its efficiency on the NPU is invisible (R18) |
+| Live speech translation | C2 (joules per line), C4, C5 | NPU against CPU isn't shown side by side (R19) |
 | Voice assistant | C4, C5 | -- |
 | Meeting notes | C1 (two bricks at once), C4 | -- |
 | Voice clone studio | C5 | The more faithful model, Chatterbox, is CPU-only |
 | Webcam effects | C5 | iGPU gated off after NaN masks (R03) |
 | Object detection | C5 | Detector licence (R17) |
-| Screen OCR | C3 (7B vision-language model, 6 GB on the iGPU) | -- |
+| Screen OCR | C2 (joules per read), C3 (7B vision-language model, 6 GB on the iGPU) | -- |
 | Smart city | C1 (a chip per feed), C5 | Counts not yet trustworthy (R03); live feeds can vanish (R27) |
 | Document Q&A | C4 | Stale answers after documents change (R06) |
 | Expense extraction | C1 (two stages, two chips), C4 | -- |
-| Code review, HTML creator | C3 (30B model on the iGPU, ~40 tokens/s), C4 | Each loads its own copy of the model (R11) |
+| Code review, HTML creator | C2 (joules per answer), C3 (30B model on the iGPU, ~40 tokens/s), C4 | Each loads its own copy of the model (R11) |
 | Screen memory | C1, C4 | Out of the pilot until retention lands (R08) |
 
-Missing altogether: nothing measures power, so **C2 has no proof** (R18);
+Still thin or missing: power is measured now, but only four demos report
+energy per result (R18);
 there is no generative visual demo, the thing most audiences read as "AI"
 (R22); showing C1 takes a dozen settings rather than one click (R21); and
 nothing shows the local agents Intel's own launch pitches (R26).
@@ -143,6 +144,18 @@ the release gate.
   **Estimate:** 2–3 days. **Depends on:** none.
   **Files:** `core/src/pantherlake_ai_core/telemetry.py`, telemetry poller,
   header, streaming panels. (filed 2026-09-11, backlog review)
+  **Status 2026-09-14, in progress:** in -- a Power gauge in the dock (package
+  watts once a second, rails and battery in its tooltip, hidden without
+  counters), and energy per result above an idle baseline learned while no
+  demo runs, on live translation's lines and on code review, HTML creator and
+  screen OCR answers. A counter read costs 0.06 ms in-process. Through the
+  launcher, screen OCR on the iGPU spent 386 J over 9 s, 223 J above idle.
+  The method and its limits are in the README. Still open: energy per result
+  for meeting notes, the voice assistant, document Q&A, expense extraction,
+  screen memory, voice cloning and the video demos (which first need a frame
+  count), and a drain rate on battery. Seen: a freshly started launcher learns
+  its baseline while the machine is still settling (18.6 W, against ~12 W
+  quiet), so its first results understate their above-idle cost.
 
 - [ ] **R10 · P1 · Make installation and model readiness predictable.**
   Add a preflight for Python/runtime, FFmpeg where needed, devices, disk space

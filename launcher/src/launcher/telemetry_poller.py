@@ -18,12 +18,21 @@ from __future__ import annotations
 
 import threading
 from dataclasses import asdict
+from typing import Callable
 
-from pantherlake_ai_core import telemetry
+from pantherlake_ai_core import power, telemetry
+
+from . import energy
 
 
 class TelemetryPoller:
-    def __init__(self, cpu_interval: float = 0.3, device_interval: float = 1.0):
+    def __init__(
+        self,
+        cpu_interval: float = 0.3,
+        device_interval: float = 1.0,
+        power_interval: float = 1.0,
+        is_idle: Callable[[], bool] = lambda: True,
+    ):
         # Both are the *gap between* readings, not the period: add ~0.1s for
         # CPU and 3.5-4.5s for devices to get the real cadence.
         #
@@ -40,6 +49,13 @@ class TelemetryPoller:
         # rate comes back. Cheap trade.
         self._cpu_interval = cpu_interval
         self._device_interval = device_interval
+        # Power is a third loop, and a free one: the energy counters are read
+        # in-process in well under a millisecond (pantherlake_ai_core.power).
+        # `is_idle` says when no demo is running, so a sample can feed the
+        # idle baseline energy-per-result is measured against.
+        self._power_interval = power_interval
+        self._is_idle = is_idle
+        self._power: dict = {"available": energy.meter.available, "battery": power.battery()}
         self._snapshot = telemetry.Utilization(available=False)
         self._lock = threading.Lock()
         self._threads: list[threading.Thread] = []
@@ -49,7 +65,7 @@ class TelemetryPoller:
         if self._threads:
             return
         self._stop_event.clear()
-        for target in (self._poll_cpu, self._poll_devices):
+        for target in (self._poll_cpu, self._poll_devices, self._poll_power):
             thread = threading.Thread(target=target, daemon=True)
             thread.start()
             self._threads.append(thread)
@@ -64,7 +80,7 @@ class TelemetryPoller:
 
     def snapshot(self) -> dict:
         with self._lock:
-            return asdict(self._snapshot)
+            return {**asdict(self._snapshot), "power": dict(self._power)}
 
     def _poll_cpu(self) -> None:
         while not self._stop_event.is_set():
@@ -89,3 +105,34 @@ class TelemetryPoller:
                 self._snapshot.npu_percent = reading.npu_percent
                 self._snapshot.npu_name = reading.npu_name
             self._stop_event.wait(self._device_interval)
+
+    def _poll_power(self) -> None:
+        """Watts per rail from the energy counters' deltas, once a second."""
+        previous = energy.meter.read()
+        while not self._stop_event.wait(self._power_interval):
+            current = energy.meter.read()
+            reading: dict = {"available": False, "battery": power.battery()}
+            watts = power.watts_between(previous, current) if previous and current else {}
+            if "package" in watts:
+                package = watts["package"]
+                if self._is_idle():
+                    energy.note_idle(package)
+                accounted = watts.get("cores", 0.0) + watts.get("graphics", 0.0)
+                reading.update(
+                    available=True,
+                    package_w=round(package, 2),
+                    cores_w=_rounded(watts.get("cores")),
+                    graphics_w=_rounded(watts.get("graphics")),
+                    memory_w=_rounded(watts.get("memory")),
+                    # The package minus the rails it has: the NPU is in here,
+                    # with the memory controller and I/O, having no rail of its own.
+                    rest_w=round(max(package - accounted, 0.0), 2),
+                    idle_w=_rounded(energy.idle_watts()),
+                )
+            previous = current
+            with self._lock:
+                self._power = reading
+
+
+def _rounded(value: float | None) -> float | None:
+    return round(value, 2) if value is not None else None

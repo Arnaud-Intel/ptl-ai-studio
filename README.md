@@ -154,6 +154,25 @@ A discrete GPU is faster -- ~65 tokens/s on an Arc Pro B60 -- and is used
 when present, but it isn't needed. The portable engine still runs
 everywhere, with a much smaller model.
 
+### Power and energy
+
+The dock's **Power** gauge is the processor package's power, read once a
+second from the chip's RAPL energy counters (Windows' "Energy Meter"
+performance counters) -- the whole package, with its CPU-core, graphics and
+memory rails in the tooltip. The NPU has no rail of its own, so its work
+shows only in the package total, as the "rest of the chip" the core and
+graphics rails don't cover.
+
+Answers and transcript lines carry what they cost: the package energy over
+the time they took, and the part of it above the idle baseline -- the median
+package power over the last two minutes in which no demo was running. Two
+limits are worth saying out loud. The baseline includes whatever else the
+laptop is doing, since "idle" means no demo, not a quiet machine. And package
+energy can't be split between demos running at the same time, so a result
+names the others that shared its window instead of claiming it alone. On a
+machine without the counters the gauge is hidden and results carry no
+energy line: no number beats a made-up one.
+
 ### The concurrency showcase
 
 `expense-extract` and `smart-recall` are the ones to watch: each runs OCR
