@@ -1066,19 +1066,6 @@ const PANELS = {
     transport: "ws",
     statusKey: "expense-extract:ocr",
     controls: ["expx-folder", "expx-sample", "expx-ocr-engine", "expx-ocr-device", "expx-llm-engine", "expx-llm-device"],
-    wireExtra() {
-      this.review = new ExpenseReview();
-    },
-    async rehydrate() {
-      await StreamPanel.prototype.rehydrate.call(this);
-      await this.review.refresh();
-      clearInterval(this.reviewTimer);
-      this.reviewTimer = setInterval(() => { if (this.review.data?.running) this.review.refresh(); }, 3000);
-    },
-    leave() {
-      clearInterval(this.reviewTimer);
-      StreamPanel.prototype.leave.call(this);
-    },
     populate(data) {
       attachRecents("expx-folder");
       wireEngineAndDevice(el("expx-ocr-engine"), el("expx-ocr-device"), data, { unsupported: OCR_MODEL_UNSUPPORTED });
@@ -1095,7 +1082,6 @@ const PANELS = {
       wireSamplePicker("expx-sample", data.samples, { "expx-folder": "folder" });
     },
     body() {
-      if (!this.review.canLeave()) throw new Error("Save your expense changes before starting a new batch.");
       const folder = el("expx-folder").value.trim();
       if (!folder) throw new Error("Enter a folder of receipt photos first.");
       rememberPath("expx-folder");
@@ -1107,9 +1093,7 @@ const PANELS = {
         llm_compute_device: el("expx-llm-device").value,
       };
     },
-    onStarted(data) {
-      this.review.selected = null;
-      this.review.refresh(data.report_id);
+    onStarted() {
       showPlaceholder(el("expx-transcript"), "Each receipt's vendor, date, amount, and category will appear here as it is structured.");
     },
     onMessage(message) {
@@ -1117,10 +1101,9 @@ const PANELS = {
       if (message.type === "ocr_progress") {
         appendLine(box, "line-note", `Reading receipt ${message.index}/${message.total}: ${message.file}`);
       } else if (message.type === "structured") {
-        this.review.refresh();
         const line = message.line;
         if (line.error) {
-          appendLine(box, "line-answer", `${line.source_file}: ready for manual completion (${line.error})`);
+          appendLine(box, "line-answer", `${line.source_file}: skipped (${line.error})`);
         } else {
           const amount = line.amount !== null && line.amount !== undefined ? `${line.currency || "Unknown currency"} ${line.amount}` : "Unknown amount";
           const review = line.needs_review ? ` -- Needs review: ${(line.review_reasons || []).join("; ")}` : " -- Fields validated; verify against receipt";
@@ -1128,8 +1111,8 @@ const PANELS = {
         }
       } else if (message.type === "done") {
         this.setRunning(false);
-        this.review.refresh();
-        this.setStatus(`Read ${message.count} receipts. Review and validate each expense below.`, "live");
+        const totals = Object.entries(message.totals || {}).map(([currency, amount]) => `${currency} ${amount}`).join(" · ");
+        this.setStatus(`Done -- ${message.structured}/${message.count} structured; ${message.needs_review || 0} need review. Validated-field totals: ${totals || "none"}`, "live");
       }
     },
   }),
@@ -1728,7 +1711,6 @@ const PANELS = {
     wireModelChoice() {
       const model = el("voice-model");
       const engine = el("voice-engine");
-      const availableEngines = new Set([...engine.options].filter((option) => !option.disabled).map((option) => option.value));
       const apply = () => {
         const info = this.modelInfo();
         el("voice-model-help").textContent = info.help;
@@ -1737,14 +1719,8 @@ const PANELS = {
         const oneEngine = info.engines.length === 1;
         el("voice-engine-field").hidden = oneEngine;
         el("voice-device-field").hidden = oneEngine;
-        for (const option of engine.options) {
-          option.disabled = !availableEngines.has(option.value) || !info.engines.includes(option.value);
-        }
-        if (!info.engines.includes(engine.value) || engine.selectedOptions[0]?.disabled) {
-          engine.value = [...engine.options].find((option) => !option.disabled)?.value || "";
-        }
-        // Programmatic engine selection must also rebuild the device list.
-        engine.dispatchEvent(new Event("change"));
+        if (oneEngine) engine.value = info.engines[0];
+        for (const option of engine.options) option.disabled = !info.engines.includes(option.value);
         el("voice-style-field").hidden = !info.styles;
         el("voice-tau-field").hidden = !info.styles;
         el("voice-tags-field").hidden = !info.tags.length;
