@@ -42,6 +42,17 @@ That opens `http://127.0.0.1:8765` in your browser. On Windows you can
 also just **double-click `start_launcher.bat`** -- same thing, in a window
 you can leave open and close to stop the server.
 
+**Staying up to date.** When the launcher starts it asks GitHub whether a
+newer version exists and, if one does, offers it once in a popup --
+*Upgrade now* or *Later* -- with what changed. The footer keeps an
+**Upgrade** button (or says this copy is up to date). Upgrading stops the
+launcher, pulls the new version (`git pull --ff-only`), runs `uv sync` with
+the extras you have installed, and starts it again in a new window; the page
+reloads by itself and says how it went (the full log is `logs/upgrade.log`).
+It won't try what it can't do cleanly -- local changes to tracked files,
+local commits, another branch, a copy that isn't a git checkout, or a demo
+still running -- and says which.
+
 Lost that window? **`stop_launcher.bat`** stops whatever is listening on
 8765 (pass a port to stop a copy elsewhere: `stop_launcher.bat 8766`).
 Worth knowing, because a running launcher keeps serving the code it

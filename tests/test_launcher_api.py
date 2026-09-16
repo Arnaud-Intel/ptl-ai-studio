@@ -345,3 +345,38 @@ def test_telemetry_reports_power_or_says_it_cannot(client):
     at all -- never a zero standing in for "no counters"."""
     power = client.get("/api/telemetry").json()["power"]
     assert "available" in power and "battery" in power
+
+
+def _available_update():
+    return launcher_app.updates.UpdateStatus(
+        local="0.2.45", latest="0.2.47", update_available=True, can_upgrade=True, checked_at=1.0
+    )
+
+
+def test_update_status_offers_the_prompt_once(client, monkeypatch):
+    monkeypatch.setattr(launcher_app.updates, "_status", _available_update())
+    monkeypatch.setattr(launcher_app.updates, "_prompt_pending", True)
+    monkeypatch.setattr(launcher_app.events, "status_snapshot", lambda: {})
+    body = client.get("/api/update").json()
+    assert (body["prompt"], body["latest"], body["running_demos"]) == (True, "0.2.47", [])
+    client.post("/api/update/prompted")
+    assert client.get("/api/update").json()["prompt"] is False
+
+
+def test_upgrade_is_refused_while_a_demo_runs(client, monkeypatch):
+    monkeypatch.setattr(launcher_app.updates, "refresh", _available_update)
+    monkeypatch.setattr(launcher_app.activity, "snapshot", lambda: [{"demo_id": "live-translation"}])
+    response = client.post("/api/update/upgrade")
+    assert response.status_code == 409 and "Live Speech Translation" in response.json()["error"]
+
+
+def test_upgrade_hands_off_to_the_helper(client, monkeypatch):
+    monkeypatch.setattr(launcher_app.updates, "refresh", _available_update)
+    monkeypatch.setattr(launcher_app.updates, "launcher_pids", lambda: [1])
+    monkeypatch.setattr(launcher_app.events, "status_snapshot", lambda: {})
+    monkeypatch.setattr(launcher_app, "_upgrade_requested", threading.Event())
+    spawned = []
+    monkeypatch.setattr(launcher_app.updates, "_spawn_detached", spawned.append)
+    response = client.post("/api/update/upgrade")
+    assert response.status_code == 202 and response.json()["to"] == "0.2.47"
+    assert len(spawned) == 1 and launcher_app._upgrade_requested.is_set()

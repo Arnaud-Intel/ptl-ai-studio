@@ -31,6 +31,7 @@ import shutil
 import socket
 import sys
 import tempfile
+import threading
 import uuid
 import webbrowser
 from contextlib import asynccontextmanager
@@ -54,12 +55,12 @@ from pantherlake_ai_core.engine import (
     preferred_realtime_vision_device,
     resolve_engine,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from smart_city_monitor import sources as smart_city_sources
 from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
 from voice_clone_studio import engine_factory as voice_clone_models
 
-from . import activity, events, registry
+from . import activity, events, registry, updates
 from . import demo_assets
 from pantherlake_ai_core.demo_samples import SAMPLE_ROOT
 from .code_review_assist_runner import CodeReviewAssistRunner
@@ -231,6 +232,7 @@ async def lifespan(app: FastAPI):
     app.state.expense_extract_queue = asyncio.Queue()
     app.state.smart_recall_queue = asyncio.Queue()
     telemetry_poller.start()
+    updates.check_in_background()
     yield
     telemetry_poller.stop()
 
@@ -1015,7 +1017,66 @@ async def start_expense_extract(req: ExpenseExtractStartRequest) -> JSONResponse
         )
     except Exception as exc:
         return error_response(exc)
-    return JSONResponse({"status": "started"})
+    return JSONResponse({"status": "started", "report_id": expense_extract_runner.report_id})
+
+
+@app.get("/api/expense-extract/report")
+def expense_report(report_id: str | None = None):
+    try:
+        report = expense_extract_runner.reports.snapshot(report_id)
+        return JSONResponse({**report, "running": expense_extract_runner.running,
+                             "active_report_id": expense_extract_runner.report_id})
+    except Exception as exc:
+        return error_response(exc)
+
+
+class ExpenseReviewRequest(BaseModel):
+    revision: int
+    vendor: str = ""
+    date: str = ""
+    amount: str = ""
+    currency: str = ""
+    category: str = "Other"
+    notes: str = ""
+    validate_expense: bool = Field(False, alias="validate")
+
+
+@app.put("/api/expense-extract/reports/{report_id}/expenses/{item_id}")
+def update_expense(report_id: str, item_id: str, req: ExpenseReviewRequest):
+    try:
+        return JSONResponse(expense_extract_runner.reports.update(
+            report_id, item_id, req.model_dump(), req.revision, req.validate_expense))
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/api/expense-extract/reports/{report_id}/expenses/{item_id}/receipt")
+def expense_receipt(report_id: str, item_id: str):
+    try:
+        from PIL import Image, ImageOps
+
+        # Convert TIFF/BMP as well as ordinary photos into a browser-readable preview.
+        path = expense_extract_runner.reports.receipt(report_id, item_id)
+        with Image.open(path) as receipt:
+            preview = ImageOps.exif_transpose(receipt).convert("RGB")
+            preview.thumbnail((1800, 2400))
+            buffer = io.BytesIO()
+            preview.save(buffer, format="JPEG")
+        return Response(buffer.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/api/expense-extract/reports/{report_id}/export.xlsx")
+def export_expense_report(report_id: str):
+    try:
+        if expense_extract_runner.running and expense_extract_runner.report_id == report_id:
+            raise Conflict("Wait for extraction to finish before exporting the whole report.")
+        return Response(expense_extract_runner.reports.export(report_id),
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        headers={"Content-Disposition": 'attachment; filename="expense-report.xlsx"'})
+    except Exception as exc:
+        return error_response(exc)
 
 
 @app.post("/api/expense-extract/stop")
@@ -1205,6 +1266,68 @@ async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
     )
 
 
+# --- updates ----------------------------------------------------------------------
+
+# What the launcher exits with when it stops to be upgraded, so
+# start_launcher.bat can tell that apart from a crash (see updates.py).
+UPGRADE_EXIT_CODE = 3
+_upgrade_requested = threading.Event()
+
+
+def _busy_demos() -> list[str]:
+    """Demos loading or running right now, by name: upgrading restarts the
+    launcher and would cut them off."""
+    names = {demo.id: demo.name for demo in registry.REGISTRY}
+    ids = {entry["demo_id"] for entry in activity.snapshot()}
+    ids |= {
+        key.split(":")[0]
+        for key, state in events.status_snapshot().items()
+        if state.get("phase") in ("loading", "running")
+    }
+    return sorted(names.get(demo_id, demo_id) for demo_id in ids)
+
+
+@app.get("/api/update")
+def update_status() -> JSONResponse:
+    """Whether GitHub has a newer version, whether this copy can upgrade
+    itself, and whether the page should still offer the one-time prompt."""
+    return JSONResponse({**updates.snapshot(), "running_demos": _busy_demos()})
+
+
+@app.post("/api/update/check")
+async def update_check() -> JSONResponse:
+    await run_in_threadpool(updates.refresh)
+    return update_status()
+
+
+@app.post("/api/update/prompted")
+def update_prompted() -> JSONResponse:
+    updates.mark_prompted()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/update/upgrade")
+async def update_upgrade() -> JSONResponse:
+    host, port = getattr(app.state, "bind", ("127.0.0.1", 8765))
+    try:
+        started = await run_in_threadpool(updates.start_upgrade, host=host, port=port, busy=_busy_demos())
+    except Exception as exc:
+        return error_response(exc)
+    _upgrade_requested.set()
+    server = getattr(app.state, "server", None)
+    if server is not None:
+        # A moment's grace so this response reaches the page before the server
+        # stops; the helper waits for the process to be gone before it works.
+        threading.Timer(1.0, lambda: setattr(server, "should_exit", True)).start()
+    return JSONResponse(started, status_code=202)
+
+
+@app.get("/api/update/last")
+def update_last() -> JSONResponse:
+    """What the helper recorded about the most recent upgrade, or null."""
+    return JSONResponse(updates.last_result())
+
+
 # --- entry point --------------------------------------------------------------------
 
 
@@ -1246,7 +1369,15 @@ def main() -> None:
     if not args.no_browser:
         browse_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
         webbrowser.open(f"http://{browse_host}:{args.port}")
-    uvicorn.run(app, host=args.host, port=args.port)
+    server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, timeout_graceful_shutdown=5))
+    # Where the upgrade route can reach it: an upgrade stops this server
+    # gracefully, lifespan shutdown included, rather than killing the process.
+    app.state.server = server
+    app.state.bind = (args.host, args.port)
+    server.run()
+    if _upgrade_requested.is_set():
+        print("Upgrading: the new version starts in a new window once it's installed. This one can be closed.")
+        raise SystemExit(UPGRADE_EXIT_CODE)
 
 
 if __name__ == "__main__":

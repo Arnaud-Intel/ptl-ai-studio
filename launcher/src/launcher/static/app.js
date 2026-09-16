@@ -1066,6 +1066,19 @@ const PANELS = {
     transport: "ws",
     statusKey: "expense-extract:ocr",
     controls: ["expx-folder", "expx-sample", "expx-ocr-engine", "expx-ocr-device", "expx-llm-engine", "expx-llm-device"],
+    wireExtra() {
+      this.review = new ExpenseReview();
+    },
+    async rehydrate() {
+      await StreamPanel.prototype.rehydrate.call(this);
+      await this.review.refresh();
+      clearInterval(this.reviewTimer);
+      this.reviewTimer = setInterval(() => { if (this.review.data?.running) this.review.refresh(); }, 3000);
+    },
+    leave() {
+      clearInterval(this.reviewTimer);
+      StreamPanel.prototype.leave.call(this);
+    },
     populate(data) {
       attachRecents("expx-folder");
       wireEngineAndDevice(el("expx-ocr-engine"), el("expx-ocr-device"), data, { unsupported: OCR_MODEL_UNSUPPORTED });
@@ -1082,6 +1095,7 @@ const PANELS = {
       wireSamplePicker("expx-sample", data.samples, { "expx-folder": "folder" });
     },
     body() {
+      if (!this.review.canLeave()) throw new Error("Save your expense changes before starting a new batch.");
       const folder = el("expx-folder").value.trim();
       if (!folder) throw new Error("Enter a folder of receipt photos first.");
       rememberPath("expx-folder");
@@ -1093,7 +1107,9 @@ const PANELS = {
         llm_compute_device: el("expx-llm-device").value,
       };
     },
-    onStarted() {
+    onStarted(data) {
+      this.review.selected = null;
+      this.review.refresh(data.report_id);
       showPlaceholder(el("expx-transcript"), "Each receipt's vendor, date, amount, and category will appear here as it is structured.");
     },
     onMessage(message) {
@@ -1101,9 +1117,10 @@ const PANELS = {
       if (message.type === "ocr_progress") {
         appendLine(box, "line-note", `Reading receipt ${message.index}/${message.total}: ${message.file}`);
       } else if (message.type === "structured") {
+        this.review.refresh();
         const line = message.line;
         if (line.error) {
-          appendLine(box, "line-answer", `${line.source_file}: skipped (${line.error})`);
+          appendLine(box, "line-answer", `${line.source_file}: ready for manual completion (${line.error})`);
         } else {
           const amount = line.amount !== null && line.amount !== undefined ? `${line.currency || "Unknown currency"} ${line.amount}` : "Unknown amount";
           const review = line.needs_review ? ` -- Needs review: ${(line.review_reasons || []).join("; ")}` : " -- Fields validated; verify against receipt";
@@ -1111,8 +1128,8 @@ const PANELS = {
         }
       } else if (message.type === "done") {
         this.setRunning(false);
-        const totals = Object.entries(message.totals || {}).map(([currency, amount]) => `${currency} ${amount}`).join(" · ");
-        this.setStatus(`Done -- ${message.structured}/${message.count} structured; ${message.needs_review || 0} need review. Validated-field totals: ${totals || "none"}`, "live");
+        this.review.refresh();
+        this.setStatus(`Read ${message.count} receipts. Review and validate each expense below.`, "live");
       }
     },
   }),
@@ -1711,6 +1728,7 @@ const PANELS = {
     wireModelChoice() {
       const model = el("voice-model");
       const engine = el("voice-engine");
+      const availableEngines = new Set([...engine.options].filter((option) => !option.disabled).map((option) => option.value));
       const apply = () => {
         const info = this.modelInfo();
         el("voice-model-help").textContent = info.help;
@@ -1719,8 +1737,14 @@ const PANELS = {
         const oneEngine = info.engines.length === 1;
         el("voice-engine-field").hidden = oneEngine;
         el("voice-device-field").hidden = oneEngine;
-        if (oneEngine) engine.value = info.engines[0];
-        for (const option of engine.options) option.disabled = !info.engines.includes(option.value);
+        for (const option of engine.options) {
+          option.disabled = !availableEngines.has(option.value) || !info.engines.includes(option.value);
+        }
+        if (!info.engines.includes(engine.value) || engine.selectedOptions[0]?.disabled) {
+          engine.value = [...engine.options].find((option) => !option.disabled)?.value || "";
+        }
+        // Programmatic engine selection must also rebuild the device list.
+        engine.dispatchEvent(new Event("change"));
         el("voice-style-field").hidden = !info.styles;
         el("voice-tau-field").hidden = !info.styles;
         el("voice-tags-field").hidden = !info.tags.length;
@@ -2398,6 +2422,204 @@ function closeLogViewer() {
   el("log-open").focus();
 }
 
+// --- Updates ----------------------------------------------------------------------
+// The launcher asks GitHub (through git) whether a newer version exists as it
+// starts. The page offers it once per launcher start -- the server remembers,
+// so a reload doesn't ask again -- and the footer keeps an Upgrade button.
+// Upgrading hands off to a helper that stops the launcher, pulls, updates the
+// dependencies and starts it again; this page waits for that, then reloads.
+
+let UPDATE = null;
+let upgrading = false;
+
+const waitMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function loadUpdateStatus({ prompt = false } = {}) {
+  // The check is a git fetch started with the launcher: wait for its answer
+  // rather than saying "up to date" before there is one.
+  for (let attempt = 0; attempt < 45; attempt++) {
+    try {
+      UPDATE = await fetchJSON("/api/update");
+    } catch {
+      return;
+    }
+    if (UPDATE.checked_at && !UPDATE.checking) break;
+    await waitMs(1000);
+  }
+  renderUpdateFooter();
+  if (prompt && UPDATE.prompt) {
+    openUpdateModal();
+    postJSON("/api/update/prompted", {}).catch(() => {});
+  }
+}
+
+function renderUpdateFooter() {
+  const state = el("update-state");
+  const button = el("update-open");
+  if (!UPDATE || !UPDATE.checked_at) {
+    state.hidden = true;
+    button.hidden = true;
+    return;
+  }
+  button.hidden = !UPDATE.update_available;
+  state.hidden = UPDATE.update_available;
+  if (UPDATE.update_available) {
+    button.textContent = `Upgrade to v${UPDATE.latest}`;
+    button.title = UPDATE.can_upgrade ? "Install the new version and restart the launcher" : UPDATE.blocked_reason || "";
+  } else if (UPDATE.error) {
+    state.textContent = "Couldn't check for updates -- retry";
+    state.title = UPDATE.error;
+  } else {
+    state.textContent = "Up to date -- check again";
+    state.title = `Checked against GitHub at ${new Date(UPDATE.checked_at * 1000).toLocaleTimeString()}`;
+  }
+}
+
+async function recheckForUpdates() {
+  const state = el("update-state");
+  state.textContent = "Checking GitHub…";
+  try {
+    UPDATE = await postJSON("/api/update/check", {});
+  } catch (err) {
+    state.textContent = "Couldn't check for updates -- retry";
+    state.title = err.message;
+    return;
+  }
+  renderUpdateFooter();
+}
+
+async function openUpdateFromFooter() {
+  try {
+    // Fresh: which demos are running decides whether Upgrade now is allowed.
+    UPDATE = await fetchJSON("/api/update");
+  } catch {
+    // Fall back to what the footer already knew.
+  }
+  openUpdateModal();
+}
+
+function setUpdateNotice(text, { link = false } = {}) {
+  const notice = el("update-notice");
+  notice.hidden = !text;
+  notice.innerHTML = text
+    ? escapeHtml(text) + (link ? ` <a href="${escapeHtml(UPDATE.repo_url)}" target="_blank" rel="noopener">Open on GitHub</a>` : "")
+    : "";
+}
+
+function setUpgradeProgress(text) {
+  el("update-progress").hidden = !text;
+  el("update-progress-text").textContent = text || "";
+}
+
+function openUpdateModal() {
+  if (!UPDATE || !UPDATE.update_available) return;
+  el("update-modal-title").textContent = "Update available";
+  el("update-summary").textContent = `Panther Lake AI Studio v${UPDATE.latest} is available -- this copy runs v${UPDATE.local}.`;
+  const changes = UPDATE.changes || [];
+  el("update-changes").innerHTML = changes.length
+    ? '<p class="section-label">What\'s new</p><ul class="update-change-list">' +
+      changes.slice(0, 12).map((change) => `<li>${escapeHtml(change)}</li>`).join("") +
+      "</ul>" +
+      (changes.length > 12 ? `<p class="modal-note">…and ${changes.length - 12} more.</p>` : "")
+    : "";
+  const running = UPDATE.running_demos || [];
+  if (!UPDATE.can_upgrade) {
+    setUpdateNotice(UPDATE.blocked_reason || "This copy can't upgrade itself.", { link: true });
+  } else if (running.length) {
+    setUpdateNotice(`Stop the running demos first (${running.join(", ")}): upgrading restarts the launcher.`);
+  } else {
+    setUpdateNotice(null);
+  }
+  const blocked = !UPDATE.can_upgrade || running.length > 0;
+  el("update-explainer").hidden = false;
+  el("update-now").hidden = false;
+  el("update-now").disabled = blocked;
+  el("update-later").hidden = false;
+  el("update-later").textContent = "Later";
+  el("update-modal-close").hidden = false;
+  setUpgradeProgress(null);
+  el("update-modal-overlay").hidden = false;
+  (blocked ? el("update-later") : el("update-now")).focus();
+}
+
+function closeUpdateModal() {
+  if (upgrading) return; // the page is about to reload on its own
+  el("update-modal-overlay").hidden = true;
+}
+
+async function startUpgrade() {
+  const target = UPDATE.latest;
+  const from = UPDATE.local;
+  upgrading = true;
+  el("update-now").disabled = true;
+  el("update-later").hidden = true;
+  el("update-modal-close").hidden = true;
+  setUpdateNotice(null);
+  setUpgradeProgress("Starting the upgrade…");
+  try {
+    await postJSON("/api/update/upgrade", {});
+  } catch (err) {
+    upgrading = false;
+    el("update-now").disabled = false;
+    el("update-later").hidden = false;
+    el("update-modal-close").hidden = false;
+    setUpgradeProgress(null);
+    setUpdateNotice(err.message);
+    return;
+  }
+  el("update-modal-title").textContent = `Upgrading to v${target}`;
+  el("update-explainer").hidden = true;
+  const started = Date.now();
+  let wentDown = false;
+  // Down while the helper works, then up again -- on the new version, or on
+  // the old one if a step failed; the page after the reload says which.
+  while (Date.now() - started < 15 * 60 * 1000) {
+    const seconds = Math.round((Date.now() - started) / 1000);
+    try {
+      const running = await fetchJSON("/api/version");
+      if (wentDown || running.version !== from) {
+        location.href = `${location.pathname}?upgraded=1${location.hash}`;
+        return;
+      }
+      setUpgradeProgress(`Stopping the launcher… ${seconds} s`);
+    } catch {
+      wentDown = true;
+      setUpgradeProgress(`Installing v${target} and restarting -- this page reloads by itself. ${seconds} s`);
+    }
+    await waitMs(1500);
+  }
+  setUpgradeProgress("This is taking longer than expected: see logs/upgrade.log in the app folder.");
+}
+
+// After the reload an upgrade triggers: say how it went, once.
+async function showUpgradeResult() {
+  if (!new URLSearchParams(location.search).has("upgraded")) return false;
+  history.replaceState(null, "", location.pathname + location.hash);
+  let result = null;
+  try {
+    result = await fetchJSON("/api/update/last");
+  } catch {
+    return false;
+  }
+  if (!result) return false;
+  postJSON("/api/update/prompted", {}).catch(() => {});
+  el("update-modal-title").textContent = result.ok ? `Upgraded to v${result.to}` : "The upgrade didn't complete";
+  el("update-summary").textContent = result.ok
+    ? `Panther Lake AI Studio now runs v${result.to} (it was v${result.from}).`
+    : `It stopped at the ${result.step} step; the launcher started again on v${result.to || result.from}. Full log: logs/upgrade.log.`;
+  el("update-changes").innerHTML = result.ok ? "" : `<pre class="text-block update-log">${escapeHtml(result.error || "")}</pre>`;
+  el("update-explainer").hidden = true;
+  setUpdateNotice(null);
+  setUpgradeProgress(null);
+  el("update-now").hidden = true;
+  el("update-later").hidden = false;
+  el("update-later").textContent = "Close";
+  el("update-modal-close").hidden = false;
+  el("update-modal-overlay").hidden = false;
+  el("update-later").focus();
+  return true;
+}
+
 // --- Init ------------------------------------------------------------------------
 
 async function loadVersion() {
@@ -2425,6 +2647,7 @@ async function init() {
   DEMOS = await fetchJSON("/api/demos");
   renderCards(DEMOS);
   loadVersion();
+  showUpgradeResult().then((shown) => loadUpdateStatus({ prompt: !shown }));
   initTelemetry();
 
   // Navigation is wired before the panels, and each panel independently:
@@ -2438,6 +2661,14 @@ async function init() {
     location.hash = "#/";
   });
   el("log-open").addEventListener("click", openLogViewer);
+  el("update-open").addEventListener("click", openUpdateFromFooter);
+  el("update-state").addEventListener("click", recheckForUpdates);
+  el("update-now").addEventListener("click", startUpgrade);
+  el("update-later").addEventListener("click", closeUpdateModal);
+  el("update-modal-close").addEventListener("click", closeUpdateModal);
+  el("update-modal-overlay").addEventListener("click", (event) => {
+    if (event.target === el("update-modal-overlay")) closeUpdateModal();
+  });
   el("log-modal-close").addEventListener("click", closeLogViewer);
   el("log-modal-overlay").addEventListener("click", (event) => {
     if (event.target === el("log-modal-overlay")) closeLogViewer();
@@ -2445,6 +2676,7 @@ async function init() {
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     if (!el("log-modal-overlay").hidden) closeLogViewer();
+    else if (!el("update-modal-overlay").hidden) closeUpdateModal();
     else if (currentPanel && !["TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) location.hash = "#/";
   });
 
