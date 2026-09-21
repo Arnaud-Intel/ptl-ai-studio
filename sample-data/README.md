@@ -8,7 +8,7 @@ logos, payment credentials, third-party voices or private files are included.
 
 | Brick | Few-click path | Bundled content |
 | --- | --- | --- |
-| Expense Report Extractor | Open → choose pack → Start | 3-receipt quick start, 9-receipt trip, 3 review cases; previews and answer key |
+| Expense Report Extractor | Open → choose pack → Start → review and validate → Export Excel | 5 worn scanned receipts, 3-receipt quick start, 9-receipt trip, 3 review cases; previews and answer keys |
 | Screen / Image Text Extraction | Open → choose sample → Extract text | Hotel invoice, cafe receipt and refund; no file-picker hunt |
 | Document Q&A | Open → choose question → Index folder → Ask | Six linked documents covering release gates, customer scope, incidents and money |
 | HTML Creator | Open → choose prompt → Generate | Source-grounded launch brief, operating dashboard or fictional boutique hotel |
@@ -23,6 +23,8 @@ capture, model run, payment or network video feed by itself. Each brick has a
 Demo guide, and selected file-based samples show their source previews/links.
 
 - `expenses/`: deterministic receipt images, overview and independent answer key.
+  The additional `scanned-receipts/` pack contains five AI-generated fictional
+  scans/photos, with folds, fading and shadows; expected net total **EUR 484.30**.
   Expected full-trip totals: **EUR 1,048.20 and USD 49.00 separately**. Quick start:
   **EUR 215.10**. Review cases must remain outside validated totals.
 - `meridian-rollout-2026/`: six source documents, less than the HTML input budget.

@@ -55,7 +55,7 @@ from pantherlake_ai_core.engine import (
     preferred_realtime_vision_device,
     resolve_engine,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from smart_city_monitor import sources as smart_city_sources
 from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
 from voice_clone_studio import engine_factory as voice_clone_models
@@ -1019,7 +1019,66 @@ async def start_expense_extract(req: ExpenseExtractStartRequest) -> JSONResponse
         )
     except Exception as exc:
         return error_response(exc)
-    return JSONResponse({"status": "started"})
+    return JSONResponse({"status": "started", "report_id": expense_extract_runner.report_id})
+
+
+@app.get("/api/expense-extract/report")
+def expense_report(report_id: str | None = None):
+    try:
+        report = expense_extract_runner.reports.snapshot(report_id)
+        return JSONResponse({**report, "running": expense_extract_runner.running,
+                             "active_report_id": expense_extract_runner.report_id})
+    except Exception as exc:
+        return error_response(exc)
+
+
+class ExpenseReviewRequest(BaseModel):
+    revision: int
+    vendor: str = ""
+    date: str = ""
+    amount: str = ""
+    currency: str = ""
+    category: str = "Other"
+    notes: str = ""
+    validate_expense: bool = Field(False, alias="validate")
+
+
+@app.put("/api/expense-extract/reports/{report_id}/expenses/{item_id}")
+def update_expense(report_id: str, item_id: str, req: ExpenseReviewRequest):
+    try:
+        return JSONResponse(expense_extract_runner.reports.update(
+            report_id, item_id, req.model_dump(), req.revision, req.validate_expense))
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/api/expense-extract/reports/{report_id}/expenses/{item_id}/receipt")
+def expense_receipt(report_id: str, item_id: str):
+    try:
+        from PIL import Image, ImageOps
+
+        # Convert TIFF/BMP as well as ordinary photos into a browser-readable preview.
+        path = expense_extract_runner.reports.receipt(report_id, item_id)
+        with Image.open(path) as receipt:
+            preview = ImageOps.exif_transpose(receipt).convert("RGB")
+            preview.thumbnail((1800, 2400))
+            buffer = io.BytesIO()
+            preview.save(buffer, format="JPEG")
+        return Response(buffer.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/api/expense-extract/reports/{report_id}/export.xlsx")
+def export_expense_report(report_id: str):
+    try:
+        if expense_extract_runner.running and expense_extract_runner.report_id == report_id:
+            raise Conflict("Wait for extraction to finish before exporting the whole report.")
+        return Response(expense_extract_runner.reports.export(report_id),
+                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        headers={"Content-Disposition": 'attachment; filename="expense-report.xlsx"'})
+    except Exception as exc:
+        return error_response(exc)
 
 
 @app.post("/api/expense-extract/stop")

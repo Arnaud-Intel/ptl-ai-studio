@@ -20,6 +20,7 @@ from expense_extract.types import totals_by_currency
 from pantherlake_ai_core.engine import Engine
 
 from . import activity, events, worker
+from .expense_report import ExpenseReports
 
 _DEMO_ID = "expense-extract"
 _STAGES = ("ocr", "llm")
@@ -30,6 +31,8 @@ class ExpenseExtractRunner:
         self._thread: threading.Thread | None = None
         self._stop_event: threading.Event | None = None
         self.error: str | None = None
+        self.reports = ExpenseReports()
+        self.report_id: str | None = None
 
     @property
     def running(self) -> bool:
@@ -48,6 +51,10 @@ class ExpenseExtractRunner:
     ) -> None:
         worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
+        if not pipeline.list_receipt_images(folder):
+            raise ValueError("No receipt images found in that folder.")
+        self.report_id = report_id = self.reports.create(folder)
+
         self.error = None
         self._stop_event = threading.Event()
         stop_event = self._stop_event
@@ -59,7 +66,8 @@ class ExpenseExtractRunner:
             emit({"type": "ocr_progress", "file": path.name, "index": index, "total": total})
 
         def on_structured(line) -> None:
-            emit({"type": "structured", "line": line.to_dict()})
+            item = self.reports.add(report_id, line)
+            emit({"type": "structured", "line": item, "report_id": report_id})
 
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=ocr_engine.value, device=ocr_device, stage="ocr", stage_label="OCR")

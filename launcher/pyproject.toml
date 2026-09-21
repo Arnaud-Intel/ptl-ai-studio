@@ -21,6 +21,8 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
+    "openpyxl>=3.1.5",
+    "pillow>=10",
     # Imported directly by the runners/routes (cv2 for JPEG encoding,
     # soundfile for WAV responses) -- declared here rather than relied on
     # transitively through core/the bricks.

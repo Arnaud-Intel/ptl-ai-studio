@@ -206,7 +206,7 @@ REGISTRY: list[Demo] = [
         description=(
             "Runs OCR (the screen-ocr brick) and a local LLM (the doc-qa "
             "brick) over a folder of receipt photos, pulling out vendor, "
-            "date, amount, and category into a CSV -- the two stages run "
+            "date, amount, and category for receipt-by-receipt review and Excel export -- the two stages run "
             "concurrently on two independently chosen devices (e.g. NPU "
             "for OCR, GPU for structuring), not one after the other."
         ),

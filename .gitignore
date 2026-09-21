@@ -22,6 +22,7 @@ processed/
 .cache/
 
 *.log
+logs/expense-reports.sqlite3*
 .vscode/
 .idea/
 

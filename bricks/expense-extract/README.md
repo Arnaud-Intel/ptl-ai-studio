@@ -1,7 +1,32 @@
 # expense-extract
 
-Batch-converts a folder of receipt photos into a CSV of structured expense
-lines (vendor, date, amount, currency, category, review status) -- fully on-device.
+Reads a folder of receipt photos into structured expenses, fully on-device.
+In the launcher, review each receipt, correct its details and export an Excel
+workbook (.xlsx). The command-line interface retains its CSV output.
+
+## Review and Excel export
+
+After starting a batch in the launcher, select an expense to see its receipt
+image and extracted text beside editable vendor, date, amount, currency,
+category and notes fields. Failed extractions can be completed manually.
+
+**Save draft** keeps incomplete work. **Validate expense** requires a vendor,
+valid date, supported currency, category and unambiguous amount. Every expense
+starts as a draft, even if extraction found no problems. Saving a validated
+expense as a draft removes it from validated totals until it is validated again.
+Unsaved edits must be saved before changing expenses or starting a new batch.
+
+**Export Excel (.xlsx)** becomes available when extraction finishes. It includes
+all expenses and their status, a summary of validated totals by currency, and
+the original extraction text and warnings on a separate sheet. Drafts are
+excluded from totals. Amounts are numeric cells, dates are Excel dates, and
+receipt text is exported as text rather than executable spreadsheet formulas.
+
+Reports and saved corrections survive refreshes and launcher restarts in
+`logs/expense-reports.sqlite3` (ignored by Git). The **Saved report** picker
+reopens previous batches. Receipt images are read from their original folder;
+keep that folder available to view them. Reports extracted before this feature
+was installed need to be read again because the old launcher did not save them.
 
 ## Trustworthy output
 
@@ -11,15 +36,15 @@ present in the OCR text (an explicit code or an unambiguous euro/pound symbol).
 A bare `$` does not establish USD. Missing/invalid dates, unsupported currency,
 ambiguous amounts and amounts not found in the OCR text are flagged.
 
-Only lines passing these field checks contribute to totals, grouped by currency.
-These checks do not verify that the model selected the correct receipt total;
-compare results with the originals. Review flagged lines in the exported CSV;
-there is not yet an in-app correction/approval workflow.
+The CLI totals include lines passing these field checks, grouped by currency.
+In the launcher, totals instead require explicit human validation. Compare
+results with the originals: automatic checks alone cannot establish that the
+model selected the correct receipt total.
 
 The CSV now includes `currency`, `needs_review` and `review_reasons`. WebSocket
 amounts are exact decimal **strings** (or null), and completion messages contain
 a `totals` object keyed by currency instead of a single `total`. CLI and UI use
-the same validation and aggregation. Update custom consumers of the old format.
+the same extraction checks; the launcher adds saved human review. Update custom consumers of the old format.
 
 This is the workspace's first brick where **two heavy models genuinely
 run at the same time on two different pieces of silicon**, not one

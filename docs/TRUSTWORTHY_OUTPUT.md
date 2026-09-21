@@ -4,6 +4,18 @@ Implemented 2026-09-10 against version 0.2.36. No version bump is made manually.
 
 ## Changes
 
+### Expense review follow-up (2026-09-21)
+
+The launcher now saves each receipt as a draft, with its original extraction
+retained for comparison. Users correct and explicitly validate individual
+expenses; only those validated expenses contribute to report totals. Excel
+export includes all rows with their status, per-currency validated totals, and
+original extraction text. The CLI retains its CSV output and automatic field
+checks described below. This does not add duplicate detection or accounting
+approval; a person must still compare the expense with the receipt.
+
+### Original implementation
+
 - NPU naming now uses an OpenVINO-enumerated NPU and its runtime property. USB
   device substring matches are removed. Known GPU identities take precedence
   over compute-engine heuristics, and unverified NPUs get no utilization claim.

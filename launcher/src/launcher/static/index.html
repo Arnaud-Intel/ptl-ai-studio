@@ -537,9 +537,43 @@
           <button id="expx-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
           <span id="expx-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-        <div id="expx-transcript" class="output">
-          <p class="placeholder">Each receipt's vendor, date, amount, and category will appear here as it is structured.</p>
+        <div class="run-row expense-report-toolbar">
+          <label class="field"><span>Saved report</span><select id="expx-report"><option value="">No reports yet</option></select></label>
+          <button id="expx-export" class="btn btn-secondary" type="button" disabled>Export Excel (.xlsx)</button>
+          <span id="expx-summary" role="status">Read receipts to build a report.</span>
         </div>
+        <p class="field-help">Review each receipt, correct its details, then validate it. Excel includes all expenses; only validated expenses contribute to totals. Previous reports stay saved when you start a new batch.</p>
+        <div class="expense-workspace">
+          <div id="expx-list" class="expense-list" aria-label="Expenses"><p class="placeholder">Your expenses will appear here.</p></div>
+          <section id="expx-detail" class="expense-detail" hidden aria-label="Review expense">
+            <h3 id="expx-detail-title"></h3>
+            <div class="expense-review-grid">
+              <div>
+                <a id="expx-receipt-link" target="_blank" rel="noopener"><img id="expx-receipt" alt="Original receipt" /></a>
+                <p id="expx-image-error" hidden>Receipt image unavailable. Check the extracted text below.</p>
+                <details><summary>Extracted receipt text</summary><pre id="expx-raw-text" class="expense-raw-text"></pre></details>
+              </div>
+              <form id="expx-edit-form">
+                <p id="expx-review-warning" class="field-help"></p>
+                <div class="controls">
+                  <label class="field field-wide"><span>Vendor</span><input id="expx-edit-vendor" type="text" maxlength="4000" /></label>
+                  <label class="field"><span>Date</span><input id="expx-edit-date" type="date" /></label>
+                  <label class="field"><span>Amount</span><input id="expx-edit-amount" type="text" inputmode="decimal" placeholder="0.00" /></label>
+                  <label class="field"><span>Currency</span><select id="expx-edit-currency"></select></label>
+                  <label class="field"><span>Category</span><select id="expx-edit-category"></select></label>
+                  <label class="field field-wide"><span>Notes / business purpose</span><textarea id="expx-edit-notes" rows="3" maxlength="4000"></textarea></label>
+                </div>
+                <div class="run-row">
+                  <button id="expx-save" class="btn btn-secondary" type="button">Save draft</button>
+                  <button id="expx-discard" class="btn btn-secondary" type="button" disabled>Discard changes</button>
+                  <button id="expx-validate" class="btn btn-primary" type="submit">Validate expense</button>
+                </div>
+                <p id="expx-edit-status" role="status" aria-live="polite"></p>
+              </form>
+            </div>
+          </section>
+        </div>
+        <details><summary>Extraction progress</summary><div id="expx-transcript" class="output"></div></details>
       </section>
 
       <!-- smart-recall -->
@@ -915,6 +949,7 @@
     </div>
   </template>
 
+  <script src="/static/expense-review.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

@@ -48,7 +48,9 @@ def test_expense_fixture_totals_and_pack_counts():
         currency = receipt["currency"]
         totals[currency] = totals.get(currency, Decimal(0)) + Decimal(receipt["amount"])
     assert totals == {key: Decimal(value) for key, value in truth["currency_totals"].items()}
-    assert [len(list(Path(s.folder).glob("*.png"))) for s in load_samples("expense-extract")] == [3, 9, 3]
+    assert {Path(s.folder).name: len(list(Path(s.folder).glob("*.png"))) for s in load_samples("expense-extract")} == {
+        "scanned-receipts": 5, "quick-start": 3, "customer-rollout": 9, "needs-review": 3,
+    }
     quick = {p.name for p in (SAMPLE_ROOT / "expenses/quick-start").glob("*.png")}
     assert sum(Decimal(r["amount"]) for r in truth["receipts"] if r["file"] in quick) == Decimal("215.10")
     assert len(truth["review_cases"]) == 3

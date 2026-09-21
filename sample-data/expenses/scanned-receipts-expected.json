@@ -1,0 +1,11 @@
+{
+  "notice": "Fictional AI-generated demo receipts. Ground truth checked visually; not OCR results.",
+  "currency_totals": {"EUR": "484.30"},
+  "receipts": [
+    {"file": "01-lanterne-cafe.png", "vendor": "LA LANTERNE CAFE", "date": "2026-09-12", "amount": "38.40", "currency": "EUR", "category": "Meals", "items": [["2 plat du jour", "29.00"], ["2 cafe", "5.40"], ["Eau minerale", "4.00"]]},
+    {"file": "02-rive-taxi.png", "vendor": "RIVE TAXI", "date": "2026-09-12", "amount": "25.60", "currency": "EUR", "category": "Travel", "items": [["Prise en charge", "4.00"], ["Course", "18.60"], ["Bagage", "3.00"]]},
+    {"file": "03-atelier-hotel.png", "vendor": "ATELIER QUAY HOTEL", "date": "2026-09-13", "amount": "406.00", "currency": "EUR", "category": "Lodging", "items": [["2 nights", "360.00"], ["2 breakfasts", "36.00"], ["Local levy", "10.00"]]},
+    {"file": "04-workbench-supplies.png", "vendor": "WORKBENCH PAPETERIE", "date": "2026-09-14", "amount": "32.30", "currency": "EUR", "category": "Office Supplies", "items": [["Carnet A5", "8.90"], ["Stylos", "6.50"], ["Cable USB-C", "19.90"], ["Discount", "-3.00"]]},
+    {"file": "05-workbench-refund.png", "vendor": "WORKBENCH PAPETERIE", "date": "2026-09-14", "amount": "-18.00", "currency": "EUR", "category": "Office Supplies", "items": [["Returned HDMI adapter", "-18.00"]]}
+  ]
+}
