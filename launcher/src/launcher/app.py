@@ -69,6 +69,7 @@ from .errors import Conflict
 from .expense_extract_runner import ExpenseExtractRunner
 from .html_creator_runner import HtmlCreatorRunner
 from .live_translation_runner import LiveTranslationRunner
+from .model_routes import router as model_router
 from .meeting_notes_runner import MeetingNotesRunner
 from .object_detection_runner import ObjectDetectionRunner
 from .screen_ocr_runner import ScreenOcrRunner
@@ -240,6 +241,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Panther Lake AI Studio", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/demo-assets", StaticFiles(directory=SAMPLE_ROOT, follow_symlink=False), name="demo-assets")
+app.include_router(model_router)  # /api/models: what the demos need, and fetching it (R10)
 
 live_translation_runner = LiveTranslationRunner()
 doc_qa_runner = DocQARunner()

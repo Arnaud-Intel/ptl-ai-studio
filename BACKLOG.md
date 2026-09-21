@@ -182,6 +182,12 @@ the release gate.
   Still needs a connection: the live cameras, the update check (which says so
   and carries on), and the first use of any model that isn't cached yet -- the
   prefetch above is what makes that last one a before-the-show step.
+  **Part done 2026-09-21:** the prefetch exists -- `panther-lake-prefetch` and
+  the footer's "Prepare models" button list every model with its size, what
+  uses it and whether it is cached, and download the missing ones with live
+  speed and time left (core.models, core.prefetch). Still open here: the rest
+  of the preflight (Python/FFmpeg/devices/disk space), pinned revisions, and
+  the "starts with the network off" rehearsal as one command.
 
 - [ ] **R03 · P1 · Reproduce vision defects and fix or gate affected paths.**
   Covers original smart-city overcount and webcam GPU NaN reports above.

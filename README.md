@@ -53,6 +53,12 @@ It won't try what it can't do cleanly -- local changes to tracked files,
 local commits, another branch, a copy that isn't a git checkout, or a demo
 still running -- and says which.
 
+**Before a show.** The footer's **Prepare models** button lists every model
+the demos load -- what it is for, how big the download is, and whether this
+machine already has it -- and fetches what is missing, showing speed and time
+left. The same thing from a terminal: `uv run panther-lake-prefetch` (add
+`--list` to only look, or `--demo screen-ocr` for one demo's models).
+
 **Running offline.** Every demo infers locally, and the UI loads nothing
 from the web. Two things do need a connection, and both belong before the
 show rather than during it: installing the environment (`uv sync --extra

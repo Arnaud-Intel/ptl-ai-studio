@@ -2596,6 +2596,165 @@ async function showUpgradeResult() {
   return true;
 }
 
+// --- Models -----------------------------------------------------------------------
+// What each demo loads, whether this machine has it, and fetching what's missing
+// before a show instead of in front of an audience (BACKLOG R10). Sizes come from
+// the Hub; "do we have it" is answered from the cache, so it works offline.
+
+let MODELS_STATE = null;
+let modelsPollTimer = null;
+
+function formatBytes(value) {
+  if (value === null || value === undefined) return "unknown";
+  let size = Number(value);
+  for (const unit of ["B", "KB", "MB", "GB", "TB"]) {
+    if (size < 1024 || unit === "TB") return unit === "B" ? `${Math.round(size)} B` : `${size.toFixed(1)} ${unit}`;
+    size /= 1024;
+  }
+  return `${size.toFixed(1)} TB`;
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return "--";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes >= 60) return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
+  return minutes ? `${minutes} min ${String(Math.round(seconds % 60)).padStart(2, "0")} s` : `${Math.round(seconds)} s`;
+}
+
+async function loadModels() {
+  try {
+    MODELS_STATE = await fetchJSON("/api/models");
+  } catch {
+    return null; // best-effort: the footer just keeps its last label
+  }
+  renderModels();
+  return MODELS_STATE;
+}
+
+function renderModelsFooter() {
+  const button = el("models-open");
+  if (!MODELS_STATE) return;
+  const missing = MODELS_STATE.total_count - MODELS_STATE.ready_count;
+  if (MODELS_STATE.running) {
+    const total = MODELS_STATE.run_total_bytes;
+    const percent = total ? Math.min(Math.round((MODELS_STATE.done_bytes / total) * 100), 99) : null;
+    button.textContent = percent === null ? "Downloading models…" : `Downloading models ${percent}%`;
+  } else {
+    button.textContent = missing ? `Prepare models (${missing} missing)` : "Models ready";
+  }
+}
+
+function modelStateText(entry) {
+  if (entry.state === "downloading") return "Downloading…";
+  if (entry.state === "pending") return "Queued";
+  if (entry.state === "failed") return "Failed";
+  return entry.cached ? "Ready" : "Not downloaded";
+}
+
+function renderModels() {
+  renderModelsFooter();
+  if (!MODELS_STATE || el("models-modal-overlay").hidden) return;
+  const state = MODELS_STATE;
+  const missing = state.models.filter((model) => !model.cached);
+  const sizeText = state.sizes_known
+    ? formatBytes(state.missing_bytes)
+    : state.sizes_pending
+      ? "sizes still loading"
+      : `at least ${formatBytes(state.missing_bytes)}; the Hub did not answer for the rest`;
+  el("models-summary").textContent =
+    `${state.ready_count} of ${state.total_count} models ready` +
+    (missing.length ? ` · ${missing.length} to download (${sizeText})` : " · nothing to download");
+  el("models-download").hidden = state.running || !missing.length;
+  el("models-stop").hidden = !state.running;
+
+  const progress = el("models-progress");
+  progress.hidden = !state.running;
+  if (state.running) {
+    const total = state.run_total_bytes;
+    const percent = total ? Math.min((state.done_bytes / total) * 100, 100) : 0;
+    el("models-bar-fill").style.width = `${percent}%`;
+    progress.setAttribute("aria-valuenow", String(Math.round(percent)));
+    const current = state.current ? (state.models.find((model) => model.key === state.current) || {}).label : null;
+    el("models-progress-text").textContent =
+      (current ? `${current} · ` : "") +
+      `${formatBytes(state.done_bytes)} of ${formatBytes(total)} · ${formatBytes(state.bytes_per_second)}/s · ` +
+      `${formatDuration(state.eta_seconds)} left` +
+      (state.stopped ? " · stopping after this model" : "");
+  }
+
+  const rows = el("models-rows");
+  rows.replaceChildren();
+  const cell = (text, className) => {
+    const td = document.createElement("td");
+    td.textContent = text;
+    if (className) td.className = className;
+    return td;
+  };
+  for (const entry of state.models) {
+    const row = document.createElement("tr");
+    const name = cell(entry.label);
+    if (entry.note) name.title = entry.note;
+    const demos = entry.demos.map((id) => (demoById(id) || {}).name || id).join(", ");
+    const size = cell(entry.repo_id ? formatBytes(entry.size_bytes) : "a few MB", "models-size");
+    const status = cell(modelStateText(entry), `models-state models-state-${entry.state}`);
+    if (entry.error) status.title = entry.error;
+    row.append(name, cell(demos, "models-demos"), size, status);
+    rows.append(row);
+  }
+}
+
+function startModelsPolling() {
+  if (modelsPollTimer) return;
+  modelsPollTimer = setInterval(async () => {
+    const state = await loadModels();
+    // Keep polling while a download runs, even with the dialog closed: the
+    // footer button is the progress indicator then.
+    if (state && !state.running && el("models-modal-overlay").hidden) stopModelsPolling();
+  }, 1200);
+}
+
+function stopModelsPolling() {
+  clearInterval(modelsPollTimer);
+  modelsPollTimer = null;
+}
+
+async function openModelsModal() {
+  el("models-modal-overlay").hidden = false;
+  el("models-modal-close").focus();
+  await loadModels();
+  startModelsPolling();
+}
+
+function closeModelsModal() {
+  el("models-modal-overlay").hidden = true;
+  el("models-open").focus();
+  if (!MODELS_STATE || !MODELS_STATE.running) stopModelsPolling();
+}
+
+async function startPrefetch() {
+  el("models-download").disabled = true;
+  try {
+    await postJSON("/api/models/prefetch", {});
+  } catch (err) {
+    el("models-summary").textContent = err.message;
+    return;
+  } finally {
+    el("models-download").disabled = false;
+  }
+  await loadModels();
+  startModelsPolling();
+}
+
+async function stopPrefetch() {
+  el("models-stop").disabled = true;
+  try {
+    await postJSON("/api/models/prefetch/stop", {});
+  } finally {
+    el("models-stop").disabled = false;
+  }
+  loadModels();
+}
+
 // --- Init ------------------------------------------------------------------------
 
 async function loadVersion() {
@@ -2624,6 +2783,7 @@ async function init() {
   renderCards(DEMOS);
   loadVersion();
   showUpgradeResult().then((shown) => loadUpdateStatus({ prompt: !shown }));
+  loadModels();
   initTelemetry();
 
   // Navigation is wired before the panels, and each panel independently:
@@ -2638,6 +2798,13 @@ async function init() {
   });
   el("log-open").addEventListener("click", openLogViewer);
   el("update-open").addEventListener("click", openUpdateFromFooter);
+  el("models-open").addEventListener("click", openModelsModal);
+  el("models-download").addEventListener("click", startPrefetch);
+  el("models-stop").addEventListener("click", stopPrefetch);
+  el("models-modal-close").addEventListener("click", closeModelsModal);
+  el("models-modal-overlay").addEventListener("click", (event) => {
+    if (event.target === el("models-modal-overlay")) closeModelsModal();
+  });
   el("update-state").addEventListener("click", recheckForUpdates);
   el("update-now").addEventListener("click", startUpgrade);
   el("update-later").addEventListener("click", closeUpdateModal);
@@ -2653,6 +2820,7 @@ async function init() {
     if (event.key !== "Escape") return;
     if (!el("log-modal-overlay").hidden) closeLogViewer();
     else if (!el("update-modal-overlay").hidden) closeUpdateModal();
+    else if (!el("models-modal-overlay").hidden) closeModelsModal();
     else if (currentPanel && !["TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) location.hash = "#/";
   });
 

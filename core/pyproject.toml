@@ -12,6 +12,10 @@ dependencies = [
     "huggingface_hub>=0.24",  # model_cache.py
 ]
 
+[project.scripts]
+# Download the demos' models before a show (see prefetch.py).
+panther-lake-prefetch = "pantherlake_ai_core.prefetch:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
