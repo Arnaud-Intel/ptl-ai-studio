@@ -53,6 +53,18 @@ It won't try what it can't do cleanly -- local changes to tracked files,
 local commits, another branch, a copy that isn't a git checkout, or a demo
 still running -- and says which.
 
+**Running offline.** Every demo infers locally, and the UI loads nothing
+from the web. Two things do need a connection, and both belong before the
+show rather than during it: installing the environment (`uv sync --extra
+openvino`) and fetching a model the first time a demo uses it. After that
+the suite runs with the network off -- `start_launcher.bat` starts from
+what is installed (`uv run --offline`) and only reaches for the network if
+something is missing, so a re-sync can't keep the app from starting.
+Three things still want a connection when they happen: the live city
+cameras (someone else's streams), the update check (it says it couldn't
+check and carries on), and the first run of a demo whose model isn't
+cached yet.
+
 Lost that window? **`stop_launcher.bat`** stops whatever is listening on
 8765 (pass a port to stop a copy elsewhere: `stop_launcher.bat 8766`).
 Worth knowing, because a running launcher keeps serving the code it

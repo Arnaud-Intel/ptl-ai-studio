@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 
+from pantherlake_ai_core.model_cache import resolve_gguf
 from pantherlake_ai_core.types import GenerationStats
 
 _DEFAULT_REPO = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"
@@ -18,9 +19,11 @@ class PortableLLM:
     ):
         from llama_cpp import Llama
 
-        self.model = Llama.from_pretrained(
-            repo_id=repo_id,
-            filename=filename,
+        # Not Llama.from_pretrained: it resolves the filename pattern by
+        # listing the repo over the network, so a model already on disk
+        # still fails offline (see model_cache.resolve_gguf).
+        self.model = Llama(
+            model_path=resolve_gguf(repo_id, filename),
             n_ctx=n_ctx,
             verbose=False,
         )

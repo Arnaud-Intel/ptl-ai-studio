@@ -6,6 +6,8 @@ embedding a question -- so retrieval quality depends on using the right one.
 """
 from __future__ import annotations
 
+from pantherlake_ai_core.model_cache import resolve_gguf
+
 _DEFAULT_REPO = "nomic-ai/nomic-embed-text-v1.5-GGUF"
 _DEFAULT_FILENAME = "*Q4_K_M.gguf"
 
@@ -14,9 +16,10 @@ class PortableEmbedder:
     def __init__(self, repo_id: str = _DEFAULT_REPO, filename: str = _DEFAULT_FILENAME, n_ctx: int = 2048):
         from llama_cpp import Llama
 
-        self.model = Llama.from_pretrained(
-            repo_id=repo_id,
-            filename=filename,
+        # See llm_portable: from_pretrained needs the network even for a
+        # model that is already cached.
+        self.model = Llama(
+            model_path=resolve_gguf(repo_id, filename),
             embedding=True,
             n_ctx=n_ctx,
             verbose=False,

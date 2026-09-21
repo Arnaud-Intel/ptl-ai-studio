@@ -173,6 +173,15 @@ the release gate.
   scenarios use, compiles the NPU cache, runs each sample once, then confirms
   each starts with the network off -- the difference between a warm demo and
   a first-run download on stage.
+  **Measured 2026-09-21:** with the environment installed and the models
+  cached, the suite does run with no network -- screen OCR read an image on
+  the iGPU offline, and the launcher starts in 4 s. Two breaks were found and
+  fixed: `uv run` re-syncs on every start and fails offline (start_launcher.bat
+  now tries `uv run --offline` first), and llama.cpp resolved its GGUF filename
+  pattern over the network even for a cached model (core.model_cache.resolve_gguf).
+  Still needs a connection: the live cameras, the update check (which says so
+  and carries on), and the first use of any model that isn't cached yet -- the
+  prefetch above is what makes that last one a before-the-show step.
 
 - [ ] **R03 · P1 · Reproduce vision defects and fix or gate affected paths.**
   Covers original smart-city overcount and webcam GPU NaN reports above.

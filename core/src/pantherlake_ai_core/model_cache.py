@@ -78,3 +78,71 @@ def resolve_file(
     if on_downloading is not None and not is_file_cached(repo_id, filename):
         on_downloading()
     return hf_hub_download(repo_id, filename)
+
+
+def _is_pattern(filename: str) -> bool:
+    return any(character in filename for character in "*?[")
+
+
+def _cached_match(repo_id: str, pattern: str) -> str | None:
+    """The cached file of `repo_id` matching `pattern`, or None. Touches no
+    network: this is the path that has to work on a machine with none."""
+    from fnmatch import fnmatch
+    from pathlib import Path
+
+    from huggingface_hub import snapshot_download
+    from huggingface_hub.errors import LocalEntryNotFoundError
+
+    try:
+        snapshot = snapshot_download(repo_id, local_files_only=True, allow_patterns=[pattern])
+    except (LocalEntryNotFoundError, OSError):
+        return None
+    matches = sorted(
+        path for path in Path(snapshot).rglob("*")
+        if path.is_file() and fnmatch(path.name.lower(), pattern.lower())
+    )
+    return str(matches[0]) if matches else None
+
+
+def _name_on_hub(repo_id: str, pattern: str) -> str:
+    from fnmatch import fnmatch
+    from huggingface_hub import HfApi
+
+    names = [
+        name for name in HfApi().list_repo_files(repo_id)
+        if fnmatch(name.lower(), pattern.lower()) or fnmatch(name.rsplit("/", 1)[-1].lower(), pattern.lower())
+    ]
+    if not names:
+        raise FileNotFoundError(f"No file in {repo_id} matches '{pattern}'.")
+    return sorted(names)[0]
+
+
+def resolve_gguf(
+    repo_id: str,
+    filename: str,
+    *,
+    local_path: str | None = None,
+    on_downloading: Callable[[], None] | None = None,
+) -> str:
+    """Path to a GGUF file whose name may be a pattern ("*q4_k_m.gguf").
+
+    Not `llama_cpp.Llama.from_pretrained`, which resolves such a pattern by
+    listing the repo over the network -- a call with no cache fallback, so a
+    machine that already has the model still fails with the network off,
+    which is exactly where these demos have to work. The local cache is
+    asked first; the Hub only when nothing matches.
+    """
+    if local_path:
+        return local_path
+    from huggingface_hub import hf_hub_download
+
+    if not _is_pattern(filename):
+        if on_downloading is not None and not is_file_cached(repo_id, filename):
+            on_downloading()
+        return hf_hub_download(repo_id, filename)
+    cached = _cached_match(repo_id, filename)
+    if cached:
+        return cached
+    if on_downloading is not None:
+        on_downloading()
+    return hf_hub_download(repo_id, _name_on_hub(repo_id, filename))
