@@ -153,7 +153,7 @@ def test_a_clip_url_is_told_apart_from_a_stream():
 def test_a_clip_url_goes_to_the_refreshing_reader(monkeypatch):
     seen = {}
 
-    def fake(url, stop_event=None):
+    def fake(url, stop_event=None, on_status=None):
         seen["url"] = url
         yield "frame"
 

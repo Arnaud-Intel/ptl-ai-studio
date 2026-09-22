@@ -27,6 +27,26 @@ applications that prove it.
 
 ## Get it running
 
+**First time on Windows? Download and extract the whole project (or clone it),
+then double-click [`first_launch.bat`](first_launch.bat) in the project root.**
+The guided helper finds or offers to install uv, installs the Intel/OpenVINO
+environment, checks device discovery and cache disk space, lets you download
+a speech starter, one demo, or all models, and opens the Studio. It shows
+download sizes before you confirm and offers retry/skip on download failures.
+You can rerun it to reuse existing downloads. Keep the window open while the
+Studio runs; troubleshooting output is saved in `logs/first-launch-*.log`.
+Corporate network or certificate errors may need your IT team's proxy/CA
+configuration. The helper does not change security settings or install drivers.
+
+For Smart City's YouTube cameras, the helper also checks the JavaScript runtime
+and downloader setup. If the runtime is missing, choose **I** to install Deno
+with winget, **R** to check after a manual installation, or **S** to continue
+without YouTube. The helper refreshes its search path before checking again.
+See [Smart City connection recovery](bricks/smart-city-monitor/README.md#connection-recovery-and-setup-checks)
+for `smart-city-doctor`, cooldowns, and independent camera alternatives.
+
+For a manual installation:
+
 The only real prerequisite is [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 -- it fetches a compatible Python itself, so there's no separate Python
 install to get right:

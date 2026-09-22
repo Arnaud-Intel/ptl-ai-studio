@@ -336,6 +336,37 @@ the release gate.
   **Done:** a feed that fails its check is marked in the picker; the check
   never blocks the UI and is rate-limited; samples prefer feeds that pass.
   **Estimate:** 1 day. **Depends on:** none. (filed 2026-09-11, live smart-city use)
+  **Log review 2026-09-22:** three YouTube sources (`6dp-bvQ7RWo`,
+  `zMCea32gpmg`, `dfVK7ld38Ys`) reported Video unavailable on 2026-09-22;
+  subsequent starts ran successfully. Source: `logs/events.log`.
+  **Investigation 2026-09-22 (recurring YouTube blocking):** earlier logs
+  contain explicit sign-in/bot challenges; the latest generic Video unavailable
+  failures do not establish an account ban. `sources.open_frames` re-extracts
+  after stream drops with a fixed two-second delay and no shared pacing or
+  reconnect budget. Consider shared extraction pacing, bounded exponential
+  backoff, and a cooldown after explicit rate-limit/bot responses; avoid adding
+  periodic YouTube health probes that increase requests. The lockfile has
+  yt-dlp 2026.8.19 but no yt-dlp-ejs, and setup does not provision/check a JS
+  runtime. Audit against [upstream EJS setup](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
+  and expose useful extractor warnings currently hidden by `no_warnings`.
+  Cookie failure should not be attributed to expiry without evidence.
+  [Upstream PO-token guidance](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide)
+  currently exempts HLS live streams except the iOS client, so tokens are not
+  the first proposed fix for this HLS-only reader. Retain direct-camera/local
+  clip alternatives and clearly label recordings. Investigation only; no live
+  extraction or runtime changes made.
+  **Hardening implemented 2026-09-22:** shared eight-second YouTube pacing,
+  short successful/failed-resolution caches, a 15-minute bot/rate-limit
+  cooldown across feed restarts, interruptible extraction with a 60-second
+  deadline, and bounded live/clip reconnects. Added network read/open timeouts,
+  per-feed recovery/freshness reporting, retained individual errors, and a
+  heartbeat that ages counts while cameras are silent. The matching yt-dlp
+  JavaScript solver is now locked; `smart-city-doctor` checks setup offline
+  and can probe one explicitly requested URL. No periodic YouTube scanning
+  or automatic source substitution. Live verification: an anonymous YouTube
+  probe returned Video unavailable and was classified correctly; the TfL
+  Piccadilly/St James's camera decoded successfully with the new timeouts.
+  The curated-source health picker part of R27 remains open.
 
 ### Sturdiness
 

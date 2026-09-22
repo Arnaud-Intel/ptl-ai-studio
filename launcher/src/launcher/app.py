@@ -638,6 +638,8 @@ def smart_city_monitor_counts() -> JSONResponse:
             # after a reload) can rebuild every feed's card as it was set up.
             "feeds": [_smart_city_feed_json(f) for f in smart_city_monitor_runner.feeds()],
             "error": smart_city_monitor_runner.error,
+            "health": smart_city_monitor_runner.health(),
+            "running": smart_city_monitor_runner.running,
         }
     )
 

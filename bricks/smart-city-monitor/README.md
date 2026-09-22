@@ -209,7 +209,50 @@ box too. California's Caltrans publishes around 1,300 public HLS freeway
 cameras, but in testing only about one camera in ten opened reliably, so
 none are curated.
 
-### Getting past YouTube's wall with a signed-in session
+### Connection recovery and setup checks
+
+Run `uv run --no-sync smart-city-doctor` before a show. This checks yt-dlp,
+its matching JavaScript solver, a supported Deno/Node runtime, and whether
+an opted-in cookie file exists. It makes no YouTube request. Install Deno
+2.3+ (recommended) or Node 22+ and reopen the launcher if the check asks for it.
+`uv sync --locked --extra openvino` installs the matching Python dependencies.
+For one explicit live check, add `--url https://www.youtube.com/watch?v=VIDEO_ID`.
+It checks HLS resolution, not decoding, inference or future availability.
+
+YouTube resolutions are serialized across feeds, spaced at least eight seconds
+apart, and reused for up to 90 seconds for the same video. A bot challenge or
+rate-limit response pauses new YouTube resolutions for 15 minutes within the
+launcher process, including Stop/Start attempts. Existing working streams keep
+running. Unavailable individual videos also have a one-minute cooldown.
+Restarting the launcher resets this protection; do not restart it just
+to bypass the cooldown. We do not continually probe every YouTube camera.
+
+Direct live streams and YouTube retry unstable connections after 5, 10, 20 and
+40 seconds, then fail that feed. A full minute of received frames resets the
+budget. Unavailable/restricted videos and explicit access denials fail without
+automatic retries. YouTube extraction has a 60-second limit and runs in a
+separate process that Stop can terminate. FFmpeg open/read calls have ten-second
+timeouts; actual device/model compilation and inference remain native calls
+that can take longer to stop.
+
+Refreshed HTTP clips also have a five-attempt limit for failed/empty downloads.
+Waiting for an unchanged clip to be refreshed is normal and does not consume it.
+
+Each feed reports recovery/errors and the age of its last frame. Counts age out
+even while a camera is silent; one failed camera leaves other feeds running.
+Warnings from the extractor are visible in the server console, with URLs
+redacted. Keep that console log when investigating an extraction failure.
+
+For a dependable presentation choose **Other > London, two chips**, an authorized
+direct camera stream, or a local clip. TfL uses short refreshed clips, so gaps
+are expected. Label local clips as recordings. Sources are never silently swapped
+for another city or recording, and no setup can guarantee YouTube access.
+
+References: [yt-dlp JavaScript setup](https://github.com/yt-dlp/yt-dlp/wiki/EJS),
+[YouTube request limits and cookies](https://github.com/yt-dlp/yt-dlp/wiki/Extractors),
+[PO token guidance](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide).
+
+### Optional signed-in session
 
 If YouTube is refusing the network, yt-dlp can present a signed-in YouTube
 session instead of an anonymous one. It is off by default and entirely
@@ -245,10 +288,9 @@ The setting is read from the environment only — nothing in the UI or the API
 ever sees it. yt-dlp rewrites the file as YouTube refreshes the session, so it
 must stay writable; and it is a login, so keep it private (`*cookies*.txt` is
 git-ignored in case one ever lands in the repo). If a bot check still happens
-with the setting in place, the error says so: the cookies have most likely
-expired, so export them again. YouTube now also asks for "PO tokens" on some
-requests, so a signed-in session is likely — not guaranteed — to get
-through. The **Other** section keeps working either way.
+with the setting in place, the error says so. Expired cookies, an account
+restriction or a network block are all possible; exporting again is not a
+guaranteed fix. The **Other** section offers sources independent of YouTube.
 
 ## Notes / current limitations
 

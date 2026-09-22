@@ -9,6 +9,7 @@ correctly attributed, the same way expense-extract's OCR/LLM stages do.
 from __future__ import annotations
 
 import threading
+import time
 
 import cv2
 import numpy as np
@@ -32,6 +33,7 @@ class SmartCityMonitorRunner:
         self._latest_snapshot: CountSnapshot | None = None
         self._feeds: list[FeedSpec] = []
         self.error: str | None = None
+        self._health: dict[str, dict] = {}
 
     @property
     def running(self) -> bool:
@@ -50,6 +52,7 @@ class SmartCityMonitorRunner:
         with self._frame_lock:
             self._latest_jpeg = {}
             self._latest_snapshot = None
+            self._health = {f.feed_id: {'phase': 'loading', 'message': 'Loading model...', 'last_frame': None} for f in feeds}
         self._feeds = feeds
         self._stop_event = threading.Event()
         stop_event = self._stop_event
@@ -61,18 +64,35 @@ class SmartCityMonitorRunner:
                 return
             with self._frame_lock:
                 self._latest_jpeg[feed_id] = buf.tobytes()
+                self._health[feed_id]['last_frame'] = time.monotonic()
 
         def on_counts(snapshot: CountSnapshot) -> None:
             with self._frame_lock:
                 self._latest_snapshot = snapshot
 
         def on_ready(feed_id: str) -> None:
-            events.set_phase(_DEMO_ID, "running", "Monitoring...", stage=feed_id)
+            on_feed_status(feed_id, 'running', 'Monitoring...')
+
+        def on_feed_status(feed_id: str, phase: str, message: str) -> None:
+            if stop_event.is_set():
+                return
+            with self._frame_lock:
+                old = self._health[feed_id]
+                if old['phase'] == phase and old['message'] == message:
+                    return
+                self._health[feed_id].update(phase=phase, message=message)
+            feed = next(f for f in feeds if f.feed_id == feed_id)
+            if phase == 'running':
+                activity.set_active(_DEMO_ID, engine=(feed.engine or engine).value, device=feed.compute_device,
+                                    stage=feed_id, stage_label=f"Feed {feed_id.removeprefix('feed-')}")
+            else:
+                activity.clear_active(_DEMO_ID, stage=feed_id)
+            events.set_phase(_DEMO_ID, phase, message, stage=feed_id)
 
         def on_feed_error(feed_id: str, message: str) -> None:
             # One feed failing (bad device id, unreadable file) must be visible
             # right away on that feed's tile -- the others keep running.
-            events.set_phase(_DEMO_ID, "error", message, stage=feed_id)
+            on_feed_status(feed_id, 'error', message)
             activity.clear_active(_DEMO_ID, stage=feed_id)
 
         def target() -> None:
@@ -97,6 +117,7 @@ class SmartCityMonitorRunner:
                     loop=loop,
                     on_ready=on_ready,
                     on_feed_error=on_feed_error,
+                    on_feed_status=on_feed_status,
                     on_frame=on_frame,
                     on_counts=on_counts,
                     stop_event=stop_event,
@@ -104,10 +125,17 @@ class SmartCityMonitorRunner:
             except Exception as exc:  # surfaced to the UI, not silently dropped
                 self.error = str(exc)
                 for feed in feeds:
-                    events.set_phase(_DEMO_ID, "error", str(exc), stage=feed.feed_id)
+                    if self._health[feed.feed_id]['phase'] != 'error':
+                        on_feed_status(feed.feed_id, 'error', str(exc))
             else:
                 for feed in feeds:
-                    events.clear_phase(_DEMO_ID, stage=feed.feed_id)
+                    if self._health[feed.feed_id]['phase'] != 'error' or stop_event.is_set():
+                        events.clear_phase(_DEMO_ID, stage=feed.feed_id)
+                        with self._frame_lock:
+                            self._health[feed.feed_id].update(phase='idle', message='Stopped.')
+                failed = [h['message'] for h in self._health.values() if h['phase'] == 'error']
+                if failed and len(failed) == len(feeds) and not stop_event.is_set():
+                    self.error = 'All feeds stopped. ' + failed[0]
             finally:
                 for feed in feeds:
                     activity.clear_active(_DEMO_ID, stage=feed.feed_id)
@@ -134,6 +162,18 @@ class SmartCityMonitorRunner:
     def latest_snapshot(self) -> CountSnapshot | None:
         with self._frame_lock:
             return self._latest_snapshot
+
+    def health(self) -> dict:
+        with self._frame_lock:
+            now = time.monotonic()
+            result = {}
+            for fid, entry in self._health.items():
+                age = None if entry['last_frame'] is None else max(0, now - entry['last_frame'])
+                phase, message = entry['phase'], entry['message']
+                if phase == 'running' and age is not None and age > 15:
+                    phase, message = 'waiting', 'No recent frames; showing the last received image. Refreshed clips pause between updates.'
+                result[fid] = {'phase': phase, 'message': message, 'frame_age_seconds': None if age is None else round(age, 1)}
+            return result
 
     def feeds(self) -> list[FeedSpec]:
         return list(self._feeds)

@@ -11,7 +11,7 @@ dependencies = [
     # Resolves a YouTube live page to the HLS stream behind it, for the
     # public street cameras in samples.py. Pure Python and small; YouTube
     # changes often enough that this wants to stay current.
-    "yt-dlp>=2024.1",  # imported directly (draw.py, cli.py), not just via core
+    "yt-dlp[default]>=2026.8.19",  # Includes the matching YouTube JavaScript solver.
 ]
 
 [project.optional-dependencies]
@@ -22,6 +22,7 @@ openvino = [
 
 [project.scripts]
 smart-city-monitor = "smart_city_monitor.cli:main"
+smart-city-doctor = "smart_city_monitor.doctor:main"
 
 [build-system]
 requires = ["hatchling"]

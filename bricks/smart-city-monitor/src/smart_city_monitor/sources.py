@@ -20,14 +20,16 @@ silicon. Nothing about the video is sent anywhere.
 from __future__ import annotations
 
 import os
-import re
+import shutil
 import threading
+import time
 from pathlib import PureWindowsPath
 from urllib.parse import urlparse
 
 from pantherlake_ai_core import video
 
 from . import samples
+from . import youtube
 
 _YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be", "www.youtu.be"}
 
@@ -38,7 +40,9 @@ MAX_STREAM_HEIGHT = 720
 
 # A resolved YouTube CDN link is time-limited, so a long run re-resolves
 # rather than retrying a URL that has since expired.
-_REOPEN_BACKOFF_SECONDS = 2.0
+_REOPEN_BACKOFF_SECONDS = 5.0
+_MAX_FAILURES = 5
+_STABLE_SECONDS = 60.0
 
 
 def is_url(source: str) -> bool:
@@ -108,7 +112,7 @@ def _cookies_hint() -> str:
     if _cookies_path():
         return (
             f" The signed-in session in {YOUTUBE_COOKIES_ENV} didn't get past it either -- "
-            "its cookies have probably expired; export them again (see the smart-city README)."
+            "cookies may be expired, or the account/network may be restricted. Re-exporting is not a guaranteed fix."
         )
     return (
         f" With a signed-in YouTube account you can set {YOUTUBE_COOKIES_ENV} to a "
@@ -121,7 +125,12 @@ def _ytdlp_options() -> dict:
     operator's exported cookies if -- and only if -- they opted in."""
     # no_color: yt-dlp colours its errors for a terminal, and those escape
     # codes were landing verbatim in the UI's status line.
-    options = {"quiet": True, "no_warnings": True, "skip_download": True, "no_color": True}
+    options = {"quiet": True, "no_warnings": False, "skip_download": True, "no_color": True,
+               "noplaylist": True, "socket_timeout": 10, "retries": 0, "extractor_retries": 0}
+    if shutil.which('deno'):
+        options['js_runtimes'] = {'deno': {}}
+    elif shutil.which('node'):
+        options['js_runtimes'] = {'node': {}}
     cookies = _cookies_path()
     if cookies:
         if not os.path.isfile(cookies):
@@ -139,27 +148,15 @@ def _ytdlp_options() -> dict:
 # the same wall or came back with no video at all. So the usual "upgrade
 # yt-dlp" advice is wrong for this failure, and repeating it wastes the time
 # of whoever is standing in front of the demo.
-_BOT_CHECK_MARKERS = ("not a bot", "Sign in to confirm")
-_ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _explain_youtube_failure(url: str, message: str) -> str:
     """An operator-facing reason for a YouTube page that wouldn't resolve."""
-    message = _ANSI.sub("", message).strip()  # belt and braces with no_color
-    if any(marker in message for marker in _BOT_CHECK_MARKERS):
-        return (
-            f"YouTube is asking this network to sign in to prove it isn't a bot, so {url} "
-            "can't be opened right now. Updating yt-dlp won't help -- YouTube is blocking "
-            "the connection, the parser isn't out of date. Use a direct camera stream "
-            "(RTSP, or an HLS .m3u8 URL) or a local video file instead." + _cookies_hint()
-        )
-    return (
-        f"Couldn't read the YouTube page for {url}: {message}. If this used to work, "
-        "YouTube has probably changed something -- try `uv sync --upgrade-package yt-dlp`."
-    )
+    error = youtube.classify(message)
+    return str(error) + (_cookies_hint() if error.blocked else '')
 
 
-def _extract_formats(url: str) -> list[dict]:
+def _extract_formats(url: str, stop_event=None) -> list[dict]:
     """Ask yt-dlp what streams sit behind a YouTube live page.
 
     Isolated from the choosing below so the choice can be tested without
@@ -167,41 +164,33 @@ def _extract_formats(url: str) -> list[dict]:
     YouTube changes its page, so the error belongs here.
     """
     try:
-        import yt_dlp
-    except ImportError:  # pragma: no cover - depends on the install
-        raise RuntimeError(
-            "Reading a YouTube live stream needs yt-dlp. Install this brick's "
-            "dependencies (`uv sync`), or use a direct stream URL instead."
-        ) from None
-
-    options = _ytdlp_options()
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=False)
-    except Exception as exc:
-        raise RuntimeError(_explain_youtube_failure(url, str(exc))) from exc
-    return info.get("formats", []) if info else []
+        return youtube.resolver.resolve(url, stop_event)
+    except youtube.SourceError as exc:
+        if exc.blocked:
+            raise youtube.SourceError(str(exc) + _cookies_hint(), blocked=True) from None
+        raise
 
 
-def resolve_youtube_stream(url: str, *, max_height: int = MAX_STREAM_HEIGHT) -> str:
+def resolve_youtube_stream(url: str, *, max_height: int = MAX_STREAM_HEIGHT, stop_event=None) -> str:
     """The direct HLS URL behind a YouTube live page."""
     streams = [
         f
-        for f in _extract_formats(url)
+        for f in (_extract_formats(url) if stop_event is None else _extract_formats(url, stop_event))
         if f.get("protocol") in ("m3u8", "m3u8_native") and f.get("vcodec") != "none" and f.get("url")
     ]
     if not streams:
-        raise RuntimeError(f"No playable video stream found at {url} -- is it actually live?")
+        raise youtube.SourceError('No playable HLS video stream -- is it actually live? Check Deno and yt-dlp[default], or choose Other > London, two chips.')
 
     # The largest that fits the cap, not the first under it: the list is
     # not sorted, and a 360p stream when 720p is there is a worse demo
     # for free.
     capped = [f for f in streams if (f.get("height") or 0) <= max_height]
-    best = max(capped or streams, key=lambda f: (f.get("height") or 0))
+    best = (max(capped, key=lambda f: (f.get('height') or 0)) if capped
+            else min(streams, key=lambda f: (f.get('height') or 0)))
     return best["url"]
 
 
-def open_frames(source: str, *, loop: bool = True, stop_event: threading.Event | None = None):
+def open_frames(source: str, *, loop: bool = True, stop_event: threading.Event | None = None, on_status=None):
     """Yield BGR frames from whatever kind of source this is."""
     if not is_url(source):
         yield from video.stream_video_file_frames(source, loop=loop, stop_event=stop_event)
@@ -210,19 +199,41 @@ def open_frames(source: str, *, loop: bool = True, stop_event: threading.Event |
     if is_clip_url(source):
         # Played once per revision -- replaying an unchanged clip would count
         # the same objects again every pass. See video.stream_refreshing_clip.
-        yield from video.stream_refreshing_clip(source, stop_event=stop_event)
+        yield from video.stream_refreshing_clip(source, stop_event=stop_event, on_status=on_status)
         return
 
-    if not is_youtube(source):
-        yield from video.stream_live_frames(source, stop_event=stop_event)
-        return
-
-    # Reconnect by re-resolving: the CDN link expires, the page link doesn't.
-    # A stream that opened and later dropped comes back here; one that never
-    # opened raises out of stream_live_frames and fails the feed properly.
+    # Both direct streams and YouTube get a finite recovery budget. A brief
+    # successful open does not reset it: only a full minute of frames does.
+    failures = 0
+    status = on_status or (lambda phase, message: None)
     while stop_event is None or not stop_event.is_set():
-        yield from video.stream_live_frames(
-            resolve_youtube_stream(source), stop_event=stop_event, reconnect=False
-        )
-        if video.sleep_unless_stopped(stop_event, _REOPEN_BACKOFF_SECONDS):
+        started = None
+        try:
+            status('loading', 'Connecting to camera...' if not is_youtube(source) else 'Waiting for paced YouTube connection...')
+            url = resolve_youtube_stream(source, stop_event=stop_event) if is_youtube(source) else source
+            for frame in video.stream_live_frames(url, stop_event=stop_event, reconnect=False):
+                if started is None:
+                    started = time.monotonic()
+                yield frame
+            if stop_event is not None and stop_event.is_set():
+                return
+            reason = 'Camera stopped sending frames.'
+        except youtube.Cancelled:
+            return
+        except youtube.SourceError as exc:
+            if not exc.retryable:
+                raise
+            reason = str(exc)
+        except (RuntimeError, OSError) as exc:
+            reason = youtube.safe_message(exc)
+        if started is not None and time.monotonic() - started >= _STABLE_SECONDS:
+            failures = 0
+        failures += 1
+        if failures >= _MAX_FAILURES:
+            raise RuntimeError(f'Camera failed after {_MAX_FAILURES} unstable connections. {reason} Choose another camera or a local video, then restart.')
+        if is_youtube(source):
+            youtube.resolver.invalidate(source, stop_event)
+        delay = min(60, _REOPEN_BACKOFF_SECONDS * 2 ** (failures - 1))
+        status('loading', f'Reconnecting in {delay:g}s ({failures}/{_MAX_FAILURES - 1}). {reason}')
+        if video.sleep_unless_stopped(stop_event, delay):
             return

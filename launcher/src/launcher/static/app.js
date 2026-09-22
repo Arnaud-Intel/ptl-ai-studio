@@ -1360,6 +1360,31 @@ const PANELS = {
     transport: "mjpeg",
     video: "smartcity-video",
     statusKey: "smart-city-monitor:feed-1",
+    renderHealth(health) {
+      const cards = feedCards();
+      this.feeds.forEach((feed, i) => {
+        const entry = health[feed.feed_id];
+        const card = cards[i];
+        if (!card || !entry) return;
+        let status = card.querySelector('.feed-health');
+        if (!status) {
+          status = document.createElement('p');
+          status.className = 'feed-health';
+          status.setAttribute('role', 'status');
+          card.appendChild(status);
+        }
+        status.textContent = entry.message + (entry.frame_age_seconds == null ? '' : ` Last frame: ${Math.floor(entry.frame_age_seconds)}s ago.`);
+      });
+    },
+    onStatus() {
+      // Feed 1 is not the whole workload: another feed may still be healthy.
+      if (!this.isOpen || !this.running) return;
+      const stages = Object.values(STATUS.snapshot).filter(s => s.demo_id.startsWith('smart-city-monitor:'));
+      const running = stages.filter(s => s.phase === 'running').length;
+      const failed = stages.filter(s => s.phase === 'error').length;
+      const stopping = stages.some(s => s.phase === 'stopping');
+      this.setStatus(stopping ? 'Stopping...' : `${running} feed(s) running, ${failed} failed; see each feed below.`, stopping ? 'stopping' : running ? 'running' : 'loading');
+    },
     // A disabled <fieldset> disables every card inside it, however many.
     controls: ["smartcity-feed-set", "smartcity-loop"],
     feeds: [],
@@ -1397,8 +1422,12 @@ const PANELS = {
       // pick it up from the counts route, then the usual running check. The
       // route reports each feed's engine, chip and source, so the cards can
       // be rebuilt exactly as they were rather than left blank under a run.
+      let live = false;
+      let lastError = null;
       try {
         const data = await fetchJSON("/api/smart-city-monitor/counts");
+        live = Boolean(data.running);
+        lastError = data.error;
         this.feeds = data.feeds || [];
         if (this.feeds.length) {
           el("smartcity-feed-list").innerHTML = "";
@@ -1410,11 +1439,13 @@ const PANELS = {
               device: feed.compute_device,
             });
           }
+          this.renderHealth(data.health || {});
         }
       } catch {
         this.feeds = [];
       }
-      await StreamPanel.prototype.rehydrate.call(this);
+      this.setRunning(live);
+      if (lastError) this.setStatus(`Error: ${lastError}`, 'error');
     },
     body() {
       const cards = feedCards();
@@ -1450,8 +1481,13 @@ const PANELS = {
       this.every(1000, async () => {
         try {
           const data = await fetchJSON("/api/smart-city-monitor/counts");
+          this.renderHealth(data.health || {});
           if (data.error) {
             this.setStatus(`Error: ${data.error}`, "error");
+            this.setRunning(false);
+            return;
+          }
+          if (data.running === false) {
             this.setRunning(false);
             return;
           }

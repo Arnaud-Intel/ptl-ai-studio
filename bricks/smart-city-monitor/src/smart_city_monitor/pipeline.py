@@ -60,36 +60,40 @@ class FeedCounters:
 
 class _SharedState:
     """Lock-guarded aggregation of every feed's latest counts into one
-    combined snapshot -- read by on_counts after every processed frame,
-    from whichever feed thread just processed one."""
+    combined snapshot. A heartbeat ages counts even when frames stop."""
 
     def __init__(self, feeds: list[FeedSpec]) -> None:
         self._lock = threading.Lock()
         self._active_feeds = [f.feed_id for f in feeds]
         self._per_feed_last_60s: dict[str, dict[str, int]] = {f.feed_id: {} for f in feeds}
         self._per_feed_total: dict[str, dict[str, int]] = {f.feed_id: {} for f in feeds}
+        self._counters = {f.feed_id: FeedCounters() for f in feeds}
 
-    def update_and_snapshot(self, feed_id: str, last_60s: dict[str, int], total: dict[str, int]) -> CountSnapshot:
+    def record(self, feed_id, tracks, now):
         with self._lock:
-            self._per_feed_last_60s[feed_id] = last_60s
-            self._per_feed_total[feed_id] = total
+            self._counters[feed_id].record(tracks, now)
 
-            combined_last_60s: dict[str, int] = defaultdict(int)
-            combined_total: dict[str, int] = defaultdict(int)
-            for fid in self._active_feeds:
+    def finish(self, feed_id):
+        with self._lock:
+            if feed_id in self._active_feeds:
+                self._active_feeds.remove(feed_id)
+
+    def snapshot(self, now):
+        with self._lock:
+            for fid, counters in self._counters.items():
+                self._per_feed_last_60s[fid], self._per_feed_total[fid] = counters.snapshot(now)
+            combined_minute, combined_total = defaultdict(int), defaultdict(int)
+            for fid in self._counters:
                 for label, count in self._per_feed_last_60s[fid].items():
-                    combined_last_60s[label] += count
+                    combined_minute[label] += count
                 for label, count in self._per_feed_total[fid].items():
                     combined_total[label] += count
-
             return CountSnapshot(
-                combined_last_60s=dict(combined_last_60s),
-                combined_total=dict(combined_total),
+                combined_last_60s=dict(combined_minute), combined_total=dict(combined_total),
                 per_feed_last_60s={fid: dict(v) for fid, v in self._per_feed_last_60s.items()},
                 per_feed_total={fid: dict(v) for fid, v in self._per_feed_total.items()},
                 active_feeds=list(self._active_feeds),
             )
-
 
 # What makes two feeds able to share one loaded detector. Device alone
 # isn't enough now that a feed picks its own engine and model: two feeds on
@@ -112,6 +116,7 @@ def run(
     loop: bool = True,
     on_ready: Callable[[str], None] | None = None,
     on_feed_error: Callable[[str, str], None] | None = None,
+    on_feed_status: Callable[[str, str, str], None] | None = None,
     on_frame: Callable[[str, np.ndarray, list[TrackedDetection]], None],
     on_counts: Callable[[CountSnapshot], None],
     stop_event: threading.Event | None = None,
@@ -146,6 +151,7 @@ def run(
     bookkeeping_lock = threading.Lock()
 
     def fail(feed_id: str, exc: Exception) -> None:
+        state.finish(feed_id)
         with bookkeeping_lock:
             errors.setdefault(feed_id, exc)
         if on_feed_error is not None:
@@ -163,27 +169,40 @@ def run(
 
         def feed_worker(feed: FeedSpec) -> None:
             tracker = Tracker()
-            counters = FeedCounters()
             ready = False
+            failed = False
+
+            def source_status(phase, message):
+                nonlocal ready
+                if phase == 'loading':
+                    ready = False
+                if on_feed_status is not None:
+                    on_feed_status(feed.feed_id, phase, message)
+
             try:
-                for frame in sources.open_frames(feed.path, loop=loop, stop_event=stop_event):
+                for frame in sources.open_frames(feed.path, loop=loop, stop_event=stop_event, on_status=source_status):
+                    if stop_event is not None and stop_event.is_set():
+                        break
+                    now = time.monotonic()
+                    with detect_lock:
+                        detections = detector.detect(frame)
                     if not ready:
                         ready = True
                         with bookkeeping_lock:
                             ready_feeds.add(feed.feed_id)
                         if on_ready is not None:
                             on_ready(feed.feed_id)
-                    now = time.monotonic()
-                    with detect_lock:
-                        detections = detector.detect(frame)
                     relevant = [d for d in detections if d.label in RELEVANT_LABELS]
                     tracks = tracker.update(relevant, now)
-                    counters.record(tracks, now)
+                    state.record(feed.feed_id, tracks, now)
                     on_frame(feed.feed_id, frame, tracks)
-                    last_60s, total = counters.snapshot(now)
-                    on_counts(state.update_and_snapshot(feed.feed_id, last_60s, total))
             except Exception as exc:
+                failed = True
                 fail(feed.feed_id, exc)
+            finally:
+                state.finish(feed.feed_id)
+                if not failed and not (stop_event is not None and stop_event.is_set()) and on_feed_status is not None:
+                    on_feed_status(feed.feed_id, 'idle', 'Video ended.')
 
         feed_threads = [threading.Thread(target=feed_worker, args=(feed,), daemon=True) for feed in device_feeds]
         for t in feed_threads:
@@ -198,10 +217,13 @@ def run(
     ]
     for t in device_threads:
         t.start()
-    for t in device_threads:
-        t.join()
+    while any(t.is_alive() for t in device_threads):
+        on_counts(state.snapshot(time.monotonic()))
+        for t in device_threads:
+            t.join(timeout=0.5 / len(device_threads))
+    on_counts(state.snapshot(time.monotonic()))
 
-    if errors and not ready_feeds:
+    if errors and not ready_feeds and not (stop_event is not None and stop_event.is_set()):
         # Threads don't propagate exceptions to the caller on their own --
         # if nothing ever ran, surface the first failure rather than
         # returning as if the run had simply finished.

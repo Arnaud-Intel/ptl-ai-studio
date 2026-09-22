@@ -228,12 +228,15 @@ def stream_live_frames(
 
     attempts = 0
     while stop_event is None or not stop_event.is_set():
-        cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+        cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG, [
+            cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000,
+            cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000,
+        ])
         if not cap.isOpened():
             cap.release()
             attempts += 1
             if not reconnect or attempts >= _RECONNECT_ATTEMPTS:
-                raise RuntimeError(f"Could not open stream: {url}")
+                raise RuntimeError("Could not open camera stream (network, expired URL, or unsupported format).")
             if sleep_unless_stopped(stop_event, _RECONNECT_BACKOFF_SECONDS):
                 return
             continue
@@ -289,10 +292,13 @@ def _play_clip_once(url: str, stop_event: threading.Event | None = None):
     flash past in one, taking "per minute" with it."""
     import cv2
 
-    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG, [
+        cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000,
+        cv2.CAP_PROP_READ_TIMEOUT_MSEC, 10000,
+    ])
     if not cap.isOpened():
         cap.release()
-        raise RuntimeError(f"Could not open clip: {url}")
+        raise RuntimeError("Could not open camera clip (network or unavailable video).")
     try:
         fps = cap.get(cv2.CAP_PROP_FPS)
         frame_interval = 1.0 / fps if fps and fps > 0 else 1.0 / _DEFAULT_FILE_FPS
@@ -303,7 +309,8 @@ def _play_clip_once(url: str, stop_event: threading.Event | None = None):
                 return
             now = time.monotonic()
             if next_frame_at > now:
-                time.sleep(next_frame_at - now)
+                if sleep_unless_stopped(stop_event, next_frame_at - now):
+                    return
             next_frame_at = max(next_frame_at, now) + frame_interval
             yield frame
     finally:
@@ -317,37 +324,53 @@ def stream_refreshing_clip(
     poll_seconds: float = _CLIP_POLL_SECONDS,
     _version=http_clip_version,
     _play=_play_clip_once,
+    on_status=None,
 ):
     """Yield frames from a clip URL that is replaced in place, playing each
     revision of it exactly once.
 
     Between revisions nothing is yielded: the picture holds its last frame
     and per-minute counts decay honestly, instead of climbing on a replay.
-    The first play is allowed to fail loudly (a bad URL should fail the
-    feed); a later one that fails is treated as a blip and retried at the
-    next poll, since the clip was demonstrably there a few minutes ago.
+    Failed or empty clips have a five-attempt budget and increasing delays.
+    A successful revision resets the budget. Waiting for the publisher to
+    replace an unchanged clip is normal and does not spend the budget.
     """
     played = False
+    failures = 0
+    status = on_status or (lambda phase, message: None)
     last_version: object = None  # what we last played; a sentinel if unknown
     unknown = object()
     while stop_event is None or not stop_event.is_set():
         current = _version(url)
         if played and current is not None and current == last_version:
+            status('loading', 'Waiting for a fresh camera clip; showing the last received image.')
             if sleep_unless_stopped(stop_event, poll_seconds):
                 return
             continue
         if played and current is None:
+            status('loading', 'Camera revision unavailable; waiting before checking again.')
             # Can't tell whether it changed. Replaying on a hunch is the
             # over-count this reader exists to prevent, so wait it out.
             if sleep_unless_stopped(stop_event, _CLIP_FALLBACK_WAIT):
                 return
         try:
-            yield from _play(url, stop_event)
-        except RuntimeError:
-            if not played:
-                raise
-            if sleep_unless_stopped(stop_event, poll_seconds):
+            received = False
+            for frame in _play(url, stop_event):
+                received = True
+                yield frame
+            if stop_event is not None and stop_event.is_set():
+                return
+            if not received:
+                raise RuntimeError('Camera clip returned no frames.')
+        except (RuntimeError, OSError):
+            failures += 1
+            if failures >= 5:
+                raise RuntimeError('Camera clip failed five times. Choose another camera or a local video.') from None
+            delay = min(60, max(poll_seconds, 1) * 2 ** (failures - 1))
+            status('loading', f'Camera clip unavailable; retrying in {delay:g}s ({failures}/4).')
+            if sleep_unless_stopped(stop_event, delay):
                 return
             continue
+        failures = 0
         played = True
         last_version = current if current is not None else unknown
