@@ -6,6 +6,8 @@ import time
 from pantherlake_ai_core.model_cache import resolve_gguf
 from pantherlake_ai_core.types import GenerationStats
 
+from .engine_factory import TEMPLATE_TOKENS, PromptTooLong
+
 _DEFAULT_REPO = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"
 _DEFAULT_FILENAME = "*q4_k_m.gguf"
 
@@ -27,9 +29,20 @@ class PortableLLM:
             n_ctx=n_ctx,
             verbose=False,
         )
+        self.n_ctx = n_ctx  # prompt and answer together
         self.last_stats: GenerationStats | None = None
 
+    def count_tokens(self, text: str) -> int:
+        return len(self.model.tokenize(text.encode("utf-8"), add_bos=False, special=True))
+
+    def prompt_budget(self, max_tokens: int) -> int:
+        return self.n_ctx - max_tokens
+
     def answer(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str:
+        needed = self.count_tokens(system_prompt) + self.count_tokens(user_prompt) + TEMPLATE_TOKENS
+        budget = self.prompt_budget(max_tokens)
+        if needed > budget:
+            raise PromptTooLong(needed, budget, "cpu")
         started = time.perf_counter()
         response = self.model.create_chat_completion(
             messages=[

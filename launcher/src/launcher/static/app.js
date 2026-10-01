@@ -1023,7 +1023,9 @@ const PANELS = {
             renderTextBlock(el("mtg-notes"), data.text);
             return data;
           },
-          done: (data) => `Based on ${data.transcript_line_count} transcript line(s)`,
+          done: (data) =>
+            `Based on ${data.transcript_line_count} transcript line(s)` +
+            (data.parts > 1 ? ` -- a long meeting, summarised in ${data.parts} parts and merged` : ""),
         }),
       );
     },

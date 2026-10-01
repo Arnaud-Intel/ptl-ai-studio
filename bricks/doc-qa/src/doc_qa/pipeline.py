@@ -10,7 +10,7 @@ from typing import Callable
 from pantherlake_ai_core.engine import Engine
 
 from . import documents
-from .engine_factory import create_embedder, create_llm
+from .engine_factory import TEMPLATE_TOKENS, create_embedder, create_llm
 from .store import VectorStore, cache_dir_for
 from .types import Answer
 
@@ -79,11 +79,29 @@ class DocQASession:
 
         query_vector = self.embedder.embed_query(question)
         retrieved = self.store.search(query_vector, top_k=top_k)
+        used = fit_excerpts(self.llm, retrieved, question, max_tokens)
+        text = self.llm.answer(_SYSTEM_PROMPT, _user_prompt(used, question), max_tokens=max_tokens)
+        # Only what the model actually saw: citing an excerpt it never read
+        # would make the [number] references point at the wrong passage.
+        return Answer(text=text, sources=used)
 
-        excerpts = "\n\n".join(
-            f"[{i + 1}] (from {r.chunk.source})\n{r.chunk.text}" for i, r in enumerate(retrieved)
-        )
-        user_prompt = f"Excerpts:\n\n{excerpts}\n\nQuestion: {question}"
 
-        text = self.llm.answer(_SYSTEM_PROMPT, user_prompt, max_tokens=max_tokens)
-        return Answer(text=text, sources=retrieved)
+def _user_prompt(retrieved: list, question: str) -> str:
+    excerpts = "\n\n".join(
+        f"[{i + 1}] (from {r.chunk.source})\n{r.chunk.text}" for i, r in enumerate(retrieved)
+    )
+    return f"Excerpts:\n\n{excerpts}\n\nQuestion: {question}"
+
+
+def fit_excerpts(llm, retrieved: list, question: str, max_tokens: int) -> list:
+    """The best-ranked excerpts that fit the model's window on this device.
+
+    Dropping the weakest match beats refusing the question: the NPU runs an
+    LLM compiled for a fixed prompt length, and a few long passages can pass
+    it. The best one is always kept -- if even that doesn't fit, the model
+    says so plainly (PromptTooLong)."""
+    budget = llm.prompt_budget(max_tokens) - llm.count_tokens(_SYSTEM_PROMPT) - TEMPLATE_TOKENS
+    used = list(retrieved)
+    while len(used) > 1 and llm.count_tokens(_user_prompt(used, question)) > budget:
+        used.pop()
+    return used

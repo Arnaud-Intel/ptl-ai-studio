@@ -119,13 +119,18 @@ class MeetingNotesRunner:
         def on_downloading() -> None:
             events.set_phase(_DEMO_ID, "loading", "Downloading notes model (first run only)...", stage="notes")
 
+        def on_progress(step: int, steps: int) -> None:
+            # A long meeting is summarised part by part; say where it is.
+            message = f"Long meeting: summarising part {step} of {steps - 1}..." if step < steps else "Merging the parts into one set of notes..."
+            events.set_phase(_DEMO_ID, "running", message, stage="notes")
+
         # The notes stage gets its own activity entry, so it never clears
         # the transcription thread's while that is still running.
         activity.set_active(_DEMO_ID, engine=engine.value, device=device, stage="notes", stage_label="notes")
         events.set_phase(_DEMO_ID, "loading", "Preparing notes model...", stage="notes")
         with self._notes_lock:
             try:
-                notes = session.generate_notes(on_ready=on_ready, on_downloading=on_downloading)
+                notes = session.generate_notes(on_ready=on_ready, on_downloading=on_downloading, on_progress=on_progress)
             except Exception as exc:
                 events.set_phase(_DEMO_ID, "error", str(exc), stage="notes")
                 raise

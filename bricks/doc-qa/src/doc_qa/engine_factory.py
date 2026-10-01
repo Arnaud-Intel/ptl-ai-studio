@@ -14,12 +14,34 @@ class Embedder(Protocol):
     def embed_query(self, text: str) -> list[float]: ...
 
 
+# Tokens a chat template wraps around the system and user messages -- a
+# margin, so a prompt measured as fitting still fits once templated.
+TEMPLATE_TOKENS = 32
+
+
+class PromptTooLong(ValueError):
+    """A prompt bigger than the model's window on this device, said plainly
+    rather than as the runtime's assertion text (on the NPU that read "Check
+    'data->input_ids.get_size() <= m_max_prompt_len' failed at C:\\Jenkins...")."""
+
+    def __init__(self, needed: int, budget: int, device: str):
+        self.needed, self.budget, self.device = needed, budget, device
+        super().__init__(
+            f"This request needs about {needed} tokens of prompt, but the model on {device} "
+            f"takes at most {budget}. Shorten the input, or run it on another device."
+        )
+
+
 class LLM(Protocol):
     # The last answer's speed (None before the first, or if unknown) --
     # what the bricks composing this one show the audience.
     last_stats: GenerationStats | None
 
     def answer(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str: ...
+    # How long a prompt may be, in the model's own tokens: what lets a caller
+    # split or trim its input *before* the model refuses it.
+    def count_tokens(self, text: str) -> int: ...
+    def prompt_budget(self, max_tokens: int) -> int: ...
 
 
 def create_embedder(

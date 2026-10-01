@@ -761,7 +761,7 @@ async def generate_meeting_notes() -> JSONResponse:
         notes = await run_in_threadpool(meeting_notes_runner.generate_notes)
     except Exception as exc:
         return error_response(exc)
-    return JSONResponse({"text": notes.text, "transcript_line_count": notes.transcript_line_count})
+    return JSONResponse({"text": notes.text, "transcript_line_count": notes.transcript_line_count, "parts": notes.parts})
 
 
 # --- webcam-effects ---------------------------------------------------------------

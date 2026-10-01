@@ -10,10 +10,11 @@ or llama.cpp wrapper would just be a bug generator with extra steps.
 from __future__ import annotations
 
 import datetime as dt
+import re
 import threading
 from typing import Callable
 
-from doc_qa.engine_factory import create_llm
+from doc_qa.engine_factory import TEMPLATE_TOKENS, create_llm
 from live_translation import pipeline as live_translation_pipeline
 from pantherlake_ai_core.engine import Engine
 from pantherlake_ai_core.types import TranslationResult
@@ -38,6 +39,90 @@ _NOTES_SYSTEM_PROMPT = (
     "Only use what's actually in the transcript. Don't invent details, "
     "attendees, or decisions that weren't said."
 )
+
+# A meeting longer than the model's window is summarised part by part, then
+# the parts are merged. The window is small on the NPU (it compiles the LLM
+# for a fixed prompt length) and finite everywhere, so this is the only way
+# an hour-long meeting gets notes at all.
+# The single-call prompt, not a thinner copy of it: a shorter one tried
+# first had the 1.5B model file every commitment under the summary and
+# answer "None in this part" for action items -- the guidance above about
+# what counts as an action item is what makes it list them.
+_PART_SYSTEM_PROMPT = (
+    "The transcript below is ONE PART of a longer meeting; write notes on this part only. "
+    + _NOTES_SYSTEM_PROMPT
+    + " Write each action item as 'Name: task (deadline)', with the name the transcript gives."
+)
+_MERGE_SYSTEM_PROMPT = (
+    "You are combining notes written separately on consecutive parts of ONE "
+    "meeting into a single set of meeting notes. Produce:\n"
+    "1. A short running summary (2-6 bullet points) of the whole meeting.\n"
+    "2. An 'Action items' section with every action item from the parts, "
+    "merging duplicates. Keep each item's owner name and deadline exactly as "
+    "the parts give them -- an action item without its owner is useless. "
+    "Only write 'None identified' if no part had any.\n"
+    "Only use what the part notes say. Don't invent details."
+)
+_PART_MAX_TOKENS = 350
+# Per-item token counts add up to slightly less than the joined text's
+# count; leave room so a piece measured as fitting still fits.
+_SPLIT_HEADROOM = 0.95
+
+
+_NONE_LINE = re.compile(r"^[\s\-*•]*none (identified|in this part)\.?[\s*]*$", re.IGNORECASE)
+_LIST_ITEM = re.compile(r"^\s*([-*•]|\d+\.)\s*\S")
+
+
+def without_contradicting_none(text: str) -> str:
+    """Drop a 'None identified' line when the notes do list action items.
+
+    The prompt says not to write it then; the 1.5B model writes it anyway,
+    typically at the end of a long list, where it reads as a contradiction
+    on screen. Only the action-items section is looked at, and a genuinely
+    empty list keeps its 'None identified'."""
+    lines = text.splitlines()
+    heading = next((i for i, line in enumerate(lines) if "action item" in line.lower()), None)
+    if heading is None:
+        return text
+    after = lines[heading + 1:]
+    if not any(_LIST_ITEM.match(line) and not _NONE_LINE.match(line) for line in after):
+        return text
+    return "\n".join(lines[: heading + 1] + [line for line in after if not _NONE_LINE.match(line)]).rstrip()
+
+
+def _halve_until_fits(text: str, count_tokens: Callable[[str], int], budget: int) -> list[str]:
+    if count_tokens(text) <= budget:
+        return [text]
+    words = text.split()
+    if len(words) < 2:
+        return [text]  # can't cut further; the model will say it's too long
+    middle = len(words) // 2
+    return _halve_until_fits(" ".join(words[:middle]), count_tokens, budget) + _halve_until_fits(
+        " ".join(words[middle:]), count_tokens, budget
+    )
+
+
+def split_to_fit(
+    items: list[str], count_tokens: Callable[[str], int], budget: int, separator: str = "\n"
+) -> list[str]:
+    """Consecutive items joined into as few pieces as fit `budget` tokens
+    each, in order. An item too big on its own is cut by words -- a 14-second
+    utterance never is, but a pasted wall of text could be."""
+    limit = int(budget * _SPLIT_HEADROOM)
+    pieces: list[str] = []
+    current: list[str] = []
+    used = 0
+    for item in items:
+        for piece in _halve_until_fits(item, count_tokens, limit):
+            tokens = count_tokens(piece) + 1
+            if current and used + tokens > limit:
+                pieces.append(separator.join(current))
+                current, used = [], 0
+            current.append(piece)
+            used += tokens
+    if current:
+        pieces.append(separator.join(current))
+    return pieces
 
 
 class MeetingSession:
@@ -94,8 +179,11 @@ class MeetingSession:
         )
 
     def transcript_text(self) -> str:
+        return "\n".join(self._transcript_lines())
+
+    def _transcript_lines(self) -> list[str]:
         with self._lock:
-            return "\n".join(f"[{line.timestamp}] {line.text}" for line in self._transcript)
+            return [f"[{line.timestamp}] {line.text}" for line in self._transcript]
 
     def generate_notes(
         self,
@@ -103,14 +191,17 @@ class MeetingSession:
         *,
         on_ready: Callable[[], None] | None = None,
         on_downloading: Callable[[], None] | None = None,
+        on_progress: Callable[[int, int], None] | None = None,
     ) -> MeetingNotes:
         """`on_ready`/`on_downloading`, if given, mirror `transcribe`'s: the
         notes LLM is also lazy (built on first call, reused after), so a
         caller that wants to distinguish "building the notes LLM" from
-        "actually generating notes" needs the same seam here."""
-        with self._lock:
-            line_count = len(self._transcript)
-        transcript_text = self.transcript_text()
+        "actually generating notes" needs the same seam here.
+        `on_progress(step, steps)`, if given, fires before each model call
+        when a long meeting has to be summarised in parts."""
+        lines = self._transcript_lines()
+        line_count = len(lines)
+        transcript_text = "\n".join(lines)
         if not transcript_text.strip():
             raise RuntimeError("No transcript yet -- start capturing audio first.")
 
@@ -135,5 +226,39 @@ class MeetingSession:
         if on_ready is not None:
             on_ready()
 
-        notes_text = self._llm.answer(_NOTES_SYSTEM_PROMPT, transcript_text, max_tokens=max_tokens)
-        return MeetingNotes(text=notes_text, transcript_line_count=line_count)
+        llm = self._llm
+        budget = llm.prompt_budget(max_tokens) - llm.count_tokens(_NOTES_SYSTEM_PROMPT) - TEMPLATE_TOKENS
+        if llm.count_tokens(transcript_text) <= budget:
+            notes_text = llm.answer(_NOTES_SYSTEM_PROMPT, transcript_text, max_tokens=max_tokens)
+            return MeetingNotes(text=without_contradicting_none(notes_text), transcript_line_count=line_count)
+        return self._notes_in_parts(llm, lines, line_count, max_tokens, on_progress)
+
+    def _notes_in_parts(self, llm, lines, line_count, max_tokens, on_progress) -> MeetingNotes:
+        part_budget = llm.prompt_budget(_PART_MAX_TOKENS) - llm.count_tokens(_PART_SYSTEM_PROMPT) - TEMPLATE_TOKENS
+        parts = split_to_fit(lines, llm.count_tokens, part_budget)
+        steps = len(parts) + 1  # each part, then the merge
+        partial = []
+        for index, part in enumerate(parts, 1):
+            if on_progress is not None:
+                on_progress(index, steps)
+            partial.append(llm.answer(_PART_SYSTEM_PROMPT, part, max_tokens=_PART_MAX_TOKENS))
+
+        merge_budget = llm.prompt_budget(max_tokens) - llm.count_tokens(_MERGE_SYSTEM_PROMPT) - TEMPLATE_TOKENS
+        notes = [f"Part {i} of {len(partial)}:\n{text}" for i, text in enumerate(partial, 1)]
+        groups = split_to_fit(notes, llm.count_tokens, merge_budget, separator="\n\n")
+        while len(groups) > 1:
+            # Too many parts to merge at once: merge them in groups first. A
+            # group of one means a single part's notes fill the window --
+            # merging can't make progress then, so say so instead of looping.
+            # (More groups than notes is the same dead end: one part's notes
+            # were bigger than the window and got cut up.)
+            if len(groups) >= len(notes):
+                raise RuntimeError("This meeting is too long to condense into one set of notes on this device.")
+            notes = [llm.answer(_MERGE_SYSTEM_PROMPT, group, max_tokens=_PART_MAX_TOKENS) for group in groups]
+            groups = split_to_fit(notes, llm.count_tokens, merge_budget, separator="\n\n")
+        if on_progress is not None:
+            on_progress(steps, steps)
+        notes_text = llm.answer(_MERGE_SYSTEM_PROMPT, groups[0], max_tokens=max_tokens)
+        return MeetingNotes(
+            text=without_contradicting_none(notes_text), transcript_line_count=line_count, parts=len(parts)
+        )

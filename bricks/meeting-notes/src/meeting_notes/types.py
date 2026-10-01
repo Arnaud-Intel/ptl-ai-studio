@@ -15,3 +15,6 @@ class TranscriptLine:
 class MeetingNotes:
     text: str
     transcript_line_count: int
+    # 1 when the whole transcript fit the model at once; more when a long
+    # meeting was summarised part by part and the parts merged.
+    parts: int = 1
