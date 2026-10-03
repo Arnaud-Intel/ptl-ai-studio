@@ -365,6 +365,28 @@ def test_update_status_offers_the_prompt_once(client, monkeypatch):
     assert client.get("/api/update").json()["prompt"] is False
 
 
+def test_html_creator_passes_pictures_through_and_returns_the_readable_page(client, monkeypatch):
+    from html_creator.types import HtmlResult
+
+    asked = {}
+
+    def generate(**kwargs):
+        asked.update(kwargs)
+        return HtmlResult(
+            html='<img src="data:image/svg+xml;base64,AAAA">', mode="landing_page", source_char_count=10,
+            source_truncated=False, fence_stripped=False, html_truncated=False,
+            pictures_offered=2, pictures_used=["hero.svg"], picture_notes=[], html_source='<img src="hero.svg">',
+        )
+
+    monkeypatch.setattr(launcher_app.html_creator_runner, "generate", generate)
+    body = client.post(
+        "/api/html-creator/generate", json={"prompt": "a page", "pictures": "C:/kit", "engine": "portable"}
+    ).json()
+    assert asked["pictures"] == "C:/kit"
+    assert (body["pictures_offered"], body["pictures_used"]) == (2, ["hero.svg"])
+    assert body["html_source"] == '<img src="hero.svg">' and body["html"].startswith('<img src="data:')
+
+
 def test_the_page_stamps_every_script_and_stylesheet_it_loads(client):
     """An unstamped one stays in the browser's cache across an update."""
     import re

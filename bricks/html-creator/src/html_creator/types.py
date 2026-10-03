@@ -1,7 +1,7 @@
 """Shared result types for the html-creator brick."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pantherlake_ai_core.types import GenerationStats
 
@@ -15,3 +15,11 @@ class HtmlResult:
     fence_stripped: bool
     html_truncated: bool
     stats: GenerationStats | None = None
+    # Pictures (see pictures.py): how many the model was offered, which it
+    # placed, and why any were left out. `html` has them embedded;
+    # `html_source` is the page as the model wrote it, file names and all
+    # (None when there was nothing to embed).
+    pictures_offered: int = 0
+    pictures_used: list[str] = field(default_factory=list)
+    picture_notes: list[str] = field(default_factory=list)
+    html_source: str | None = None

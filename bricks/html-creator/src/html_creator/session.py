@@ -16,6 +16,7 @@ from pantherlake_ai_core.engine import Engine
 from pantherlake_ai_core.types import GenerationControl
 
 from . import folder_input
+from . import pictures as picture_kit
 from .html_cleanup import strip_code_fence
 from .types import HtmlResult
 
@@ -39,8 +40,21 @@ _HTML_RULES = (
     "block in the <head>. Do not link to any external stylesheet, font, "
     "CDN script, or image -- everything must work from this one file with "
     "no network access. If you need any JavaScript, put it inline in a "
-    "<script> tag at the end of <body>. Output raw HTML only: no markdown "
+    "<script> tag at the end of <body>. The page is shown in a sandboxed "
+    "frame: keep state in JavaScript variables, and do not use "
+    "localStorage, sessionStorage, cookies, alert(), confirm() or prompt(). "
+    "Output raw HTML only: no markdown "
     "code fences, no commentary before or after the document."
+)
+
+# Added when the request comes with pictures: the one exception to "no
+# image files", and the reason it is safe -- they are embedded afterwards.
+_PICTURE_RULES = (
+    " The request ends with a PICTURES list. Those files are the only "
+    "images that exist: use them wherever the page calls for a picture, "
+    "each by its exact file name with nothing in front of it (they are "
+    "embedded into the page afterwards). Give every <img> a meaningful alt "
+    "text, and never reference any other image file or URL."
 )
 
 _LANDING_PAGE_SYSTEM_PROMPT = (
@@ -74,6 +88,7 @@ class HtmlCreatorSession:
         mode: str = "landing_page",
         prompt: str | None = None,
         folder: str | None = None,
+        pictures: str | None = None,
         max_tokens: int | None = None,
         on_ready: Callable[[], None] | None = None,
         on_downloading: Callable[[], None] | None = None,
@@ -82,13 +97,23 @@ class HtmlCreatorSession:
         """`on_ready`/`on_downloading`, if given: the LLM is lazy (built on
         the first `generate()` call, reused after) so a caller wanting to
         distinguish "building the model" from "actually generating" needs a
-        seam here rather than around `__init__`, which does no loading."""
+        seam here rather than around `__init__`, which does no loading.
+
+        `pictures`, for a landing page, is a folder of images the page may
+        place: the model is told their names and captions, and the ones it
+        references are embedded into the page."""
+        offered: list[picture_kit.Picture] = []
+        picture_notes: list[str] = []
         if mode == "landing_page":
             if not prompt or not prompt.strip():
                 raise ValueError("Provide a prompt describing the page to generate.")
             system_prompt = _LANDING_PAGE_SYSTEM_PROMPT
             source_text = prompt.strip()
             truncated = False
+            if pictures and pictures.strip():
+                offered, picture_notes = picture_kit.load(pictures.strip())
+                system_prompt += _PICTURE_RULES
+                source_text += "\n\n" + picture_kit.manifest(offered)
         elif mode == "document":
             if not folder:
                 raise ValueError("Provide a folder of documents to summarize.")
@@ -118,6 +143,9 @@ class HtmlCreatorSession:
         tokens = max_tokens or _MAX_TOKENS_BY_MODE[mode]
         raw_output = self._llm.answer(system_prompt, source_text, max_tokens=tokens, control=control)
         html, fence_stripped = strip_code_fence(raw_output)
+        truncated_output = not html.rstrip().lower().endswith("</html>")
+        written = html
+        html, used = picture_kit.embed(html, offered)
 
         return HtmlResult(
             html=html,
@@ -125,6 +153,10 @@ class HtmlCreatorSession:
             source_char_count=len(source_text) if mode == "landing_page" else len(raw),
             source_truncated=truncated,
             fence_stripped=fence_stripped,
-            html_truncated=not html.rstrip().lower().endswith("</html>"),
+            html_truncated=truncated_output,
             stats=self._llm.last_stats,
+            pictures_offered=len(offered),
+            pictures_used=used,
+            picture_notes=picture_notes,
+            html_source=written if used else None,
         )

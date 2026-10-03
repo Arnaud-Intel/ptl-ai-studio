@@ -33,6 +33,31 @@ def test_all_catalog_assets_exist_and_are_served_locally():
     assert client.get("/demo-assets/../VERSION").status_code == 404
 
 
+def test_picture_kits_are_captioned_and_prompts_name_only_pictures_that_exist():
+    import re
+
+    from html_creator import pictures
+
+    kits = [sample for sample in load_samples("html-creator") if sample.pictures]
+    assert kits  # at least one scenario places pictures
+    for sample in kits:
+        offered, notes = pictures.load(sample.pictures)
+        assert notes == [], sample.name
+        assert all(picture.caption and picture.width and picture.height for picture in offered), sample.name
+        named = set(re.findall(r"[\w-]+\.(?:svg|png|jpg)", sample.prompt))
+        assert named and named <= {picture.name for picture in offered}, sample.name
+        shown = {item["name"] for item in enrich_sample(asdict(sample))["assets"]}
+        assert {picture.name for picture in offered} <= shown  # the picker previews them
+
+
+def test_html_scenarios_fit_the_model_s_prompt_window():
+    # A landing-page prompt plus its picture list must leave the answer its room.
+    for sample in load_samples("html-creator"):
+        if sample.mode == "landing_page":
+            assert 200 < len(sample.prompt) < 4000, sample.name
+            assert "localStorage" not in sample.prompt  # the preview's sandbox has none
+
+
 def test_demo_links_cannot_escape_sample_root():
     with pytest.raises(ValueError):
         asset("../VERSION")

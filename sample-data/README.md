@@ -11,7 +11,7 @@ logos, payment credentials, third-party voices or private files are included.
 | Expense Report Extractor | Open → choose pack → Start → review and validate → Export Excel | 5 worn scanned receipts, 3-receipt quick start, 9-receipt trip, 3 review cases; previews and answer keys |
 | Screen / Image Text Extraction | Open → choose sample → Extract text | Hotel invoice, cafe receipt and refund; no file-picker hunt |
 | Document Q&A | Open → choose question → Index folder → Ask | Six linked documents covering release gates, customer scope, incidents and money |
-| HTML Creator | Open → choose prompt → Generate | Source-grounded launch brief, operating dashboard or fictional boutique hotel |
+| HTML Creator | Open → choose prompt → Generate → Full screen | A travel site that places seven bundled pictures, a playable game, an animated infographic of this laptop's chips, a product launch, a live operations wall; plus the source-grounded brief, dashboard and hotel |
 | Code Review | Open → choose diff → Review | Tenant export regression and incomplete map-validation fix; never executed |
 | Voice Clone | Open → enroll own voice → choose script → synthesize | Handover, metrics briefing and hotel welcome |
 | Screen Memory | Open → choose sample → show its demo page while recording → stop → search | A readable fictional operating brief; no prebuilt search result |
@@ -30,6 +30,11 @@ file-based sample shows its source previews and links.
 - `meridian-rollout-2026/`: six source documents, less than the HTML input budget.
   Ground-truth hints stay out of the indexed source folder.
 - `review-diffs/`: invented changes for review, not patches to apply.
+- `pictures/nordlys-trails/`: seven fictional landscapes (SVG) and their
+  `captions.txt`, for the HTML Creator scenario that places pictures. Drawn by
+  `python scripts/build_demo_pictures.py` from seeded random numbers: no real
+  place, no downloaded photo. The model is told the file names and captions,
+  and the pictures it uses are embedded into the generated page.
 - `recall-demo.html`: local, self-contained screen-memory target; no external assets.
 - `catalog.json`: the samples each brick's picker offers.
 

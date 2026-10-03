@@ -701,6 +701,10 @@
             </select>
             <textarea id="htmlc-prompt" rows="3" placeholder="e.g. a landing page for a small coffee shop, warm and cozy"></textarea>
           </label>
+          <label class="field field-wide" id="htmlc-pictures-field">
+            <span>Pictures the page may use (optional: a folder of images on this machine)</span>
+            <input id="htmlc-pictures" type="text" placeholder="C:\Users\you\Pictures\product-shots" autocomplete="off" />
+          </label>
           <label class="field field-wide" id="htmlc-folder-field" hidden>
             <span>Folder of documents (a local path on this machine)</span>
             <input id="htmlc-folder" type="text" placeholder="C:\Users\you\Documents\myproject" autocomplete="off" />
@@ -719,6 +723,8 @@
         </div>
         <div class="run-row">
           <button id="htmlc-generate" class="btn btn-primary" type="button">Generate</button>
+          <button id="htmlc-fullscreen" class="btn btn-secondary" type="button" hidden>Full screen</button>
+          <button id="htmlc-exit-fullscreen" class="btn btn-secondary htmlc-exit" type="button" hidden>Exit full screen</button>
           <button id="htmlc-download" class="btn btn-secondary" type="button" hidden>Download .html</button>
           <span id="htmlc-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>

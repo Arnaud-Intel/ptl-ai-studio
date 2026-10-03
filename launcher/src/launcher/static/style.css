@@ -1060,6 +1060,19 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
   /* generated pages assume a normal white canvas regardless of the launcher's dark theme */
   background: #fff;
 }
+/* "Full screen": the frame over the whole window (and the whole screen,
+   where the browser grants it), with the way back in a corner. */
+.htmlc-preview-frame.expanded {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 300;
+  border: 0;
+  border-radius: 0;
+}
+.htmlc-exit { position: fixed; top: 12px; right: 12px; z-index: 301; opacity: 0.9; box-shadow: var(--shadow); }
+body.htmlc-expanded { overflow: hidden; }
 
 details > summary {
   cursor: pointer;

@@ -1362,6 +1362,8 @@ class HtmlCreatorRequest(BaseModel):
     mode: str = "landing_page"  # "landing_page" | "document"
     prompt: str | None = None
     folder: str | None = None
+    # A folder of images a landing page may place (html_creator/pictures.py).
+    pictures: str | None = None
     engine: str | None = None
     compute_device: str | None = None
 
@@ -1377,12 +1379,19 @@ async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
             mode=req.mode,
             prompt=req.prompt,
             folder=req.folder,
+            pictures=req.pictures,
         )
     except Exception as exc:
         return error_response(exc)
     return JSONResponse(
         {
             "html": result.html,
+            # The page as written, before pictures were embedded: what a
+            # person can read. Absent when nothing was embedded.
+            "html_source": result.html_source,
+            "pictures_offered": result.pictures_offered,
+            "pictures_used": result.pictures_used,
+            "picture_notes": result.picture_notes,
             "mode": result.mode,
             "source_char_count": result.source_char_count,
             "source_truncated": result.source_truncated,

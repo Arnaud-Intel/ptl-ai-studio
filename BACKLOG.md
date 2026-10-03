@@ -41,6 +41,25 @@ a new one or the deferred list, and moves its original wording to
   tokens per second and stop between items, not mid-answer. Meeting notes'
   streaming was verified through its runner with a typed transcript, not
   from the page with real audio. (filed 2026-10-03, R32)
+- [ ] **On the external B60, the 30B model's second and later answers wait
+  about 20 s for their first token.** Seen while tuning the HTML Creator
+  scenarios with the card plugged in: first answer after loading, first token
+  in 0.7 s; the next two, 20.2 s and 18.5 s, then 60-63 tok/s as usual. The
+  integrated GPU does not do this (0.3-0.6 s every time, same prompts, same
+  session code). Not on the stage path, where the card is absent; worth a
+  look before any demo that shows the B60. (filed 2026-10-03, HTML Creator
+  scenarios)
+- [ ] **A generated page is not the same twice, so a rehearsed page is not
+  the page the audience gets.** The language models sample (temperature 0.2
+  over the model's own settings): three runs of one HTML Creator prompt gave
+  three pages, two of them checked and correct, and while tuning the new
+  scenarios every looser wording produced at least one page with a visible
+  fault (text zooming with the hero picture, a game that restarted its score
+  on every lost life, a counter ending on 123.0 instead of 122.9). Decoding
+  without sampling for the HTML Creator would make a sample prompt give one
+  known page; it costs "Generate again gives a new design", so it may want
+  to be a switch. To decide, then re-verify the five scenarios under it.
+  (filed 2026-10-03, HTML Creator scenarios)
 
 ## What we are showing
 

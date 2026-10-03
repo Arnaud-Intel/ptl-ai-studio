@@ -31,6 +31,11 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--prompt", default=None, help="Describe a landing page to generate.")
     source.add_argument("--folder", default=None, help="Summarize every document in this folder instead.")
     source.add_argument("--sample", default=None, help="Use a named example prompt instead (see --list-samples).")
+    p.add_argument(
+        "--pictures", default=None,
+        help="A folder of images a landing page may place (png, jpg, webp, gif, svg). An optional "
+             "captions.txt in it says what each shows: 'file name: caption' per line.",
+    )
     p.add_argument("--out", default=None, help="Write the generated HTML to this file instead of stdout.")
     p.add_argument(
         "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
@@ -76,6 +81,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"no sample named '{args.sample}' (see --list-samples)")
         args.prompt = matches[0].prompt
         args.folder = matches[0].folder
+        args.pictures = args.pictures or matches[0].pictures
 
     engine = engine_mod.resolve_engine(args.engine)
     compute_device = args.compute_device or _default_device(engine)
@@ -85,8 +91,8 @@ def main(argv: list[str] | None = None) -> int:
     session = HtmlCreatorSession(engine, compute_device=compute_device)
 
     try:
-        result = session.generate(mode=mode, prompt=args.prompt, folder=args.folder)
-    except (RuntimeError, ValueError) as exc:
+        result = session.generate(mode=mode, prompt=args.prompt, folder=args.folder, pictures=args.pictures)
+    except (RuntimeError, ValueError, FileNotFoundError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
@@ -96,6 +102,10 @@ def main(argv: list[str] | None = None) -> int:
         print("(warning: output doesn't end with </html> -- it may have been cut off)", file=sys.stderr)
     if result.fence_stripped:
         print("(note: stripped a markdown code fence the model wrapped its output in)", file=sys.stderr)
+    if result.pictures_offered:
+        print(f"(placed {len(result.pictures_used)} of {result.pictures_offered} pictures)", file=sys.stderr)
+    for note in result.picture_notes:
+        print(f"(note: {note})", file=sys.stderr)
 
     if args.out:
         Path(args.out).write_text(result.html, encoding="utf-8")

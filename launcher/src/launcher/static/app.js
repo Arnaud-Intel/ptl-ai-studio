@@ -2023,16 +2023,26 @@ const PANELS = {
     currentHtml: null,
     populate(data) {
       attachRecents("htmlc-folder");
+      attachRecents("htmlc-pictures");
       const mode = el("htmlc-mode");
       const sync = () => {
         const isLandingPage = mode.value === "landing_page";
         el("htmlc-prompt-field").hidden = !isLandingPage;
+        el("htmlc-pictures-field").hidden = !isLandingPage;
         el("htmlc-folder-field").hidden = isLandingPage;
       };
       mode.addEventListener("change", sync);
       sync();
       wireEngineAndDevice(el("htmlc-engine"), el("htmlc-compute-device"), data, { preferLargeModel: true });
-      wireSamplePicker("htmlc-sample", data.samples, { "htmlc-mode": "mode", "htmlc-prompt": "prompt", "htmlc-folder": "folder" });
+      wireSamplePicker(
+        "htmlc-sample",
+        data.samples,
+        { "htmlc-mode": "mode", "htmlc-prompt": "prompt", "htmlc-folder": "folder" },
+        // A sample without pictures must not inherit the previous one's folder.
+        (sample) => {
+          if (sample) el("htmlc-pictures").value = sample.pictures || "";
+        },
+      );
     },
     wire() {
       el("htmlc-generate").addEventListener("click", () => {
@@ -2046,7 +2056,10 @@ const PANELS = {
           return;
         }
         if (mode === "document") rememberPath("htmlc-folder");
+        const pictures = mode === "landing_page" ? el("htmlc-pictures").value.trim() : "";
+        if (pictures) rememberPath("htmlc-pictures");
         el("htmlc-download").hidden = true;
+        el("htmlc-fullscreen").hidden = true;
         this.run({
           button: el("htmlc-generate"),
           key: "html-creator",
@@ -2057,6 +2070,7 @@ const PANELS = {
               mode,
               prompt: el("htmlc-prompt").value,
               folder: el("htmlc-folder").value,
+              pictures: pictures || null,
               engine: el("htmlc-engine").value,
               compute_device: el("htmlc-compute-device").value,
             });
@@ -2074,6 +2088,26 @@ const PANELS = {
         link.click();
         URL.revokeObjectURL(url);
       });
+      el("htmlc-fullscreen").addEventListener("click", () => this.expand(true));
+      el("htmlc-exit-fullscreen").addEventListener("click", () => this.expand(false));
+      document.addEventListener("fullscreenchange", () => {
+        if (!document.fullscreenElement) this.expand(false); // Escape left the browser's full screen
+      });
+    },
+    // The page at the size it was designed for. Still the sandboxed frame: it
+    // fills the window, and the whole screen where the browser grants that.
+    expand(on) {
+      const frame = el("htmlc-result").querySelector(".htmlc-preview-frame");
+      if (!frame) on = false;
+      if (frame) frame.classList.toggle("expanded", on);
+      document.body.classList.toggle("htmlc-expanded", on);
+      el("htmlc-exit-fullscreen").hidden = !on;
+      if (on) document.documentElement.requestFullscreen?.().catch(() => {});
+      else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    },
+    leave() {
+      this.expand(false);
+      Panel.prototype.leave.call(this);
     },
     renderResult(data) {
       this.currentHtml = data.html;
@@ -2084,6 +2118,13 @@ const PANELS = {
       }
       if (data.source_truncated) {
         container.insertAdjacentHTML("beforeend", `<p class="section-label">Source was ${data.source_char_count} characters -- truncated before generation, some content may not be reflected.</p>`);
+      }
+      if (data.pictures_offered) {
+        const notes = (data.picture_notes || []).map((note) => ` ${note}`).join("");
+        container.insertAdjacentHTML(
+          "beforeend",
+          `<p class="section-label">${data.pictures_used.length} of ${data.pictures_offered} pictures placed and embedded in the page.${escapeHtml(notes)}</p>`,
+        );
       }
       const iframe = document.createElement("iframe");
       iframe.className = "htmlc-preview-frame";
@@ -2097,10 +2138,13 @@ const PANELS = {
       details.appendChild(summary);
       const pre = document.createElement("pre");
       pre.className = "text-block";
-      pre.textContent = data.html;
+      // As the model wrote it: with pictures embedded, the page is megabytes
+      // of base64 nobody can read.
+      pre.textContent = data.html_source || data.html;
       details.appendChild(pre);
       container.appendChild(details);
       el("htmlc-download").hidden = false;
+      el("htmlc-fullscreen").hidden = false;
     },
   }),
 };
@@ -3189,7 +3233,8 @@ async function init() {
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
-    if (!el("log-modal-overlay").hidden) closeLogViewer();
+    if (document.body.classList.contains("htmlc-expanded")) PANELS["html-creator"].expand(false);
+    else if (!el("log-modal-overlay").hidden) closeLogViewer();
     else if (!el("update-modal-overlay").hidden) closeUpdateModal();
     else if (!el("models-modal-overlay").hidden) closeModelsModal();
     else if (!el("changelog-modal-overlay").hidden) closeChangelogModal();

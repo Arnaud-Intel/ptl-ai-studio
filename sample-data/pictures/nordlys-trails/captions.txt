@@ -1,0 +1,10 @@
+# FICTIONAL DEMO PICTURES for the invented travel brand Nordlys Trails. Drawn by scripts/build_demo_pictures.py; no real place.
+# One line per picture: file name, a colon, what it shows.
+
+hero-aurora-ridge.svg: wide night panorama: green aurora over mountain ridges, a small lit tent; best as the full-width hero background
+fjord-morning.svg: a fjord at sunrise with steep rock walls and a red cabin on the shore
+forest-trail.svg: a sandy trail leading into a misty green pine forest
+glacier-lake.svg: a turquoise lake below a glacier and snowy peaks, daylight
+lighthouse-dusk.svg: a red-and-white lighthouse on a cliff at dusk, its beam over the sea
+plateau-cabin.svg: a wooden cabin with a lit window on a snowy plateau under a full moon
+midnight-bay.svg: two sea kayaks on a calm golden bay under the midnight sun

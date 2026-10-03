@@ -4,6 +4,8 @@ from urllib.parse import quote
 
 from pantherlake_ai_core.demo_samples import SAMPLE_ROOT
 
+_IMAGES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
+
 
 def asset(relative: str) -> dict:
     path = (SAMPLE_ROOT / relative).resolve()
@@ -11,7 +13,7 @@ def asset(relative: str) -> dict:
     if not path.is_file():
         raise FileNotFoundError(f"Missing bundled demo asset: {relative}")
     return {"name": path.name, "url": "/demo-assets/" + quote(safe_relative.as_posix()),
-            "image": path.suffix.lower() in {".png", ".jpg", ".jpeg"}}
+            "image": path.suffix.lower() in _IMAGES}
 
 
 def enrich_sample(sample: dict) -> dict:
@@ -22,6 +24,11 @@ def enrich_sample(sample: dict) -> dict:
         folder.relative_to(SAMPLE_ROOT.resolve())
         paths = [p.relative_to(SAMPLE_ROOT).as_posix() for p in sorted(folder.iterdir())
                  if p.is_file() and p.suffix.lower() in {".png", ".jpg", ".md", ".txt"}] + paths
+    if result.get("pictures"):
+        folder = Path(result["pictures"]).resolve()
+        folder.relative_to(SAMPLE_ROOT.resolve())
+        paths = paths + [p.relative_to(SAMPLE_ROOT).as_posix() for p in sorted(folder.iterdir())
+                         if p.is_file() and p.suffix.lower() in _IMAGES]
     if result.get("image"):
         result["image_url"] = asset(result["image"])["url"]
         paths.insert(0, result["image"])

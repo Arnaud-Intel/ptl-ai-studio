@@ -18,6 +18,8 @@ class DemoSample:
     source: str | None = None
     diff_text: str | None = None
     image: str | None = None
+    # A folder of pictures a generated page may place (html-creator).
+    pictures: str | None = None
     assets: list[str] = field(default_factory=list)
     next_step: str = ""
 
@@ -31,7 +33,8 @@ def load_samples(demo_id: str) -> list[DemoSample]:
             path = values.pop("diff_file")
             values["diff_text"] = (SAMPLE_ROOT / path).read_text(encoding="utf-8")
             values["assets"] = [*values.get("assets", []), path]
-        if values.get("folder"):
-            values["folder"] = str(SAMPLE_ROOT / values["folder"])
+        for key in ("folder", "pictures"):
+            if values.get(key):
+                values[key] = str(SAMPLE_ROOT / values[key])
         samples.append(DemoSample(**values))
     return samples
