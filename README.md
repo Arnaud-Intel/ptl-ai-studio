@@ -64,7 +64,8 @@ you can leave open and close to stop the server.
 
 **Staying up to date.** When the launcher starts it asks GitHub whether a
 newer version exists and, if one does, offers it once in a popup --
-*Upgrade now* or *Later* -- with what changed. The footer keeps an
+*Upgrade now* or *Later* -- with what changed in each version it would
+jump through, and the same list again once it has upgraded. The footer keeps an
 **Upgrade** button (or says this copy is up to date). Upgrading stops the
 launcher, pulls the new version (`git pull --ff-only`), runs `uv sync` with
 the extras you have installed, and starts it again in a new window; the page

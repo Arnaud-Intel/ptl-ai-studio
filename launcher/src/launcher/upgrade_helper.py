@@ -110,6 +110,15 @@ def start_launcher(repo: Path, host: str, port: int) -> None:
     log("Started the launcher again.")
 
 
+def head_commit(repo: Path) -> str | None:
+    """The commit the checkout is on, or None if git can't say."""
+    try:
+        done = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return done.stdout.strip() or None if done.returncode == 0 else None
+
+
 def _tail(output: str, lines: int = 15) -> str:
     return "\n".join(output.strip().splitlines()[-lines:])[-2000:]
 
@@ -127,10 +136,14 @@ def upgrade(
     runner: Callable[[list[str], Path, float], tuple[bool, str]] = run_step,
     waiter: Callable[[list[int], float], bool] = wait_for_exit,
     starter: Callable[[Path, str, int], None] = start_launcher,
+    head: Callable[[Path], str | None] = head_commit,
 ) -> dict:
     repo = Path(args.repo)
     result = {"ok": False, "from": args.from_version, "to": None, "step": None, "error": None, "started_at": time.time()}
     log(f"Upgrading from v{args.from_version}; GitHub has v{args.to_version}.")
+    # Where it started and where it ended up: what lets the launcher say,
+    # afterwards, exactly which versions this upgrade crossed.
+    result["from_commit"] = head(repo)
     if not waiter(args.wait_pids, _WAIT_SECONDS):
         log(f"The launcher's processes were still running after {_WAIT_SECONDS} s; carrying on anyway.")
 
@@ -147,7 +160,7 @@ def upgrade(
             result.update(step=step, error=_tail(output) or f"{command[0]} {command[1]} failed")
             break
 
-    result.update(ok=ok, to=_read_version(repo), finished_at=time.time())
+    result.update(ok=ok, to=_read_version(repo), to_commit=head(repo), finished_at=time.time())
     (repo / "logs").mkdir(exist_ok=True)
     (repo / "logs" / "upgrade-result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     log(f"Upgraded to v{result['to']}." if ok else f"Upgrade failed at the {result['step']} step.")

@@ -51,6 +51,9 @@ class UpdateStatus:
     # Why this copy can't upgrade itself in place, when an update exists.
     blocked_reason: str | None = None
     changes: list[str] = field(default_factory=list)  # commit subjects, newest first
+    # The same changes under the version that shipped each, newest first:
+    # [{"version": "0.2.54", "changes": [{"summary": ..., "details": ...}]}].
+    changelog: list[dict] = field(default_factory=list)
     repo_url: str = REPO_URL
 
 
@@ -86,6 +89,53 @@ def local_version() -> str:
         return "unknown"
 
 
+_BUMP = re.compile(r"^chore: bump version to (\S+)")
+_DETAILS_LIMIT = 420
+
+
+def _first_paragraph(body: str) -> str:
+    """A commit message's opening paragraph, as one line: the "why" behind a
+    subject, without the trailers and lists that follow."""
+    paragraph = body.strip().split("\n\n", 1)[0]
+    text = " ".join(paragraph.split())
+    return text if len(text) <= _DETAILS_LIMIT else text[: _DETAILS_LIMIT - 1].rstrip() + "…"
+
+
+def group_by_version(commits: list[tuple[str, str]]) -> list[dict]:
+    """Commits (subject, body), oldest first, under the version that shipped
+    them -- newest version first.
+
+    CI numbers a push by committing "chore: bump version to X" after it, so
+    a version's changes are the commits since the previous bump. Commits
+    after the last bump are pushed but not numbered yet (version None)."""
+    versions: list[dict] = []
+    pending: list[dict] = []
+    for subject, body in commits:
+        bump = _BUMP.match(subject)
+        if bump:
+            if pending:  # a bump with nothing before it has nothing to say
+                versions.append({"version": bump.group(1), "changes": pending})
+            pending = []
+        elif subject:
+            pending.append({"summary": subject, "details": _first_paragraph(body)})
+    if pending:
+        versions.append({"version": None, "changes": pending})
+    return list(reversed(versions))
+
+
+def changelog(revision_range: str) -> list[dict]:
+    """What changed across `revision_range` ("HEAD..origin/main"), by version."""
+    # %x1f / %x1e: separators no commit message contains, expanded by git.
+    raw = _git("log", "--reverse", "--format=%s%x1f%b%x1e", revision_range)
+    commits = []
+    for record in raw.split("\x1e"):
+        if not record.strip():
+            continue
+        subject, _, body = record.strip("\n").partition("\x1f")
+        commits.append((subject.strip(), body))
+    return group_by_version(commits)
+
+
 def check() -> UpdateStatus:
     """Ask GitHub whether there's a newer version. Never raises: this runs at
     every start, and a laptop without a network isn't an error anyone needs
@@ -101,8 +151,8 @@ def check() -> UpdateStatus:
         behind = int(_git("rev-list", "--count", f"HEAD..origin/{BRANCH}"))
         status.update_available = behind > 0 and version_key(status.latest) > version_key(status.local)
         if status.update_available:
-            subjects = _git("log", "--format=%s", f"HEAD..origin/{BRANCH}").splitlines()
-            status.changes = [s for s in subjects if s and not s.startswith(_BUMP_PREFIX)]
+            status.changelog = changelog(f"HEAD..origin/{BRANCH}")
+            status.changes = [change["summary"] for version in status.changelog for change in version["changes"]]
     except (GitError, ValueError) as exc:
         status.update_available = False
         status.error = f"Couldn't check GitHub for updates: {_first_line(exc)}"
@@ -204,9 +254,31 @@ def mark_prompted() -> None:
 def last_result() -> dict | None:
     """What the helper recorded about the most recent upgrade, if any."""
     try:
-        return json.loads(RESULT_FILE.read_text(encoding="utf-8"))
+        result = json.loads(RESULT_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    # What the upgrade actually crossed, version by version: from the two
+    # commits the helper recorded, so it is the real jump and not a guess.
+    result["changelog"] = []
+    if result.get("ok"):
+        try:
+            # An upgrade *from* a version older than this feature ran that
+            # version's helper, which recorded no commits: start from the
+            # commit that numbered the version it left instead.
+            start = result.get("from_commit") or _commit_for_version(result.get("from"))
+            if start:
+                result["changelog"] = changelog(f"{start}..{result.get('to_commit') or 'HEAD'}")
+        except GitError:
+            pass  # the summary is a nicety; the result stands without it
+    return result
+
+
+def _commit_for_version(version: str | None) -> str | None:
+    """The commit CI numbered `version` with, or None if there isn't one."""
+    if not version:
+        return None
+    found = _git("log", "-1", "--format=%H", "--fixed-strings", f"--grep=chore: bump version to {version} ")
+    return found or None
 
 
 # --- handing off to the helper ------------------------------------------------------

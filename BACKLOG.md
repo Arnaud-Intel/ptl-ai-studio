@@ -19,15 +19,6 @@ a new one or the deferred list, and moves its original wording to
 
 <!-- - [ ] **Title.** Short description. (filed YYYY-MM-DD, source) -->
 
-- [ ] **Stream the language models: live tokens/s, answers word by word,
-  and cancelling one mid-way.** The hardware panel (0.2.53) shows tokens/s
-  only once an answer is finished, because no LLM call streams; a brick that
-  answers one request at a time can't be stopped mid-answer, so its ✕ is
-  disabled until it finishes. One change covers all three: a streamer in the
-  two LLM backends that counts tokens as they arrive, passes text on, and can
-  return "stop". Agreed with the user as the step after the panel; likely
-  its own ticket next to R19/R21. (filed 2026-10-03, user request)
-
 - [ ] **Speech speed in the panel is untested with real audio.** Times real
   time is computed per utterance (unit-tested) for live translation and
   meeting notes, but was not watched live -- nothing was played through the
@@ -380,6 +371,29 @@ the release gate.
   probe returned Video unavailable and was classified correctly; the TfL
   Piccadilly/St James's camera decoded successfully with the new timeouts.
   The curated-source health picker part of R27 remains open.
+
+- [ ] **R32 · P2 · Stream the language models: live speed, answers as they
+  are written, and cancel.** *Proves C5.*
+  Every LLM call blocks until the whole answer exists: the panel's tokens/s
+  appears afterwards, the audience watches a spinner (54 s for an HTML page),
+  and a brick that answers one request at a time can't be stopped mid-way.
+  One control object through both LLM backends and the vision-language
+  extractor gives all three. Design, alternatives and the open decisions are
+  in [docs/STREAMING.md](docs/STREAMING.md).
+  **Evidence (2026-10-03):** Qwen2.5-1.5B, 200 tokens: streaming costs 8% on
+  the iGPU (83.9 against 91.0 tok/s) and nothing on the NPU (55.8 against
+  53.9); first text after 0.09 s and 0.39 s; a cancel returns in 0.30 s and
+  0.79 s with the partial text, and the model answers the next request
+  normally. llama.cpp streams and stops the same way.
+  **Done:** step A -- every brick's ✕ works mid-answer and the panel shows a
+  live tokens/s while it generates; step B -- document Q&A, code review, HTML
+  creator, screen OCR and meeting notes show their answer as it is written,
+  and a stopped answer is labelled incomplete. With no control passed, a
+  call behaves exactly as today.
+  **Estimate:** A about 1 day, B about 2 days; C (the voice assistant speaking
+  sentence by sentence) optional, 1-2 days. **Depends on:** none; partial text
+  is polled so it adds no delivery mechanism while R05 is open.
+  (filed 2026-10-03, user request)
 
 ### Sturdiness
 
@@ -747,3 +761,13 @@ line names the ticket the work now lives in.
   its NPU compile hung. If it is wanted for a show it needs a ticket, not the
   deferred-demos list. (filed 2026-09-11, user request)
   Sorted into **R23** on 2026-09-11.
+
+- [ ] **Stream the language models: live tokens/s, answers word by word,
+  and cancelling one mid-way.** The hardware panel (0.2.53) shows tokens/s
+  only once an answer is finished, because no LLM call streams; a brick that
+  answers one request at a time can't be stopped mid-answer, so its ✕ is
+  disabled until it finishes. One change covers all three: a streamer in the
+  two LLM backends that counts tokens as they arrive, passes text on, and can
+  return "stop". Agreed with the user as the step after the panel; likely
+  its own ticket next to R19/R21. (filed 2026-10-03, user request)
+  Sorted into **R32** on 2026-10-03.

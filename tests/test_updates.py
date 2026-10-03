@@ -12,7 +12,14 @@ BEHIND = {
     "fetch --quiet origin main": "",
     "show origin/main:VERSION": "0.2.47",
     "rev-list --count HEAD..origin/main": "3",
-    "log --format=%s HEAD..origin/main": "chore: bump version to 0.2.47 [skip ci]\nAdd a version check\nchore: bump version to 0.2.46 [skip ci]",
+    # Oldest first, as `git log --reverse` gives it: subject, unit separator,
+    # body, record separator.
+    "log --reverse --format=%s%x1f%b%x1e HEAD..origin/main": (
+        "Start offline\x1fuv re-syncs on every start,\nwhich fails offline.\n\nCo-Authored-By: x\x1e\n"
+        "chore: bump version to 0.2.46 [skip ci]\x1f\x1e\n"
+        "Add a version check\x1f\x1e\n"
+        "chore: bump version to 0.2.47 [skip ci]\x1f\x1e\n"
+    ),
     "rev-parse --abbrev-ref HEAD": "main",
     "rev-list --count origin/main..HEAD": "0",
     "status --porcelain --untracked-files=no": "",
@@ -51,7 +58,15 @@ def test_behind_github_lists_what_changed_without_the_version_bumps(monkeypatch)
     fake_git(monkeypatch, BEHIND)
     status = updates.check()
     assert (status.local, status.latest, status.update_available, status.can_upgrade) == ("0.2.45", "0.2.47", True, True)
-    assert status.changes == ["Add a version check"]
+    assert status.changes == ["Add a version check", "Start offline"]
+    # ...and the same changes under the version that shipped each, newest first.
+    assert status.changelog == [
+        {"version": "0.2.47", "changes": [{"summary": "Add a version check", "details": ""}]},
+        {
+            "version": "0.2.46",
+            "changes": [{"summary": "Start offline", "details": "uv re-syncs on every start, which fails offline."}],
+        },
+    ]
     assert status.error is None and status.blocked_reason is None
 
 
@@ -125,3 +140,60 @@ def test_upgrade_starts_the_helper_on_the_base_python(monkeypatch):
     assert command[command.index("--wait-pids") + 1] == "101,102"
     assert command[command.index("--port") + 1] == "8766"
     assert command[-2:] == ["--extra", "openvino"]
+
+
+def test_changes_are_grouped_under_the_version_that_shipped_them():
+    commits = [
+        ("Fix A", "Why A.\n\nMore about A."),
+        ("Fix B", ""),
+        ("chore: bump version to 1.0.1 [skip ci]", ""),
+        ("chore: bump version to 1.0.2 [skip ci]", ""),  # a bump with nothing before it says nothing
+        ("Add C", "Because C."),
+    ]
+    assert updates.group_by_version(commits) == [
+        {"version": None, "changes": [{"summary": "Add C", "details": "Because C."}]},  # pushed, not numbered yet
+        {
+            "version": "1.0.1",
+            "changes": [{"summary": "Fix A", "details": "Why A."}, {"summary": "Fix B", "details": ""}],
+        },
+    ]
+
+
+def test_a_long_opening_paragraph_is_cut_short():
+    details = updates.group_by_version([("X", "word " * 200)])[0]["changes"][0]["details"]
+    assert len(details) <= 420 and details.endswith("…")
+
+
+def test_the_result_of_an_upgrade_lists_the_versions_it_crossed(monkeypatch, tmp_path):
+    result = tmp_path / "upgrade-result.json"
+    result.write_text(
+        '{"ok": true, "from": "0.2.45", "to": "0.2.47", "from_commit": "aaa", "to_commit": "bbb"}', encoding="utf-8"
+    )
+    monkeypatch.setattr(updates, "RESULT_FILE", result)
+    log = BEHIND["log --reverse --format=%s%x1f%b%x1e HEAD..origin/main"]
+    fake_git(monkeypatch, {"log --reverse --format=%s%x1f%b%x1e aaa..bbb": log})
+    assert [version["version"] for version in updates.last_result()["changelog"]] == ["0.2.47", "0.2.46"]
+
+
+def test_a_failed_upgrade_has_no_changelog(monkeypatch, tmp_path):
+    result = tmp_path / "upgrade-result.json"
+    result.write_text('{"ok": false, "from": "0.2.45", "to": "0.2.45", "step": "pull"}', encoding="utf-8")
+    monkeypatch.setattr(updates, "RESULT_FILE", result)
+    assert updates.last_result()["changelog"] == []
+
+
+def test_an_upgrade_from_before_commits_were_recorded_still_gets_its_changelog(monkeypatch, tmp_path):
+    """The helper that runs is the old version's; it wrote no commits."""
+    result = tmp_path / "upgrade-result.json"
+    result.write_text('{"ok": true, "from": "0.2.45", "to": "0.2.47"}', encoding="utf-8")
+    monkeypatch.setattr(updates, "RESULT_FILE", result)
+    log = BEHIND["log --reverse --format=%s%x1f%b%x1e HEAD..origin/main"]
+    calls = fake_git(
+        monkeypatch,
+        {
+            "log -1 --format=%H --fixed-strings --grep=chore: bump version to 0.2.45 ": "c0ffee",
+            "log --reverse --format=%s%x1f%b%x1e c0ffee..HEAD": log,
+        },
+    )
+    assert [version["version"] for version in updates.last_result()["changelog"]] == ["0.2.47", "0.2.46"]
+    assert calls[-1].endswith("c0ffee..HEAD")

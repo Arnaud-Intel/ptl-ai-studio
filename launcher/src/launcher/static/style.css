@@ -1393,6 +1393,29 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
   animation: pulse 1.2s ease-in-out infinite;
 }
 .update-log { max-height: 220px; overflow: auto; font-size: 12px; white-space: pre-wrap; }
+
+/* The changes, version by version. It scrolls on its own so the buttons
+   under it stay in reach however many versions an upgrade crosses. */
+.changelog {
+  max-height: 42vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  margin: 0 0 14px;
+  padding: 2px 12px 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card);
+}
+.changelog-version h3 {
+  margin: 12px 0 2px;
+  font-size: 13px;
+  color: var(--accent-hover);
+  font-variant-numeric: tabular-nums;
+}
+.changelog .update-change-list { margin: 4px 0 8px; }
+.changelog summary { cursor: pointer; }
+.changelog summary:hover { color: var(--text); }
+.changelog details p { margin: 4px 0 6px; color: var(--text-faint); font-size: 12.5px; line-height: 1.5; }
 .update-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 
 /* --- Models modal ----------------------------------------------------------- */

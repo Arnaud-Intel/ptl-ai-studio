@@ -14,6 +14,7 @@ def _args(tmp_path):
 
 def _run(tmp_path, outcomes):
     commands, waited, started = [], [], []
+    commits = ["aaa111", "bbb222"]  # where the checkout is before, then after
 
     def runner(command, cwd, timeout):
         commands.append(command)
@@ -24,6 +25,7 @@ def _run(tmp_path, outcomes):
         runner=runner,
         waiter=lambda pids, timeout: waited.append(pids) or True,
         starter=lambda repo, host, port: started.append((repo, host, port)),
+        head=lambda repo: commits.pop(0),
     )
     return result, commands, waited, started
 
@@ -52,3 +54,11 @@ def test_a_failed_sync_is_recorded_as_such(tmp_path):
     result, _, _, started = _run(tmp_path, {"uv": (False, "error: Failed to install openvino")})
     assert (result["ok"], result["step"]) == (False, "sync")
     assert len(started) == 1
+
+
+def test_the_commits_before_and_after_are_recorded_for_the_changelog(tmp_path):
+    (tmp_path / "VERSION").write_text("0.2.46\n", encoding="utf-8")
+    result, _, _, _ = _run(tmp_path, {})
+    assert (result["from_commit"], result["to_commit"]) == ("aaa111", "bbb222")
+    saved = json.loads((tmp_path / "logs" / "upgrade-result.json").read_text(encoding="utf-8"))
+    assert saved["from_commit"] == "aaa111" and saved["to_commit"] == "bbb222"

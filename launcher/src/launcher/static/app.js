@@ -2697,17 +2697,36 @@ function setUpgradeProgress(text) {
   el("update-progress-text").textContent = text || "";
 }
 
+// What changed, under the version that shipped it, newest first. A change
+// with more to say (its commit message's opening paragraph) opens on click.
+function changelogHtml(versions, heading) {
+  const blocks = (versions || []).filter((version) => (version.changes || []).length);
+  if (!blocks.length) return "";
+  const count = blocks.filter((version) => version.version).length;
+  const body = blocks
+    .map((version) => {
+      const title = version.version ? `v${version.version}` : "Not numbered yet";
+      const items = version.changes
+        .map((change) =>
+          change.details
+            ? `<li><details><summary>${escapeHtml(change.summary)}</summary><p>${escapeHtml(change.details)}</p></details></li>`
+            : `<li>${escapeHtml(change.summary)}</li>`,
+        )
+        .join("");
+      return `<section class="changelog-version"><h3>${escapeHtml(title)}</h3><ul class="update-change-list">${items}</ul></section>`;
+    })
+    .join("");
+  const label = count > 1 ? `${heading} -- ${count} versions` : heading;
+  return `<p class="section-label">${escapeHtml(label)}</p><div class="changelog" tabindex="0" role="region" aria-label="${escapeHtml(heading)}">${body}</div>`;
+}
+
 function openUpdateModal() {
   if (!UPDATE || !UPDATE.update_available) return;
   el("update-modal-title").textContent = "Update available";
   el("update-summary").textContent = `Panther Lake AI Studio v${UPDATE.latest} is available -- this copy runs v${UPDATE.local}.`;
-  const changes = UPDATE.changes || [];
-  el("update-changes").innerHTML = changes.length
-    ? '<p class="section-label">What\'s new</p><ul class="update-change-list">' +
-      changes.slice(0, 12).map((change) => `<li>${escapeHtml(change)}</li>`).join("") +
-      "</ul>" +
-      (changes.length > 12 ? `<p class="modal-note">…and ${changes.length - 12} more.</p>` : "")
-    : "";
+  // Each version this upgrade would jump through, with what it changed. A
+  // copy that can't ask git (a zip download) has no list to show.
+  el("update-changes").innerHTML = changelogHtml(UPDATE.changelog, "What's new");
   const running = UPDATE.running_demos || [];
   if (!UPDATE.can_upgrade) {
     setUpdateNotice(UPDATE.blocked_reason || "This copy can't upgrade itself.", { link: true });
@@ -2793,7 +2812,9 @@ async function showUpgradeResult() {
   el("update-summary").textContent = result.ok
     ? `Panther Lake AI Studio now runs v${result.to} (it was v${result.from}).`
     : `It stopped at the ${result.step} step; the launcher started again on v${result.to || result.from}. Full log: logs/upgrade.log.`;
-  el("update-changes").innerHTML = result.ok ? "" : `<pre class="text-block update-log">${escapeHtml(result.error || "")}</pre>`;
+  el("update-changes").innerHTML = result.ok
+    ? changelogHtml(result.changelog, "What changed")
+    : `<pre class="text-block update-log">${escapeHtml(result.error || "")}</pre>`;
   el("update-explainer").hidden = true;
   setUpdateNotice(null);
   setUpgradeProgress(null);
