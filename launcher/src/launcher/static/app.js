@@ -543,18 +543,6 @@ class Panel {
       try {
         const data = await fetchJSON(`/api/${this.id}/devices`);
         this.populate(data);
-        if (data.demo_guide) {
-          const root = el(`${this.prefix}-panel`);
-          const guide = document.createElement("details");
-          guide.className = "demo-guide";
-          const summary = document.createElement("summary");
-          summary.textContent = `Demo guide · ${data.demo_guide.title}`;
-          const content = document.createElement("p");
-          content.textContent = data.demo_guide.text;
-          guide.append(summary, content);
-          renderDemoAssets(guide, data.demo_guide.assets);
-          root?.prepend(guide);
-        }
         this.populated = true;
       } catch (err) {
         this.setStatus(`Error: ${err.message}`, "error");
@@ -1129,7 +1117,17 @@ const PANELS = {
     statusKey: "expense-extract:ocr",
     controls: ["expx-folder", "expx-sample", "expx-ocr-engine", "expx-ocr-device", "expx-llm-engine", "expx-llm-device"],
     wireExtra() {
-      this.review = new ExpenseReview();
+      this.review = new ExpenseReview({
+        // The results left the view: so do the run's progress lines and its
+        // "Read 5 receipts" status.
+        onCleared: () => {
+          this.resetProgress();
+          if (!this.hasError()) this.setStatus("Idle");
+        },
+      });
+    },
+    resetProgress() {
+      showPlaceholder(el("expx-transcript"), "Each receipt's vendor, date, amount, and category will appear here as it is structured.");
     },
     async rehydrate() {
       await StreamPanel.prototype.rehydrate.call(this);
@@ -1172,7 +1170,7 @@ const PANELS = {
     onStarted(data) {
       this.review.selected = null;
       this.review.refresh(data.report_id);
-      showPlaceholder(el("expx-transcript"), "Each receipt's vendor, date, amount, and category will appear here as it is structured.");
+      this.resetProgress();
     },
     onMessage(message) {
       const box = el("expx-transcript");

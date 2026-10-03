@@ -1,7 +1,10 @@
 // Durable report review. Extraction messages only trigger a refresh; the server
 // snapshot is authoritative, so reconnecting cannot duplicate receipts or lose edits.
 class ExpenseReview {
-  constructor() {
+  // `onCleared` runs once the results have left the view, so the panel can
+  // reset what it owns (its progress lines, its status).
+  constructor({ onCleared = () => {} } = {}) {
+    this.onCleared = onCleared;
     this.data = null;
     this.selected = null;
     this.dirty = false;
@@ -30,6 +33,7 @@ class ExpenseReview {
     });
     el("expx-report").addEventListener("change", () => {
       const id = el("expx-report").value;
+      if (!id) return; // the "open a saved report" line, shown while nothing is open
       if (!this.canLeave()) {
         el("expx-report").value = this.data?.report?.id || "";
         return;
@@ -38,6 +42,8 @@ class ExpenseReview {
       this.refresh(id);
     });
     el("expx-export").addEventListener("click", () => this.export());
+    el("expx-clear").addEventListener("click", () => this.clear());
+    el("expx-delete").addEventListener("click", () => this.deleteAll());
     el("expx-receipt").addEventListener("error", () => {
       el("expx-receipt").hidden = true;
       el("expx-image-error").hidden = false;
@@ -63,19 +69,61 @@ class ExpenseReview {
       this.reportId = data.report?.id;
       this.render();
     } catch (error) {
+      if (request !== this.loading) return;
+      // A report deleted from another tab: fall back to whatever is current.
+      if (reportId) return this.refresh(null);
       el("expx-summary").textContent = `Could not load report: ${error.message}`;
     }
   }
 
+  // Empty the view for the next run. Nothing is deleted: the report stays
+  // under Saved report.
+  async clear() {
+    if (!this.canLeave()) return;
+    try {
+      await fetchJSON("/api/expense-extract/report/close", { method: "POST" });
+    } catch (error) {
+      el("expx-summary").textContent = error.message;
+      return;
+    }
+    this.selected = null;
+    await this.refresh(null);
+    this.onCleared();
+  }
+
+  // Delete every saved report, after asking: validated work goes with them.
+  async deleteAll() {
+    const count = this.data?.reports.length || 0;
+    if (!count || !this.canLeave()) return;
+    const what = count === 1 ? "the saved expense report" : `all ${count} saved expense reports`;
+    if (!confirm(`Delete ${what}, including every validated expense? Your receipt images are not touched. This can't be undone.`)) return;
+    try {
+      await fetchJSON("/api/expense-extract/reports", { method: "DELETE" });
+    } catch (error) {
+      el("expx-summary").textContent = error.message;
+      return;
+    }
+    this.selected = null;
+    await this.refresh(null);
+    this.onCleared();
+  }
+
   render() {
     const data = this.data;
+    const open = Boolean(data.report);
     const validated = data.items.filter((item) => item.status === "validated").length;
     const totals = Object.entries(data.totals).map(([currency, amount]) => `${currency} ${amount}`).join(" · ");
-    el("expx-summary").textContent = `${validated}/${data.items.length} validated${totals ? ` · ${totals}` : ""}`;
+    if (open) el("expx-summary").textContent = `${validated}/${data.items.length} validated${totals ? ` · ${totals}` : ""}`;
+    else el("expx-summary").textContent = data.reports.length ? "No report open." : "Read receipts to build a report.";
     el("expx-export").disabled = this.exportDisabled();
-    fillSelect(el("expx-report"), data.reports.map((report) => ({value: report.id,
-      label: `${new Date(report.created).toLocaleString()} · ${report.folder.split(/[\\/]/).pop()}`})));
-    if (data.report) el("expx-report").value = data.report.id;
+    el("expx-clear").disabled = !open || data.running;
+    el("expx-delete").hidden = !data.reports.length;
+    el("expx-delete").disabled = data.running;
+    const saved = data.reports.map((report) => ({value: report.id,
+      label: `${new Date(report.created).toLocaleString()} · ${report.folder.split(/[\\/]/).pop()}`}));
+    // With nothing open the first line says so; picking a report opens it.
+    fillSelect(el("expx-report"), open ? saved : [{value: "", label: saved.length ? "Open a saved report…" : "No reports yet"}, ...saved]);
+    el("expx-report").value = open ? data.report.id : "";
     const list = el("expx-list");
     list.replaceChildren();
     for (const item of data.items) {
@@ -99,7 +147,7 @@ class ExpenseReview {
       list.append(button);
     }
     if (!data.items.length) {
-      list.textContent = "Receipts will appear here as they are read.";
+      showPlaceholder(list, "Receipts will appear here as they are read.");
       el("expx-detail").hidden = true;
       this.selected = null;
     } else if (!this.selected || !data.items.some((item) => item.id === this.selected.id)) {

@@ -7,18 +7,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from pantherlake_ai_core.demo_samples import SAMPLE_ROOT, load_samples
-from launcher.demo_assets import asset, enrich_sample, guide
-from launcher.registry import REGISTRY
+from launcher.demo_assets import asset, enrich_sample
 from launcher.app import app
 from doc_qa.documents import load_documents
 from html_creator.folder_input import MAX_DOCUMENT_CHARS, read_documents
 
 
-def test_every_available_brick_has_an_actionable_guide():
-    for demo in REGISTRY:
-        if demo.status == "available":
-            content = guide(demo.id)
-            assert content and content["title"] and len(content["text"]) > 80, demo.id
+def test_screen_memory_samples_link_the_page_to_record():
+    """Nothing else in the panel points at it: the sample has to."""
+    for sample in load_samples("smart-recall"):
+        assert [item["name"] for item in enrich_sample(asdict(sample))["assets"]] == ["recall-demo.html"]
 
 
 def test_all_catalog_assets_exist_and_are_served_locally():

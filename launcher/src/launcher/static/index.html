@@ -533,9 +533,13 @@
         <div class="run-row expense-report-toolbar">
           <label class="field"><span>Saved report</span><select id="expx-report"><option value="">No reports yet</option></select></label>
           <button id="expx-export" class="btn btn-secondary" type="button" disabled>Export Excel (.xlsx)</button>
+          <button id="expx-clear" class="btn btn-secondary" type="button" disabled
+                  title="Empty this view for the next run. The report stays under Saved report.">Clear results</button>
           <span id="expx-summary" role="status">Read receipts to build a report.</span>
+          <button id="expx-delete" class="link-btn expense-delete" type="button" hidden
+                  title="Delete every saved report and its expenses. Your receipt images are not touched.">Delete saved reports</button>
         </div>
-        <p class="field-help">Review each receipt, correct its details, then validate it. Excel includes all expenses; only validated expenses contribute to totals. Previous reports stay saved when you start a new batch.</p>
+        <p class="field-help">Review each receipt, correct its details, then validate it. Excel includes all expenses; only validated expenses contribute to totals. Reports stay saved: Clear results empties this view for the next run, and an earlier report can be reopened under Saved report.</p>
         <div class="expense-workspace">
           <div id="expx-list" class="expense-list" aria-label="Expenses"><p class="placeholder">Your expenses will appear here.</p></div>
           <section id="expx-detail" class="expense-detail" hidden aria-label="Review expense">
@@ -729,7 +733,6 @@
     <div class="site-footer-inner">
       <div class="site-footer-group">
         <img class="footer-logo footer-logo-wordmark" src="/static/intel-logo.png" alt="Intel" />
-        <img class="footer-logo footer-logo-wordmark" src="/static/dell-logo.png" alt="Dell" />
       </div>
       <div class="footer-center">
         <button id="app-version" class="link-btn footer-version" type="button"></button>
@@ -738,8 +741,7 @@
         <button id="models-open" class="link-btn footer-update-state" type="button">Prepare models</button>
       </div>
       <div class="site-footer-group">
-        <img class="footer-logo footer-logo-badge" src="/static/intel-core-ultra.png" alt="Intel Core Ultra" />
-        <img class="footer-logo footer-logo-badge" src="/static/intel-arc.png" alt="Intel Arc Graphics" />
+        <img class="footer-logo footer-logo-wordmark" src="/static/dell-logo.png" alt="Dell Technologies" />
       </div>
     </div>
   </footer>
@@ -766,6 +768,11 @@
       </section>
       <div id="chip-sections"></div>
       <p id="chip-panel-message" class="chip-panel-message" role="status" aria-live="polite"></p>
+    </div>
+    <!-- The chips' own badges, at the foot of the panel that reports on them. -->
+    <div class="chip-panel-logos">
+      <img class="chip-panel-logo" src="/static/intel-core-ultra.png" alt="Intel Core Ultra" />
+      <img class="chip-panel-logo" src="/static/intel-arc.png" alt="Intel Arc Graphics" />
     </div>
   </aside>
 

@@ -27,6 +27,7 @@ import asyncio
 import importlib
 import io
 import os
+import re
 import shutil
 import socket
 import sys
@@ -285,19 +286,27 @@ async def on_validation_error(_: Request, exc: RequestValidationError) -> JSONRe
     return JSONResponse({"error": f"invalid request: {problems}"}, status_code=400)
 
 
+# A script or stylesheet the page loads: "/static/app.js", quotes included.
+_PAGE_ASSET = re.compile(r'"/static/([\w.-]+\.(?:js|css))"')
+
+
+def _stamped(match: re.Match) -> str:
+    try:
+        stamp = int((STATIC_DIR / match.group(1)).stat().st_mtime)
+    except OSError:
+        return match.group(0)
+    return f'"/static/{match.group(1)}?v={stamp}"'
+
+
 @app.get("/")
 def index() -> HTMLResponse:
     """The page, with its script/stylesheet URLs stamped by their files'
     modification time -- so a browser that cached the previous version's
     app.js picks up the new one on a plain reload after an update, instead
-    of running stale code against new markup."""
-    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
-    for asset in ("style.css", "app.js"):
-        try:
-            stamp = int((STATIC_DIR / asset).stat().st_mtime)
-        except OSError:
-            continue
-        html = html.replace(f"/static/{asset}", f"/static/{asset}?v={stamp}")
+    of running stale code against new markup. Every one the page loads, not
+    a list of names: a script added later (expense-review.js was) otherwise
+    stays cached while the code that calls it moves on."""
+    html = _PAGE_ASSET.sub(_stamped, (STATIC_DIR / "index.html").read_text(encoding="utf-8"))
     # `no-store`, not `no-cache`: the page carries the asset stamps, so a
     # stored copy pins the whole UI to whatever app.js/style.css it was
     # built against. `no-cache` only asks for revalidation, and this
@@ -463,7 +472,6 @@ def demo_devices(demo_id: str) -> JSONResponse:
         payload[kind] = _DEVICE_SOURCES[kind]()
     if demo.samples:
         payload["samples"] = [demo_assets.enrich_sample(asdict(s)) for s in importlib.import_module(demo.samples).SAMPLES]
-    payload["demo_guide"] = demo_assets.guide(demo_id)
     return JSONResponse(payload)
 
 
@@ -1116,12 +1124,36 @@ async def start_expense_extract(req: ExpenseExtractStartRequest) -> JSONResponse
 
 @app.get("/api/expense-extract/report")
 def expense_report(report_id: str | None = None):
+    """The report to review: the one asked for, else the one this launcher
+    has produced since it started (until it is cleared), else none -- the
+    brick opens on an empty workspace, not on an old run. `reports` lists
+    every saved one either way."""
     try:
-        report = expense_extract_runner.reports.snapshot(report_id)
+        report = expense_extract_runner.reports.snapshot(report_id or expense_extract_runner.report_id)
         return JSONResponse({**report, "running": expense_extract_runner.running,
                              "active_report_id": expense_extract_runner.report_id})
     except Exception as exc:
         return error_response(exc)
+
+
+@app.post("/api/expense-extract/report/close")
+def close_expense_report() -> JSONResponse:
+    """Empty the workspace for the next run. The report stays saved."""
+    try:
+        expense_extract_runner.close_report()
+    except Exception as exc:
+        return error_response(exc)
+    return JSONResponse({"status": "closed"})
+
+
+@app.delete("/api/expense-extract/reports")
+def delete_expense_reports() -> JSONResponse:
+    """Delete every saved report and its expenses (not the receipt images)."""
+    try:
+        deleted = expense_extract_runner.delete_reports()
+    except Exception as exc:
+        return error_response(exc)
+    return JSONResponse({"status": "deleted", "reports": deleted})
 
 
 class ExpenseReviewRequest(BaseModel):

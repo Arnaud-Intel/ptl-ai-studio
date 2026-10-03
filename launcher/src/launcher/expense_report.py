@@ -54,7 +54,9 @@ class ExpenseReports:
         with self._connect() as db:
             reports = [{"id": r[0], "created": r[1], "folder": r[2]} for r in
                        db.execute("SELECT id, created, folder FROM reports ORDER BY created DESC")]
-            selected = next((r for r in reports if r["id"] == report_id), None) if report_id else next(iter(reports), None)
+            # No id selects nothing: which report a page opens on is the
+            # caller's decision, and "the latest" was an old run on screen.
+            selected = next((r for r in reports if r["id"] == report_id), None) if report_id else None
             if report_id and selected is None:
                 raise ValueError("Report not found.")
             items = [json.loads(r[0]) for r in db.execute(
@@ -67,6 +69,15 @@ class ExpenseReports:
         return {"report": selected, "reports": reports, "items": items,
                 "totals": {k: format(v, ".2f") for k, v in sorted(totals.items())},
                 "currencies": sorted(CURRENCIES), "categories": CATEGORIES}
+
+    def clear(self) -> int:
+        """Delete every report and its expenses; returns how many reports went.
+        The receipt images belong to the user's folders and are not touched."""
+        with self._connect() as db:
+            count = db.execute("SELECT COUNT(*) FROM reports").fetchone()[0]
+            db.execute("DELETE FROM expenses")
+            db.execute("DELETE FROM reports")
+        return count
 
     def update(self, report_id: str, item_id: str, values: dict, revision: int, validate: bool) -> dict:
         with self._connect() as db:

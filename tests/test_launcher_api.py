@@ -365,6 +365,16 @@ def test_update_status_offers_the_prompt_once(client, monkeypatch):
     assert client.get("/api/update").json()["prompt"] is False
 
 
+def test_the_page_stamps_every_script_and_stylesheet_it_loads(client):
+    """An unstamped one stays in the browser's cache across an update."""
+    import re
+
+    page = client.get("/").text
+    loaded = re.findall(r'(?:src|href)="(/static/[^"]+\.(?:js|css)[^"]*)"', page)
+    assert len(loaded) >= 3  # the stylesheet, app.js and expense-review.js at least
+    assert all(re.search(r"\?v=\d+$", url) for url in loaded), loaded
+
+
 def test_the_changelog_says_which_version_is_running(client, monkeypatch):
     listed = {"available": True, "reason": None, "versions": [{"version": "0.2.47", "changes": []}], "repo_url": "x"}
     monkeypatch.setattr(launcher_app.updates, "history", lambda: listed)

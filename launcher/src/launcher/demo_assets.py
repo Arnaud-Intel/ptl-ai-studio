@@ -1,7 +1,6 @@
 """Read-only links to checked-in demo content; never links to arbitrary user paths."""
 from pathlib import Path
 from urllib.parse import quote
-import json
 
 from pantherlake_ai_core.demo_samples import SAMPLE_ROOT
 
@@ -28,9 +27,3 @@ def enrich_sample(sample: dict) -> dict:
         paths.insert(0, result["image"])
     result["assets"] = [asset(path) for path in dict.fromkeys(paths)]
     return result
-
-
-def guide(demo_id: str) -> dict | None:
-    guides = json.loads((SAMPLE_ROOT / "guides.json").read_text(encoding="utf-8"))
-    item = guides.get(demo_id)
-    return {**item, "assets": [asset(path) for path in item.get("assets", [])]} if item else None

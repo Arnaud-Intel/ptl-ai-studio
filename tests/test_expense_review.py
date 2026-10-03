@@ -96,6 +96,7 @@ def test_review_api_and_export(report, monkeypatch):
 
     store, rid, item = report
     monkeypatch.setattr(launcher_app.expense_extract_runner, "reports", store)
+    monkeypatch.setattr(launcher_app.expense_extract_runner, "report_id", rid)  # the batch this session ran
     client = TestClient(launcher_app.app)
     assert client.get("/api/expense-extract/report").json()["items"][0]["status"] == "draft"
     url = f"/api/expense-extract/reports/{rid}/expenses/{item['id']}"
@@ -105,6 +106,70 @@ def test_review_api_and_export(report, monkeypatch):
     assert exported.status_code == 200
     assert exported.content[:2] == b"PK"
     assert "spreadsheetml" in exported.headers["content-type"]
+
+
+def test_nothing_is_open_until_a_report_is_asked_for(report):
+    store, rid, _ = report
+    blank = store.snapshot()
+    assert blank["report"] is None and blank["items"] == [] and blank["totals"] == {}
+    assert [saved["id"] for saved in blank["reports"]] == [rid]  # listed, not shown
+
+
+def test_deleting_saved_reports_takes_their_expenses_too(report):
+    store, rid, _ = report
+    store.create(".")
+    assert store.clear() == 2
+    assert store.snapshot()["reports"] == []
+    with pytest.raises(ValueError):
+        store.snapshot(rid)
+    assert store.clear() == 0  # nothing left, and nothing to complain about
+
+
+def _expense_client(store, monkeypatch, *, session_report=None, running=False):
+    from fastapi.testclient import TestClient
+    from launcher import app as launcher_app
+
+    runner = launcher_app.expense_extract_runner
+    monkeypatch.setattr(runner, "reports", store)
+    monkeypatch.setattr(runner, "report_id", session_report)
+    monkeypatch.setattr(type(runner), "running", property(lambda self: running))
+    return TestClient(launcher_app.app), runner
+
+
+def test_the_brick_opens_empty_until_this_session_has_run_a_batch(report, monkeypatch):
+    store, rid, _ = report
+    client, runner = _expense_client(store, monkeypatch)
+    opened = client.get("/api/expense-extract/report").json()
+    assert opened["report"] is None and opened["items"] == []  # an old run is not put on screen...
+    assert [saved["id"] for saved in opened["reports"]] == [rid]  # ...but is one pick away
+    assert client.get(f"/api/expense-extract/report?report_id={rid}").json()["report"]["id"] == rid
+
+    runner.report_id = rid  # a batch run since the launcher started
+    assert client.get("/api/expense-extract/report").json()["report"]["id"] == rid  # survives a page reload
+
+
+def test_clear_results_empties_the_view_and_keeps_the_report(report, monkeypatch):
+    store, rid, _ = report
+    client, _ = _expense_client(store, monkeypatch, session_report=rid)
+    assert client.post("/api/expense-extract/report/close").json() == {"status": "closed"}
+    assert client.get("/api/expense-extract/report").json()["report"] is None
+    assert len(client.get(f"/api/expense-extract/report?report_id={rid}").json()["items"]) == 1
+
+
+def test_delete_saved_reports_removes_everything(report, monkeypatch):
+    store, rid, _ = report
+    client, _ = _expense_client(store, monkeypatch, session_report=rid)
+    assert client.delete("/api/expense-extract/reports").json() == {"status": "deleted", "reports": 1}
+    after = client.get("/api/expense-extract/report").json()
+    assert after["report"] is None and after["reports"] == []
+
+
+def test_a_running_batch_can_be_neither_cleared_nor_deleted(report, monkeypatch):
+    store, rid, _ = report
+    client, _ = _expense_client(store, monkeypatch, session_report=rid, running=True)
+    assert client.post("/api/expense-extract/report/close").status_code == 409
+    assert client.delete("/api/expense-extract/reports").status_code == 409
+    assert len(store.snapshot(rid)["items"]) == 1  # untouched
 
 
 def test_extraction_runner_saves_each_receipt_before_notifying(tmp_path, monkeypatch):

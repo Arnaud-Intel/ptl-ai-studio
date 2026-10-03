@@ -24,7 +24,16 @@ receipt text is exported as text rather than executable spreadsheet formulas.
 
 Reports and saved corrections survive refreshes and launcher restarts in
 `logs/expense-reports.sqlite3` (ignored by Git). The **Saved report** picker
-reopens previous batches. Receipt images are read from their original folder;
+reopens previous batches.
+
+The brick opens on an empty workspace, not on an old run: only a batch run
+since the launcher started is put back on screen (so a refresh in the middle
+of a review loses nothing). **Clear results** empties the view for the next
+run and keeps the report saved. **Delete saved reports** removes every saved
+report and its expenses after a confirmation; it never touches the receipt
+images. Neither is available while a batch is running.
+
+Receipt images are read from their original folder;
 keep that folder available to view them. Reports extracted before this feature
 was installed need to be read again because the old launcher did not save them.
 

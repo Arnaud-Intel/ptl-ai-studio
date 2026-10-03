@@ -420,9 +420,29 @@ body {
   50% { opacity: 1; }
 }
 
+/* The chips' own badges, pinned to the foot of the panel: they stay put
+   while the list above them scrolls. */
+.chip-panel-logos {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+.chip-panel-logo { display: block; height: 64px; width: auto; border-radius: 6px; }
+
+/* A window too short for both gives the room to the chips. */
+@media (max-height: 520px) {
+  .chip-panel-logos { display: none; }
+}
+
 /* Collapsed to a rail: each chip keeps its name, its load and how many
    bricks it carries; everything else waits behind one click. */
 body.chip-panel-collapsed { --panel-width: 58px; }
+body.chip-panel-collapsed .chip-panel-logos { flex-direction: column; gap: 8px; padding: 10px 4px; }
+body.chip-panel-collapsed .chip-panel-logo { height: 42px; border-radius: 4px; }
 body.chip-panel-collapsed .chip-panel { cursor: pointer; }
 body.chip-panel-collapsed .chip-panel-head { justify-content: center; padding: 12px 4px 8px; }
 body.chip-panel-collapsed .chip-panel-toggle { transform: rotate(180deg); }
@@ -1078,7 +1098,6 @@ audio { width: 100%; margin-top: 8px; }
 
 .footer-logo { display: block; }
 .footer-logo-wordmark { height: 30px; width: auto; }
-.footer-logo-badge { height: 64px; width: auto; border-radius: 6px; }
 
 .footer-version {
   font-size: 11.5px;
@@ -1548,9 +1567,8 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 
 .feed-counts .placeholder { margin: 0; }
 /* Bundled demo kits stay inside each brick, with inspectable source files. */
-.demo-guide, .demo-sample-details { margin: 16px 0; padding: 18px 22px; border: 1px solid var(--border); border-radius: 12px; background: rgba(80, 140, 140, .07); }
-.demo-guide summary { cursor: pointer; font-weight: 650; }
-.demo-guide p, .demo-sample-details p { line-height: 1.65; max-width: 90ch; }
+.demo-sample-details { margin: 16px 0; padding: 18px 22px; border: 1px solid var(--border); border-radius: 12px; background: rgba(80, 140, 140, .07); }
+.demo-sample-details p { line-height: 1.65; max-width: 90ch; }
 .demo-sample-details h3 { margin: 0 0 8px; }
 .demo-asset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
 .demo-asset { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; color: inherit; text-decoration: none; min-width: 0; }
@@ -1560,6 +1578,8 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 /* Expense review: receipts stay beside the editable details. */
 .expense-report-toolbar { margin-top: 24px; align-items: end; flex-wrap: wrap; }
 .expense-report-toolbar .field { flex: 1; min-width: 220px; }
+/* Deleting is the rare one: keep it apart from the buttons used every run. */
+.expense-delete { margin-left: auto; }
 .expense-workspace { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 20px; margin: 20px 0; }
 .expense-list { display: flex; flex-direction: column; gap: 10px; max-height: 780px; overflow: auto; }
 .expense-card { display: flex; flex-direction: column; gap: 8px; padding: 16px; text-align: left; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); color: var(--text); cursor: pointer; }

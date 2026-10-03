@@ -21,6 +21,7 @@ from expense_extract.types import totals_by_currency
 from pantherlake_ai_core.engine import Engine
 
 from . import activity, events, metrics, worker
+from .errors import Conflict
 from .expense_report import ExpenseReports
 
 _DEMO_ID = "expense-extract"
@@ -33,6 +34,9 @@ class ExpenseExtractRunner:
         self._stop_event: threading.Event | None = None
         self.error: str | None = None
         self.reports = ExpenseReports()
+        # The report this launcher is showing: the last batch run since it
+        # started, until someone clears it. None after a restart, so the
+        # brick opens on an empty workspace rather than on an old run.
         self.report_id: str | None = None
 
     @property
@@ -122,3 +126,17 @@ class ExpenseExtractRunner:
         if not worker.request_stop(_DEMO_ID, self._thread, self._stop_event, stages=_STAGES):
             return
         self._thread = None
+
+    def close_report(self) -> None:
+        """Empty the workspace for the next run. Nothing is deleted: the
+        report stays saved and can be reopened."""
+        if self.running:
+            raise Conflict("Wait for the batch to finish, or stop it, before clearing its results.")
+        self.report_id = None
+
+    def delete_reports(self) -> int:
+        """Delete every saved report; returns how many there were."""
+        if self.running:
+            raise Conflict("Wait for the batch to finish, or stop it, before deleting saved reports.")
+        self.report_id = None
+        return self.reports.clear()
