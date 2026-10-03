@@ -365,6 +365,14 @@ def test_update_status_offers_the_prompt_once(client, monkeypatch):
     assert client.get("/api/update").json()["prompt"] is False
 
 
+def test_the_changelog_says_which_version_is_running(client, monkeypatch):
+    listed = {"available": True, "reason": None, "versions": [{"version": "0.2.47", "changes": []}], "repo_url": "x"}
+    monkeypatch.setattr(launcher_app.updates, "history", lambda: listed)
+    body = client.get("/api/changelog").json()
+    assert body["versions"] == listed["versions"]
+    assert body["running"] == launcher_app.RUNNING_VERSION and "on_disk" in body
+
+
 def test_upgrade_is_refused_while_a_demo_runs(client, monkeypatch):
     monkeypatch.setattr(launcher_app.updates, "refresh", _available_update)
     monkeypatch.setattr(launcher_app.activity, "snapshot", lambda: [{"demo_id": "live-translation"}])

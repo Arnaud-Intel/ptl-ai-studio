@@ -74,6 +74,11 @@ It won't try what it can't do cleanly -- local changes to tracked files,
 local commits, another branch, a copy that isn't a git checkout, or a demo
 still running -- and says which.
 
+**What changed, and when.** Click the version number in the footer for the
+full history: every version this copy has been through, newest first, with
+the day it shipped and what it changed (a change with more to say opens on
+click). It is read from the copy's own git history, so it works offline.
+
 **Before a show.** The footer's **Prepare models** button lists every model
 the demos load -- what it is for, how big the download is, and whether this
 machine already has it -- and fetches what is missing, showing speed and time

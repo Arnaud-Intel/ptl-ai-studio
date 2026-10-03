@@ -13,8 +13,8 @@ BEHIND = {
     "show origin/main:VERSION": "0.2.47",
     "rev-list --count HEAD..origin/main": "3",
     # Oldest first, as `git log --reverse` gives it: subject, unit separator,
-    # body, record separator.
-    "log --reverse --format=%s%x1f%b%x1e HEAD..origin/main": (
+    # body, (unit separator, day -- left out here), record separator.
+    "log --reverse --format=%s%x1f%b%x1f%cs%x1e HEAD..origin/main": (
         "Start offline\x1fuv re-syncs on every start,\nwhich fails offline.\n\nCo-Authored-By: x\x1e\n"
         "chore: bump version to 0.2.46 [skip ci]\x1f\x1e\n"
         "Add a version check\x1f\x1e\n"
@@ -159,6 +159,50 @@ def test_changes_are_grouped_under_the_version_that_shipped_them():
     ]
 
 
+def test_a_version_carries_the_day_it_was_numbered():
+    commits = [
+        ("Fix A", "", "2026-10-01"),
+        ("chore: bump version to 1.0.1 [skip ci]", "", "2026-10-02"),
+        ("Add C", "", "2026-10-03"),
+    ]
+    assert [(v["version"], v["date"]) for v in updates.group_by_version(commits)] == [
+        (None, "2026-10-03"),
+        ("1.0.1", "2026-10-02"),
+    ]
+
+
+HISTORY_LOG = (
+    "Initial commit\x1fWhy it exists.\n\x1f2026-08-21\x1e\n"
+    "chore: bump version to 0.1.1 [skip ci]\x1f\x1f2026-08-21\x1e\n"
+    "Add smart recall\x1f\x1f2026-08-22\x1e\n"
+    "Fix its index\x1f\x1f2026-08-22\x1e\n"
+    "chore: bump version to 0.1.2 [skip ci]\x1f\x1f2026-08-23\x1e\n"
+)
+
+
+def test_the_whole_history_is_read_from_this_copy(monkeypatch):
+    calls = fake_git(monkeypatch, {"log --reverse --format=%s%x1f%b%x1f%cs%x1e HEAD": HISTORY_LOG})
+    history = updates.history()
+    assert history["available"] is True and history["reason"] is None
+    assert [(v["version"], v["date"], [c["summary"] for c in v["changes"]]) for v in history["versions"]] == [
+        ("0.1.2", "2026-08-23", ["Add smart recall", "Fix its index"]),
+        ("0.1.1", "2026-08-21", ["Initial commit"]),
+    ]
+    assert history["versions"][1]["changes"][0]["details"] == "Why it exists."
+    assert not any(call.startswith("fetch") for call in calls)  # nothing here needs the network
+
+
+def test_a_copy_without_git_history_says_so_and_points_at_github(monkeypatch):
+    fake_git(
+        monkeypatch,
+        {"log --reverse --format=%s%x1f%b%x1f%cs%x1e HEAD": updates.GitError("fatal: not a git repository")},
+    )
+    history = updates.history()
+    assert history["available"] is False and history["versions"] == []
+    assert "not a git repository" in history["reason"]
+    assert history["repo_url"].startswith("https://github.com/")
+
+
 def test_a_long_opening_paragraph_is_cut_short():
     details = updates.group_by_version([("X", "word " * 200)])[0]["changes"][0]["details"]
     assert len(details) <= 420 and details.endswith("…")
@@ -170,8 +214,8 @@ def test_the_result_of_an_upgrade_lists_the_versions_it_crossed(monkeypatch, tmp
         '{"ok": true, "from": "0.2.45", "to": "0.2.47", "from_commit": "aaa", "to_commit": "bbb"}', encoding="utf-8"
     )
     monkeypatch.setattr(updates, "RESULT_FILE", result)
-    log = BEHIND["log --reverse --format=%s%x1f%b%x1e HEAD..origin/main"]
-    fake_git(monkeypatch, {"log --reverse --format=%s%x1f%b%x1e aaa..bbb": log})
+    log = BEHIND["log --reverse --format=%s%x1f%b%x1f%cs%x1e HEAD..origin/main"]
+    fake_git(monkeypatch, {"log --reverse --format=%s%x1f%b%x1f%cs%x1e aaa..bbb": log})
     assert [version["version"] for version in updates.last_result()["changelog"]] == ["0.2.47", "0.2.46"]
 
 
@@ -187,12 +231,12 @@ def test_an_upgrade_from_before_commits_were_recorded_still_gets_its_changelog(m
     result = tmp_path / "upgrade-result.json"
     result.write_text('{"ok": true, "from": "0.2.45", "to": "0.2.47"}', encoding="utf-8")
     monkeypatch.setattr(updates, "RESULT_FILE", result)
-    log = BEHIND["log --reverse --format=%s%x1f%b%x1e HEAD..origin/main"]
+    log = BEHIND["log --reverse --format=%s%x1f%b%x1f%cs%x1e HEAD..origin/main"]
     calls = fake_git(
         monkeypatch,
         {
             "log -1 --format=%H --fixed-strings --grep=chore: bump version to 0.2.45 ": "c0ffee",
-            "log --reverse --format=%s%x1f%b%x1e c0ffee..HEAD": log,
+            "log --reverse --format=%s%x1f%b%x1f%cs%x1e c0ffee..HEAD": log,
         },
     )
     assert [version["version"] for version in updates.last_result()["changelog"]] == ["0.2.47", "0.2.46"]

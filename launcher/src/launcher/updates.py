@@ -101,39 +101,70 @@ def _first_paragraph(body: str) -> str:
     return text if len(text) <= _DETAILS_LIMIT else text[: _DETAILS_LIMIT - 1].rstrip() + "…"
 
 
-def group_by_version(commits: list[tuple[str, str]]) -> list[dict]:
-    """Commits (subject, body), oldest first, under the version that shipped
-    them -- newest version first.
+def _version(number: str | None, changes: list[dict], date: str | None) -> dict:
+    entry = {"version": number, "changes": changes}
+    if date:
+        entry["date"] = date  # the day it shipped, as "2026-10-03"
+    return entry
+
+
+def group_by_version(commits: list[tuple]) -> list[dict]:
+    """Commits (subject, body, and optionally the day committed), oldest
+    first, under the version that shipped them -- newest version first.
 
     CI numbers a push by committing "chore: bump version to X" after it, so
-    a version's changes are the commits since the previous bump. Commits
-    after the last bump are pushed but not numbered yet (version None)."""
+    a version's changes are the commits since the previous bump, and its
+    date is that bump's. Commits after the last bump are pushed but not
+    numbered yet (version None)."""
     versions: list[dict] = []
     pending: list[dict] = []
-    for subject, body in commits:
+    date = None
+    for subject, body, *rest in commits:
+        date = rest[0] if rest else None
         bump = _BUMP.match(subject)
         if bump:
             if pending:  # a bump with nothing before it has nothing to say
-                versions.append({"version": bump.group(1), "changes": pending})
+                versions.append(_version(bump.group(1), pending, date))
             pending = []
         elif subject:
             pending.append({"summary": subject, "details": _first_paragraph(body)})
     if pending:
-        versions.append({"version": None, "changes": pending})
+        versions.append(_version(None, pending, date))
     return list(reversed(versions))
 
 
-def changelog(revision_range: str) -> list[dict]:
-    """What changed across `revision_range` ("HEAD..origin/main"), by version."""
-    # %x1f / %x1e: separators no commit message contains, expanded by git.
-    raw = _git("log", "--reverse", "--format=%s%x1f%b%x1e", revision_range)
+# One commit per record: subject, body, the day it was committed. %x1f and
+# %x1e are separators no commit message contains, expanded by git.
+_LOG_FORMAT = "--format=%s%x1f%b%x1f%cs%x1e"
+
+
+def changelog(revision: str) -> list[dict]:
+    """What changed across `revision`, by version: a range
+    ("HEAD..origin/main"), or a commit and everything before it ("HEAD")."""
+    raw = _git("log", "--reverse", _LOG_FORMAT, revision)
     commits = []
     for record in raw.split("\x1e"):
         if not record.strip():
             continue
-        subject, _, body = record.strip("\n").partition("\x1f")
-        commits.append((subject.strip(), body))
+        subject, body, date, *_ = record.strip("\n").split("\x1f") + ["", ""]
+        commits.append((subject.strip(), body, date.strip() or None))
     return group_by_version(commits)
+
+
+def history() -> dict:
+    """Every version this copy has been through and what each changed,
+    newest first. Read from the checkout's own history, so it needs no
+    network. Never raises: a copy whose history can't be read (a zip
+    download has none) says so, and points at GitHub."""
+    try:
+        return {"available": True, "reason": None, "versions": changelog("HEAD"), "repo_url": REPO_URL}
+    except GitError as exc:
+        return {
+            "available": False,
+            "reason": f"This copy's history couldn't be read ({_first_line(exc)}). Every change is listed on GitHub.",
+            "versions": [],
+            "repo_url": REPO_URL,
+        }
 
 
 def check() -> UpdateStatus:

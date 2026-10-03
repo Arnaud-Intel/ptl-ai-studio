@@ -2779,15 +2779,26 @@ function setUpgradeProgress(text) {
   el("update-progress-text").textContent = text || "";
 }
 
+// "2026-10-03" the way the reader's own locale writes a day.
+function formatDay(isoDay) {
+  const day = new Date(`${isoDay}T00:00:00`);
+  if (Number.isNaN(day.getTime())) return isoDay;
+  return day.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
 // What changed, under the version that shipped it, newest first. A change
 // with more to say (its commit message's opening paragraph) opens on click.
-function changelogHtml(versions, heading) {
+// `current`, if given, is the version to mark as the one running.
+function changelogHtml(versions, heading, { current = null } = {}) {
   const blocks = (versions || []).filter((version) => (version.changes || []).length);
   if (!blocks.length) return "";
   const count = blocks.filter((version) => version.version).length;
   const body = blocks
     .map((version) => {
-      const title = version.version ? `v${version.version}` : "Not numbered yet";
+      const title =
+        escapeHtml(version.version ? `v${version.version}` : "Not numbered yet") +
+        (current && version.version === current ? '<span class="changelog-tag">this version</span>' : "") +
+        (version.date ? `<span class="changelog-date">${escapeHtml(formatDay(version.date))}</span>` : "");
       const items = version.changes
         .map((change) =>
           change.details
@@ -2795,7 +2806,7 @@ function changelogHtml(versions, heading) {
             : `<li>${escapeHtml(change.summary)}</li>`,
         )
         .join("");
-      return `<section class="changelog-version"><h3>${escapeHtml(title)}</h3><ul class="update-change-list">${items}</ul></section>`;
+      return `<section class="changelog-version"><h3>${title}</h3><ul class="update-change-list">${items}</ul></section>`;
     })
     .join("");
   const label = count > 1 ? `${heading} -- ${count} versions` : heading;
@@ -2907,6 +2918,49 @@ async function showUpgradeResult() {
   el("update-modal-overlay").hidden = false;
   el("update-later").focus();
   return true;
+}
+
+// --- Version history ----------------------------------------------------------------
+// The version in the footer opens every version this copy has been through and
+// what each changed. Read from the copy's own git history: no network needed.
+
+async function openChangelogModal() {
+  el("changelog-summary").textContent = "Reading this copy's history…";
+  el("changelog-notice").hidden = true;
+  el("changelog-body").innerHTML = "";
+  el("changelog-modal-overlay").hidden = false;
+  el("changelog-modal-close").focus();
+  let data;
+  try {
+    data = await fetchJSON("/api/changelog");
+  } catch (err) {
+    el("changelog-summary").textContent = `Couldn't read the version history: ${err.message}`;
+    return;
+  }
+  let summary = `This copy runs v${data.running}.`;
+  if (data.on_disk && data.on_disk !== data.running) {
+    summary += ` v${data.on_disk} is on disk: restart the launcher to run it.`;
+  }
+  if (UPDATE && UPDATE.update_available) {
+    summary += ` v${UPDATE.latest} is available -- see Upgrade in the footer.`;
+  }
+  el("changelog-summary").textContent = summary;
+  if (!data.available) {
+    const notice = el("changelog-notice");
+    notice.hidden = false;
+    notice.innerHTML =
+      `${escapeHtml(data.reason || "This copy's history couldn't be read.")} ` +
+      `<a href="${escapeHtml(data.repo_url)}/commits/main" target="_blank" rel="noopener">Open on GitHub</a>`;
+    return;
+  }
+  el("changelog-body").innerHTML =
+    changelogHtml(data.versions, "Every version, newest first", { current: data.running }) ||
+    '<p class="placeholder">No changes are recorded in this copy\'s history.</p>';
+}
+
+function closeChangelogModal() {
+  el("changelog-modal-overlay").hidden = true;
+  el("app-version").focus();
 }
 
 // --- Models -----------------------------------------------------------------------
@@ -3084,7 +3138,7 @@ async function loadVersion() {
       label.title = `This launcher started on v${data.version}. v${data.on_disk} is on disk; restart it to run that.`;
     } else {
       label.classList.remove("version-stale");
-      label.removeAttribute("title");
+      label.title = "See what changed in each version";
     }
   } catch {
     // Best-effort -- an empty footer label beats breaking page load over it.
@@ -3112,6 +3166,11 @@ async function init() {
   });
   el("log-open").addEventListener("click", openLogViewer);
   el("update-open").addEventListener("click", openUpdateFromFooter);
+  el("app-version").addEventListener("click", openChangelogModal);
+  el("changelog-modal-close").addEventListener("click", closeChangelogModal);
+  el("changelog-modal-overlay").addEventListener("click", (event) => {
+    if (event.target === el("changelog-modal-overlay")) closeChangelogModal();
+  });
   el("models-open").addEventListener("click", openModelsModal);
   el("models-download").addEventListener("click", startPrefetch);
   el("models-stop").addEventListener("click", stopPrefetch);
@@ -3135,6 +3194,7 @@ async function init() {
     if (!el("log-modal-overlay").hidden) closeLogViewer();
     else if (!el("update-modal-overlay").hidden) closeUpdateModal();
     else if (!el("models-modal-overlay").hidden) closeModelsModal();
+    else if (!el("changelog-modal-overlay").hidden) closeChangelogModal();
     else if (currentPanel && !["TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) location.hash = "#/";
   });
 

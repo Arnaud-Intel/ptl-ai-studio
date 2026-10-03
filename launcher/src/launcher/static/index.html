@@ -732,7 +732,7 @@
         <img class="footer-logo footer-logo-wordmark" src="/static/dell-logo.png" alt="Dell" />
       </div>
       <div class="footer-center">
-        <span id="app-version" class="footer-version"></span>
+        <button id="app-version" class="link-btn footer-version" type="button"></button>
         <button id="update-state" class="link-btn footer-update-state" type="button" hidden></button>
         <button id="update-open" class="btn btn-primary footer-update-btn" type="button" hidden>Upgrade</button>
         <button id="models-open" class="link-btn footer-update-state" type="button">Prepare models</button>
@@ -822,6 +822,20 @@
           <button id="update-later" class="btn btn-secondary" type="button">Later</button>
           <button id="update-now" class="btn btn-primary" type="button">Upgrade now</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="changelog-modal-overlay" class="modal-overlay" hidden>
+    <div class="modal changelog-modal" role="dialog" aria-modal="true" aria-labelledby="changelog-modal-title">
+      <div class="modal-header">
+        <h2 id="changelog-modal-title">Version history</h2>
+        <button id="changelog-modal-close" class="icon-btn" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="changelog-summary"></p>
+        <p id="changelog-notice" class="update-notice" hidden></p>
+        <div id="changelog-body"></div>
       </div>
     </div>
   </div>

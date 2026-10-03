@@ -1424,6 +1424,14 @@ def update_last() -> JSONResponse:
     return JSONResponse(updates.last_result())
 
 
+@app.get("/api/changelog")
+def api_changelog() -> JSONResponse:
+    """Every version this copy has been through and what each changed,
+    newest first, from its own git history (no network). `running` is the
+    one to mark as current; `on_disk` differs from it until a restart."""
+    return JSONResponse({**updates.history(), "running": RUNNING_VERSION, "on_disk": read_version_file()})
+
+
 # --- entry point --------------------------------------------------------------------
 
 

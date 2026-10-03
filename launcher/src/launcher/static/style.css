@@ -1418,6 +1418,28 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 .changelog details p { margin: 4px 0 6px; color: var(--text-faint); font-size: 12.5px; line-height: 1.5; }
 .update-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
 
+/* --- Version history modal (the footer's version opens it) ------------------- */
+
+.changelog-modal { max-width: 720px; }
+.changelog-modal .changelog { max-height: 62vh; }
+.changelog-date {
+  margin-left: 10px;
+  font-weight: 400;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.changelog-tag {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
 /* --- Models modal ----------------------------------------------------------- */
 
 .models-modal { max-width: 760px; }
