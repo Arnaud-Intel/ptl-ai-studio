@@ -39,7 +39,8 @@ class LLM(Protocol):
 
     # `control`, if given, sees the answer as it is written and can stop it.
     def answer(
-        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control: GenerationControl | None = None
+        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control: GenerationControl | None = None,
+        sample: bool = True,
     ) -> str: ...
     # How long a prompt may be, in the model's own tokens: what lets a caller
     # split or trim its input *before* the model refuses it.

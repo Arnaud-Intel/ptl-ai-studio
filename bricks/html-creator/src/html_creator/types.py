@@ -23,3 +23,6 @@ class HtmlResult:
     pictures_used: list[str] = field(default_factory=list)
     picture_notes: list[str] = field(default_factory=list)
     html_source: str | None = None
+    # Written on a freshly loaded model, without sampling: the same prompt
+    # gives this page again.
+    repeatable: bool = False

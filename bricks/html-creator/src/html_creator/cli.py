@@ -36,6 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="A folder of images a landing page may place (png, jpg, webp, gif, svg). An optional "
              "captions.txt in it says what each shows: 'file name: caption' per line.",
     )
+    p.add_argument(
+        "--repeatable", action="store_true",
+        help="The same prompt gives the same page: load the model afresh before each page and take its "
+             "most likely next token. From the command line every run starts fresh already; this matters "
+             "to a caller that keeps the session.",
+    )
     p.add_argument("--out", default=None, help="Write the generated HTML to this file instead of stdout.")
     p.add_argument(
         "--engine", choices=[e.value for e in engine_mod.Engine], default=None,
@@ -91,7 +97,9 @@ def main(argv: list[str] | None = None) -> int:
     session = HtmlCreatorSession(engine, compute_device=compute_device)
 
     try:
-        result = session.generate(mode=mode, prompt=args.prompt, folder=args.folder, pictures=args.pictures)
+        result = session.generate(
+            mode=mode, prompt=args.prompt, folder=args.folder, pictures=args.pictures, repeatable=args.repeatable
+        )
     except (RuntimeError, ValueError, FileNotFoundError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

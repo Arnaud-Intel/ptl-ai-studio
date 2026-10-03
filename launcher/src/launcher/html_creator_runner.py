@@ -24,7 +24,7 @@ class HtmlCreatorRunner:
 
     def generate(
         self, *, engine: str, device: str, mode: str, prompt: str | None, folder: str | None,
-        pictures: str | None = None,
+        pictures: str | None = None, repeatable: bool = False,
     ) -> HtmlResult:
         """Blocking -- loads the LLM the first time or when the engine/device
         changes, then generates the HTML."""
@@ -51,7 +51,8 @@ class HtmlCreatorRunner:
                 live = generation.get(_DEMO_ID)
                 try:
                     result = self._session.generate(
-                        mode=mode, prompt=prompt, folder=folder, pictures=pictures, on_ready=on_ready,
+                        mode=mode, prompt=prompt, folder=folder, pictures=pictures, repeatable=repeatable,
+                        on_ready=on_ready,
                         on_downloading=on_downloading, control=live.begin(),
                     )
                 except Exception as exc:

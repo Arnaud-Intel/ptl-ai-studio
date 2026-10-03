@@ -264,11 +264,11 @@ places seven bundled pictures (the model is told their names and captions,
 and the ones it uses are embedded into the page), a playable brick-breaker
 game, an animated infographic of this laptop's three chips, a product page
 with a lamp that follows a slider, and an operations wall that moves by
-itself. Each takes a minute and a half to two and a half minutes on the
-integrated GPU; **Full screen** shows the result at the size it was written
-for. The model does not write the same page twice, so rehearse a scenario
-before showing it. Point "Pictures the page may use" at a folder of your
-own images to get them on a page too.
+itself. Each takes two to three and a half minutes on the integrated GPU;
+**Full screen** shows the result at the size it was written for. A page can differ with what the model generated before it; tick
+**Same page every time** to load the model afresh for each page (about 20 s
+more) and get the page you rehearsed. Point "Pictures the page may use" at
+a folder of your own images to get them on a page too.
 
 Also on the roadmap and already visible as "Coming soon" cards: an inbox
 triage & draft assistant, and live noise suppression.

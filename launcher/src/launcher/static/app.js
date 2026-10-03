@@ -2071,6 +2071,7 @@ const PANELS = {
               prompt: el("htmlc-prompt").value,
               folder: el("htmlc-folder").value,
               pictures: pictures || null,
+              repeatable: el("htmlc-repeatable").checked,
               engine: el("htmlc-engine").value,
               compute_device: el("htmlc-compute-device").value,
             });
@@ -2118,6 +2119,12 @@ const PANELS = {
       }
       if (data.source_truncated) {
         container.insertAdjacentHTML("beforeend", `<p class="section-label">Source was ${data.source_char_count} characters -- truncated before generation, some content may not be reflected.</p>`);
+      }
+      if (data.repeatable) {
+        container.insertAdjacentHTML(
+          "beforeend",
+          '<p class="section-label">Written on a freshly loaded model -- the same prompt gives this page again.</p>',
+        );
       }
       if (data.pictures_offered) {
         const notes = (data.picture_notes || []).map((note) => ` ${note}`).join("");

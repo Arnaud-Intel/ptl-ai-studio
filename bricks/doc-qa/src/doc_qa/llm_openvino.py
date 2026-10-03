@@ -86,11 +86,17 @@ class OpenVINOLLM:
         return self._context - max_tokens
 
     def answer(
-        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control: GenerationControl | None = None
+        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control: GenerationControl | None = None,
+        sample: bool = True,
     ) -> str:
         """`control`, if given, receives each piece of the answer as it is
         written and can stop it part-way: what was written is returned, and
-        `last_stats.cancelled` says the answer is incomplete."""
+        `last_stats.cancelled` says the answer is incomplete.
+
+        `sample=False` always takes the most likely next token instead of
+        drawing among the likely ones. (The draw is seeded, so it repeats
+        either way; what makes two answers differ on a GPU is the model's
+        history -- see html_creator's `repeatable`.)"""
         needed = self.count_tokens(system_prompt) + self.count_tokens(user_prompt) + TEMPLATE_TOKENS
         budget = self.prompt_budget(max_tokens)
         if needed > budget:
@@ -104,6 +110,9 @@ class OpenVINOLLM:
         streaming, was_cancelled = {}, lambda: False
         if control is not None:
             streaming["streamer"], was_cancelled = openvino_streamer(control, self._ov_genai, self._tokenizer)
-        result = self.pipeline.generate(history, max_new_tokens=max_tokens, temperature=0.2, **streaming)
+        # The model's own settings draw each token at random among the likely
+        # ones; 0.2 keeps that draw close to the first choice.
+        choice = {"temperature": 0.2} if sample else {"do_sample": False}
+        result = self.pipeline.generate(history, max_new_tokens=max_tokens, **choice, **streaming)
         self.last_stats = GenerationStats.from_openvino(result, self.device, cancelled=was_cancelled())
         return result.texts[0].strip()

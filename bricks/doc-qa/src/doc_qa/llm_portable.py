@@ -39,10 +39,13 @@ class PortableLLM:
         return self.n_ctx - max_tokens
 
     def answer(
-        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control: GenerationControl | None = None
+        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control: GenerationControl | None = None,
+        sample: bool = True,
     ) -> str:
         """`control`, if given, receives each piece of the answer as it is
-        written and can stop it part-way (see GenerationControl)."""
+        written and can stop it part-way (see GenerationControl).
+        `sample=False` always takes the most likely next token."""
+        temperature = 0.2 if sample else 0.0  # llama.cpp: zero means no draw
         needed = self.count_tokens(system_prompt) + self.count_tokens(user_prompt) + TEMPLATE_TOKENS
         budget = self.prompt_budget(max_tokens)
         if needed > budget:
@@ -53,8 +56,8 @@ class PortableLLM:
         ]
         started = time.perf_counter()
         if control is not None:
-            return self._answer_streaming(messages, max_tokens, control, started)
-        response = self.model.create_chat_completion(messages=messages, max_tokens=max_tokens, temperature=0.2)
+            return self._answer_streaming(messages, max_tokens, control, started, temperature)
+        response = self.model.create_chat_completion(messages=messages, max_tokens=max_tokens, temperature=temperature)
         # Wall clock, prompt processing included -- llama.cpp's reply has the
         # token count but not the timings -- so this reads a little lower
         # than the OpenVINO engine's decode rate would for the same model.
@@ -67,11 +70,15 @@ class PortableLLM:
         )
         return response["choices"][0]["message"]["content"].strip()
 
-    def _answer_streaming(self, messages: list, max_tokens: int, control: GenerationControl, started: float) -> str:
+    def _answer_streaming(
+        self, messages: list, max_tokens: int, control: GenerationControl, started: float, temperature: float = 0.2
+    ) -> str:
         pieces: list[str] = []
         first: float | None = None
         cancelled = False
-        stream = self.model.create_chat_completion(messages=messages, max_tokens=max_tokens, temperature=0.2, stream=True)
+        stream = self.model.create_chat_completion(
+            messages=messages, max_tokens=max_tokens, temperature=temperature, stream=True
+        )
         for chunk in stream:
             piece = chunk["choices"][0]["delta"].get("content")
             if not piece:

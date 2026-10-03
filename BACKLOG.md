@@ -49,7 +49,7 @@ a new one or the deferred list, and moves its original wording to
   session code). Not on the stage path, where the card is absent; worth a
   look before any demo that shows the B60. (filed 2026-10-03, HTML Creator
   scenarios)
-- [ ] **A generated page is not the same twice, so a rehearsed page is not
+- [x] **A generated page is not the same twice, so a rehearsed page is not
   the page the audience gets.** The language models sample (temperature 0.2
   over the model's own settings): three runs of one HTML Creator prompt gave
   three pages, two of them checked and correct, and while tuning the new
@@ -60,6 +60,17 @@ a new one or the deferred list, and moves its original wording to
   known page; it costs "Generate again gives a new design", so it may want
   to be a switch. To decide, then re-verify the five scenarios under it.
   (filed 2026-10-03, HTML Creator scenarios)
+  **Done 2026-10-04, and the cause above was wrong.** Sampling is seeded: on
+  the CPU and NPU the same prompt gives the same text every time. On the GPU
+  a page depends on what the model generated before it, with or without
+  sampling; a freshly loaded model gives the same page every time (30B: the
+  board three times, the game and the travel site twice each, other pages in
+  between). The HTML Creator has a "Same page every time" switch, off by
+  default, that reloads the model before each page (about 20 s) and takes
+  the most likely token (which is what makes llama.cpp repeat). The five
+  scenarios' pages under the switch were checked. Still open: the same
+  history-dependence applies to every GPU answer in the app (code review,
+  document Q&A on the GPU), where nothing reloads the model.
 
 ## What we are showing
 

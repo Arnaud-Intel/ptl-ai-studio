@@ -723,6 +723,9 @@
         </div>
         <div class="run-row">
           <button id="htmlc-generate" class="btn btn-primary" type="button">Generate</button>
+          <label class="check" title="On: the model is loaded afresh before each page (about 20 seconds more), so the same prompt gives the same page -- rehearse it, then show it. Off: the model stays loaded, and a page can differ with what was generated before it.">
+            <input id="htmlc-repeatable" type="checkbox" /><span>Same page every time</span>
+          </label>
           <button id="htmlc-fullscreen" class="btn btn-secondary" type="button" hidden>Full screen</button>
           <button id="htmlc-exit-fullscreen" class="btn btn-secondary htmlc-exit" type="button" hidden>Exit full screen</button>
           <button id="htmlc-download" class="btn btn-secondary" type="button" hidden>Download .html</button>

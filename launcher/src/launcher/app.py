@@ -1364,6 +1364,9 @@ class HtmlCreatorRequest(BaseModel):
     folder: str | None = None
     # A folder of images a landing page may place (html_creator/pictures.py).
     pictures: str | None = None
+    # The same prompt gives the same page: a fresh model for each page, at
+    # the price of its load time (html_creator/session.py says why).
+    repeatable: bool = False
     engine: str | None = None
     compute_device: str | None = None
 
@@ -1380,6 +1383,7 @@ async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
             prompt=req.prompt,
             folder=req.folder,
             pictures=req.pictures,
+            repeatable=req.repeatable,
         )
     except Exception as exc:
         return error_response(exc)
@@ -1392,6 +1396,7 @@ async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
             "pictures_offered": result.pictures_offered,
             "pictures_used": result.pictures_used,
             "picture_notes": result.picture_notes,
+            "repeatable": result.repeatable,
             "mode": result.mode,
             "source_char_count": result.source_char_count,
             "source_truncated": result.source_truncated,

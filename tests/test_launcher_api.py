@@ -383,7 +383,10 @@ def test_html_creator_passes_pictures_through_and_returns_the_readable_page(clie
         "/api/html-creator/generate", json={"prompt": "a page", "pictures": "C:/kit", "engine": "portable"}
     ).json()
     assert asked["pictures"] == "C:/kit"
+    assert asked["repeatable"] is False and body["repeatable"] is False  # the switch is off unless asked
     assert (body["pictures_offered"], body["pictures_used"]) == (2, ["hero.svg"])
+    client.post("/api/html-creator/generate", json={"prompt": "a page", "repeatable": True, "engine": "portable"})
+    assert asked["repeatable"] is True
     assert body["html_source"] == '<img src="hero.svg">' and body["html"].startswith('<img src="data:')
 
 

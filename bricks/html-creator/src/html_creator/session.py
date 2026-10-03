@@ -9,6 +9,7 @@ doc-qa's own small general-purpose default is the wrong tool here too.
 """
 from __future__ import annotations
 
+import gc
 from typing import Callable
 
 from doc_qa.engine_factory import create_llm
@@ -89,6 +90,7 @@ class HtmlCreatorSession:
         prompt: str | None = None,
         folder: str | None = None,
         pictures: str | None = None,
+        repeatable: bool = False,
         max_tokens: int | None = None,
         on_ready: Callable[[], None] | None = None,
         on_downloading: Callable[[], None] | None = None,
@@ -101,7 +103,19 @@ class HtmlCreatorSession:
 
         `pictures`, for a landing page, is a folder of images the page may
         place: the model is told their names and captions, and the ones it
-        references are embedded into the page."""
+        references are embedded into the page.
+
+        `repeatable` makes the page a function of its prompt alone, by
+        loading the model afresh and taking its most likely next token each
+        time. Both are needed, one per engine. On the GPU the runtime
+        specialises itself to the requests it has served and its arithmetic
+        shifts with it: measured on the XPS 14, the same prompt gave one
+        page on a fresh model, another after a different prompt and a third
+        straight afterwards -- with or without sampling, whose draw is
+        seeded -- while four fresh models gave the same page four times.
+        llama.cpp seeds its draw at random, so there it is the sampling
+        that has to go. The price is the model's load time on every page.
+        Off by default."""
         offered: list[picture_kit.Picture] = []
         picture_notes: list[str] = []
         if mode == "landing_page":
@@ -125,6 +139,12 @@ class HtmlCreatorSession:
         else:
             raise ValueError(f"Unknown mode '{mode}' (expected 'landing_page' or 'document').")
 
+        if repeatable and self._llm is not None:
+            # Released before the next one loads: two 30B models do not fit
+            # side by side.
+            self._llm = None
+            gc.collect()
+
         if self._llm is None:
             if self.engine == Engine.OPENVINO:
                 self._llm = create_llm(
@@ -141,7 +161,9 @@ class HtmlCreatorSession:
             on_ready()
 
         tokens = max_tokens or _MAX_TOKENS_BY_MODE[mode]
-        raw_output = self._llm.answer(system_prompt, source_text, max_tokens=tokens, control=control)
+        raw_output = self._llm.answer(
+            system_prompt, source_text, max_tokens=tokens, control=control, sample=not repeatable
+        )
         html, fence_stripped = strip_code_fence(raw_output)
         truncated_output = not html.rstrip().lower().endswith("</html>")
         written = html
@@ -159,4 +181,5 @@ class HtmlCreatorSession:
             pictures_used=used,
             picture_notes=picture_notes,
             html_source=written if used else None,
+            repeatable=repeatable,
         )

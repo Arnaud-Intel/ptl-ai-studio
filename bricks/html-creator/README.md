@@ -101,15 +101,30 @@ and text read from the page, the game stepped frame by frame through
 start, pause, a cleared wall, game over and restart, the lightbox driven
 with clicks and keys.
 
-**The same prompt does not give the same page twice.** The model samples
-(temperature 0.2 on top of the model's own sampling settings), and three
-runs of one prompt gave three different pages. A tighter prompt narrows
-what can vary; it does not remove it. Each bundled scenario passed on the
-runs that were checked (one to three each), and an earlier, looser wording
-of every one of them produced at least one page with a visible fault. So:
-rehearse a scenario before showing it, and if a page comes out wrong,
-Generate again. Decoding without sampling would make a rehearsed page the
-page you get; it is not done yet (see the backlog Inbox).
+**A page depends on what the model generated before it.** On the GPU the
+same prompt gave one page on a freshly loaded model, another after a
+different prompt, and a third straight afterwards. Sampling is not the
+cause: its draw is seeded, and on the CPU and the NPU the same prompt gives
+the same text every time with sampling on. Turning sampling off changed
+nothing on the GPU, and neither did clearing the pipeline's chat state.
+What does hold is that a freshly loaded model gives the same page every
+time: four fresh loads of the small model, and for the 30B model the board
+three times and the game and the travel site twice each, with other pages
+generated in between and across a launcher restart. The GPU runtime
+specialises itself to the requests it has served, and its arithmetic shifts
+with it; a token that was nearly a tie tips the other way and the page
+diverges from there.
+
+**"Same page every time"** (the launcher's switch, `--repeatable`, off by
+default) therefore loads the model afresh before each page -- about 20 s
+more on the integrated GPU -- and takes the most likely next token, which
+is what llama.cpp needs, whose draw is seeded at random. With it on, each
+bundled scenario has one definite page, and those five pages are the ones
+that were checked. With it off, pages are drawn rather than first-choice,
+so they are other pages, and they can differ with what came before; an
+earlier, looser wording of every scenario produced at least one such page
+with a visible fault. So turn the switch on for a show, or rehearse and
+Generate again if a page comes out wrong.
 
 What made the prompts hold up:
 
@@ -130,13 +145,32 @@ What made the prompts hold up:
   The hardware infographic came out sparse and stacked as a scrolling page
   and tidy as a full-window grid, the format that also suits a wall
   display.
-- **Stop when it is good.** Past a point, each extra instruction fixed one
-  detail and unsettled another: the hardware board went through six
-  wordings, and the one kept is the third.
-- **End with "Keep the code compact."** The cap is 6,144 tokens; these
-  scenarios use 3,300 to 4,750, which is a minute and a half to two and a
-  half minutes on the integrated GPU (30 to 38 tokens/s, slower after
-  several runs in a row).
+- **Give the arithmetic, not the wish.** "Counts up to 122.9" produced a
+  counter that ended on 123.5; the board's prompt now carries the counting
+  helper as code. "The first 56 percent is filled" produced a bar 87.5%
+  full; "a fill whose CSS width is exactly 56.25%" did not. Where two tiles
+  have to line up, the prompt gives the grid's CSS.
+- **Tune with the switch on.** While a page changed from run to run, every
+  new instruction fixed one detail and unsettled another, and there was no
+  telling a better prompt from a luckier run. With "Same page every time"
+  on, a prompt has one page: read it, fix what is wrong in the wording,
+  generate again.
+- **End with "Keep the code compact."** The cap is 6,144 tokens. With the
+  switch on, the five scenarios write 3,200 to 5,400 tokens and take two to
+  three and a half minutes on the integrated GPU, about 20 s of that being
+  the model's reload (29 to 35 tokens/s, slower after several runs in a
+  row). The lamp page is the long one.
+
+The five pages as checked on the XPS 14 (OpenVINO 2026.3), switch on: the
+travel site places all seven pictures, with its lightbox, keys and
+fictional badge; the game was stepped frame by frame through start, pause,
+game over and restart, and its level-up path was read in the code; the
+board shows 16, 122.9 and 50.4, a 56% memory bar and sixteen cores, and its
+buttons light the right chips; the lamp's slider, pricing toggle, accordion
+and closing button were driven; the wall's numbers tick, pause and resume.
+Animations were not watched playing: the tool used to check them does not
+draw frames in the background. A new runtime or graphics driver can change
+the arithmetic and with it the pages, so check them again after an update.
 
 ## Document handling
 

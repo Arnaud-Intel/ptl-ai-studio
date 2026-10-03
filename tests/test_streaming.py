@@ -193,6 +193,37 @@ def test_llama_streams_only_when_asked_and_stops_part_way():
     assert sum(counted) == 3
 
 
+def test_openvino_draws_by_default_and_takes_its_first_choice_when_asked():
+    llm = _openvino_llm()
+    asked = []
+
+    class Recording:
+        def generate(self, history, max_new_tokens, **choice):
+            asked.append(choice)
+            return SimpleNamespace(texts=["ok"], perf_metrics=_PerfMetrics())
+
+    llm.pipeline = Recording()
+    llm.answer("system", "question")
+    llm.answer("system", "question", sample=False)
+    assert asked == [{"temperature": 0.2}, {"do_sample": False}]
+
+
+def test_llama_takes_its_first_choice_at_temperature_zero():
+    llm, _ = _portable_llm(["Yes", "."])
+    temperatures = []
+    complete = llm.model.create_chat_completion
+
+    def recording(messages, max_tokens, temperature, stream=False):
+        temperatures.append(temperature)
+        return complete(messages, max_tokens, temperature, stream)
+
+    llm.model.create_chat_completion = recording
+    llm.answer("system", "question")
+    llm.answer("system", "question", sample=False)
+    llm.answer("system", "question", control=GenerationControl(), sample=False)  # streamed
+    assert temperatures == [0.2, 0.0, 0.0]
+
+
 # --- bricks ------------------------------------------------------------------------------
 
 

@@ -106,14 +106,21 @@ class _FakeLLM:
         self.asked = None
         self.last_stats = None
 
-    def answer(self, system_prompt, user_prompt, max_tokens=512, control=None):
+    def answer(self, system_prompt, user_prompt, max_tokens=512, control=None, sample=True):
         self.asked = (system_prompt, user_prompt)
+        self.sampled = sample
         return self.reply
 
 
-def _session(monkeypatch, reply):
+def _session(monkeypatch, reply, loads=None):
     llm = _FakeLLM(reply)
-    monkeypatch.setattr(html_session, "create_llm", lambda *a, **k: llm)
+
+    def create_llm(*args, **kwargs):
+        if loads is not None:
+            loads.append(1)
+        return llm
+
+    monkeypatch.setattr(html_session, "create_llm", create_llm)
     return HtmlCreatorSession(Engine.OPENVINO, compute_device="GPU"), llm
 
 
@@ -135,6 +142,19 @@ def test_a_page_without_pictures_is_asked_and_returned_as_before(monkeypatch):
     result = session.generate(prompt="a bakery")
     assert "PICTURES" not in llm.asked[0] and llm.asked[1] == "a bakery"
     assert result.html == written and result.html_source is None and result.pictures_offered == 0
+
+
+def test_the_model_is_kept_between_pages_unless_asked_for_the_same_page_every_time(monkeypatch):
+    loads = []
+    session, llm = _session(monkeypatch, "<!DOCTYPE html><html></html>", loads)
+    result = session.generate(prompt="a bakery")
+    session.generate(prompt="a bakery")
+    assert len(loads) == 1 and llm.sampled is True and result.repeatable is False  # off by default
+
+    result = session.generate(prompt="a bakery", repeatable=True)
+    session.generate(prompt="a bakery", repeatable=True)
+    assert len(loads) == 3  # a fresh model for each of the two
+    assert llm.sampled is False and result.repeatable is True
 
 
 def test_the_sandbox_rules_reach_the_model(monkeypatch):
