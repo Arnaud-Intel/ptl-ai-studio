@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Callable, Protocol
 
 from pantherlake_ai_core.engine import Engine
-from pantherlake_ai_core.types import GenerationStats
+from pantherlake_ai_core.types import GenerationControl, GenerationStats
 
 
 class Embedder(Protocol):
@@ -37,7 +37,10 @@ class LLM(Protocol):
     # what the bricks composing this one show the audience.
     last_stats: GenerationStats | None
 
-    def answer(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str: ...
+    # `control`, if given, sees the answer as it is written and can stop it.
+    def answer(
+        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control: GenerationControl | None = None
+    ) -> str: ...
     # How long a prompt may be, in the model's own tokens: what lets a caller
     # split or trim its input *before* the model refuses it.
     def count_tokens(self, text: str) -> int: ...

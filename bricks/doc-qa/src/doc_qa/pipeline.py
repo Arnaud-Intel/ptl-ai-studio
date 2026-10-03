@@ -73,14 +73,14 @@ class DocQASession:
         self.folder = folder
         return self.store.size
 
-    def ask(self, question: str, *, top_k: int = 4, max_tokens: int = 512) -> Answer:
+    def ask(self, question: str, *, top_k: int = 4, max_tokens: int = 512, control=None) -> Answer:
         if self.store.size == 0:
             raise RuntimeError("No documents ingested yet -- call ingest() first.")
 
         query_vector = self.embedder.embed_query(question)
         retrieved = self.store.search(query_vector, top_k=top_k)
         used = fit_excerpts(self.llm, retrieved, question, max_tokens)
-        text = self.llm.answer(_SYSTEM_PROMPT, _user_prompt(used, question), max_tokens=max_tokens)
+        text = self.llm.answer(_SYSTEM_PROMPT, _user_prompt(used, question), max_tokens=max_tokens, control=control)
         # Only what the model actually saw: citing an excerpt it never read
         # would make the [number] references point at the wrong passage.
         return Answer(text=text, sources=used, stats=getattr(self.llm, "last_stats", None))

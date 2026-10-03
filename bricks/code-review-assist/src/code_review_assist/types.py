@@ -13,3 +13,4 @@ class ReviewResult:
     diff_char_count: int
     diff_truncated: bool
     stats: GenerationStats | None = None  # both answers together
+    cancelled: bool = False  # stopped part-way: the review is incomplete

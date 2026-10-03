@@ -23,3 +23,4 @@ class MeetingNotes:
     # meeting was summarised part by part and the parts merged.
     parts: int = 1
     stats: GenerationStats | None = None  # every model call for these notes, together
+    cancelled: bool = False  # stopped part-way: these are not the finished notes

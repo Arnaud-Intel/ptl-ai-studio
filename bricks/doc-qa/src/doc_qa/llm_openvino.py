@@ -15,7 +15,7 @@ from typing import Callable
 
 from pantherlake_ai_core.engine import ov_config_for
 from pantherlake_ai_core.model_cache import resolve_snapshot
-from pantherlake_ai_core.types import GenerationStats
+from pantherlake_ai_core.types import GenerationControl, GenerationStats, openvino_streamer
 
 from .engine_factory import TEMPLATE_TOKENS, PromptTooLong
 
@@ -85,7 +85,12 @@ class OpenVINOLLM:
             return NPU_MAX_PROMPT_LEN  # MIN_RESPONSE_LEN keeps the answer's room apart
         return self._context - max_tokens
 
-    def answer(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str:
+    def answer(
+        self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control: GenerationControl | None = None
+    ) -> str:
+        """`control`, if given, receives each piece of the answer as it is
+        written and can stop it part-way: what was written is returned, and
+        `last_stats.cancelled` says the answer is incomplete."""
         needed = self.count_tokens(system_prompt) + self.count_tokens(user_prompt) + TEMPLATE_TOKENS
         budget = self.prompt_budget(max_tokens)
         if needed > budget:
@@ -96,6 +101,9 @@ class OpenVINOLLM:
                 {"role": "user", "content": user_prompt},
             ]
         )
-        result = self.pipeline.generate(history, max_new_tokens=max_tokens, temperature=0.2)
-        self.last_stats = GenerationStats.from_openvino(result, self.device)
+        streaming, was_cancelled = {}, lambda: False
+        if control is not None:
+            streaming["streamer"], was_cancelled = openvino_streamer(control, self._ov_genai, self._tokenizer)
+        result = self.pipeline.generate(history, max_new_tokens=max_tokens, temperature=0.2, **streaming)
+        self.last_stats = GenerationStats.from_openvino(result, self.device, cancelled=was_cancelled())
         return result.texts[0].strip()

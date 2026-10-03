@@ -1,168 +1,184 @@
-# Streaming the language models: groundwork
+# Streaming the language models
 
-Status: design, not built. Backlog ticket **R32**. Written 2026-10-03.
+Status: steps A and B built and verified on the demo machine on 2026-10-03
+(backlog ticket **R32**). Step C, the voice assistant speaking as it writes,
+is not built. This note is the design, what was measured, and what the
+measurements changed.
 
-Today every language-model call in the app blocks until the whole answer
-exists. Streaming changes three things a person can see, with one change
-underneath:
+Before this, every language-model call in the app blocked until the whole
+answer existed. Streaming changes three things a person can see, with one
+change underneath:
 
 1. **Live speed.** The hardware panel shows tokens per second while a
    brick is generating, not "last 44 tok/s" once it has finished.
 2. **Answers as they are written.** Text appears word by word instead of a
    spinner for the length of the answer.
-3. **Cancel.** The panel's ✕ stops a brick mid-answer. Today it is disabled
-   until the answer is done.
+3. **Stop.** The panel's ✕, or the Stop button beside the text, ends an
+   answer part-way. What was written stays on screen, marked incomplete.
+
+It covers the five bricks that answer a request with a language model:
+document Q&A, code review, HTML creator, screen OCR and meeting notes.
 
 ## What was measured
 
-On the demo machine (Dell XPS 14, Core Ultra X7 358H), Qwen2.5-1.5B int4,
-a 200-token answer, OpenVINO GenAI 2026.3:
+On the demo machine (Dell XPS 14, Core Ultra X7 358H), OpenVINO GenAI 2026.3.
 
-| Engine and chip | Without a streamer | With a streamer | First text | Cancel returns after |
-| --- | --- | --- | --- | --- |
-| OpenVINO, iGPU | 91.0 tok/s | 83.9 tok/s (-8%) | 0.09 s | 0.30 s |
-| OpenVINO, NPU | 53.9 tok/s | 55.8 tok/s (no cost) | 0.39 s | 0.79 s |
-| llama.cpp, CPU | -- | streams | 0.19 s | 0.50 s |
+**It works on every engine and chip.** Qwen2.5-1.5B int4, a 200-token
+answer:
 
-What that establishes:
+| Engine and chip | First text | Stop returns after |
+| --- | --- | --- |
+| OpenVINO, iGPU | 0.09 s | 0.30 s |
+| OpenVINO, NPU | 0.39 s | 0.79 s |
+| llama.cpp, CPU | 0.19 s | 0.50 s |
 
-- **It works on every engine and chip the app uses**, the NPU included. The
-  pieces joined together are exactly the final answer.
-- **A cancelled model is still usable.** After a cancel the same pipeline
-  answered the next request normally, on both chips, and the text written
-  so far is returned.
-- **The callback fires about once per token** (189 times for 200 tokens: the
-  runtime holds a piece back until it forms printable text), so counting
-  callbacks is a fair live rate, and the exact count still comes from the
-  runtime's own metrics at the end.
-- **The vision-language and Whisper pipelines take the same streamer**, so
-  the screen-OCR model and speech are not a separate problem.
+The pieces joined together are exactly the final answer, and a stopped model
+answers its next request normally.
 
-OpenVINO's streamer is a callable given each piece of text; it answers
-`StreamingStatus.RUNNING`, `STOP` or `CANCEL`. llama.cpp streams with
-`stream=True` and is stopped by abandoning the iterator.
+**It costs nothing that can be measured.** Interleaved runs of 120 tokens
+each (eight per column for the small model, six for the 30B), median tokens
+per second:
 
-## For
+| Model and chip | No streamer | A plain callback | The token-counting streamer |
+| --- | --- | --- | --- |
+| Qwen2.5-1.5B, iGPU | 58.3 | 56.0 | 59.0 |
+| Qwen2.5-1.5B, NPU | 53.4 | 54.0 | 51.7 |
+| Qwen3-Coder-30B, iGPU | 28.8 | 28.8 | 28.6 |
+
+The differences are smaller than the spread between identical runs. An
+earlier single pair of runs read as an 8% cost on the iGPU (91.0 against
+83.9); that was run-to-run variation, not the streamer. (The iGPU figures
+in this note are low: the laptop was on battery at 28% when they were
+taken, and earlier the same day the same models gave 87 and 44 tok/s. See
+the backlog Inbox.) A streamer running in Python also does not hold up the rest of the
+launcher: while one generated, another thread woke about 480 times with a
+longest stall of 6 ms, the same as with no streamer.
+
+**A piece of text is not a token.** OpenVINO calls a plain callback only
+when a token completes some printable text. For prose that is nearly every
+token (199 calls for 206 tokens); for HTML it is not (154 calls for 220
+tokens), so a rate counted from callbacks read 30% low on the HTML creator
+and code review. The streamer therefore sees every token itself and leaves
+the text to OpenVINO's own `TextStreamer`: 220 tokens seen for 220
+generated, at a rate that matches the runtime's own figure to the decimal on
+both chips.
+
+**Through the launcher**, on battery:
+
+| Brick | Live rate while writing | Final figure | Stop returns after |
+| --- | --- | --- | --- |
+| Document Q&A, NPU | 34-55 tok/s | 51.5 tok/s | 0.32 s |
+| Code review, iGPU (30B) | 25-38 tok/s | 33.0 tok/s | 0.33 s |
+| HTML creator, iGPU (30B) | 22-34 tok/s | 32.2 tok/s | 0.33 s |
+| Screen OCR, iGPU (7B vision) | 17-20 tok/s | 20.1 tok/s | 0.36 s |
+| Meeting notes, NPU, a long meeting in parts | 37-50 tok/s | 46.8 tok/s | 0.30 s |
+
+The live figure follows the last second and a half, so it moves around the
+final one, which is the average over the whole answer.
+
+In every case the stopped request came back with the text written so far and
+`cancelled: true`, and the model stayed loaded.
+
+## Why it is worth having
 
 - **The wait becomes the demo.** First words arrive in 0.1-0.4 s. Without
   streaming the audience watches a spinner for the whole answer: 5 s for a
   short one, 54 s measured for an HTML page (2,175 tokens).
 - **The speed claim becomes live.** A number that moves while text appears
   is the hardware story; a number that shows up afterwards is a caption.
-- **Every brick can be stopped.** A runaway generation (the HTML creator may
-  write 6,144 tokens) no longer holds a chip until it finishes, and the
-  panel's ✕ means the same thing everywhere.
-- **It is cheap.** At most 8% of throughput on the iGPU, nothing measurable
-  on the NPU.
+- **A runaway answer can be stopped.** The HTML creator may write 6,144
+  tokens; it no longer holds a chip until it finishes.
 - **One seam, several later wins**: live time-to-first-token, energy per
   token (R18), speaking a reply sentence by sentence in the voice assistant.
 
-## Against, and what to watch
+## What to watch
 
-- **It touches every language-model path**: two LLM backends, the
-  vision-language extractor, seven bricks' session APIs, and a way to carry
-  partial text for the five bricks that answer a plain request.
-- **Partial output is a new state.** Several bricks post-process the whole
-  answer -- the HTML creator strips code fences and checks for `</html>`,
-  expense extraction parses JSON, meeting notes drop a contradictory "None
-  identified". None of that can run on half an answer: partial text has to
-  be shown raw and replaced by the finished, processed answer.
-- **Not everything should stream to the screen.** Expense structuring (JSON
-  for a parser) and screen-memory OCR have no reader watching; they want
-  the live rate and cancel, not the text.
+- **Partial output is a state of its own.** Several bricks post-process the
+  whole answer -- the HTML creator strips code fences and checks for
+  `</html>`, meeting notes drop a contradictory "None identified". None of
+  that can run on half an answer, so partial text is shown raw and replaced
+  by the finished, processed answer.
+- **A stopped answer must look stopped.** Half a code review that reads
+  like a finished one is worse than none: it carries a "Stopped -- this
+  answer is incomplete" line, and its figures say they describe an
+  incomplete answer.
 - **Streaming does not shorten the prompt.** A long prompt is read before
-  the first token, and the NPU's first text already takes 0.39 s on a short
-  one. A long meeting still starts with a pause; the UI should say "reading
-  the transcript" rather than look hung.
-- **A cancelled answer must look cancelled.** Half a code review that reads
-  like a finished one is worse than none: label it.
-- **More moving parts in delivery.** Event delivery between launcher and
-  page is already the open reliability ticket (R05). The transport chosen
-  below is deliberately the simplest one for that reason.
-- **Testing**: backends need streaming fakes; the page behaviour can only be
-  checked by hand.
+  the first token. The page says what the brick is doing until text starts.
+- **Not everything streams to the screen.** Expense structuring (JSON for a
+  parser), screen-memory OCR and the voice assistant's reply run inside
+  loops with their own Stop, and have no reader watching the text; they are
+  unchanged.
 
-## How to build it
+## How it is built
 
 ### 1. One control object through every call (core)
+
+`pantherlake_ai_core.types`:
 
 ```python
 @dataclass
 class GenerationControl:
-    on_text: Callable[[str], None] | None = None   # each piece as it arrives
-    should_stop: Callable[[], bool] | None = None  # asked once per piece
+    on_text: Callable[[str], None] | None = None     # each piece of the answer
+    should_stop: Callable[[], bool] | None = None    # asked after every piece
+    on_heading: Callable[[str], None] | None = None  # a line the brick adds itself
+    on_tokens: Callable[[int], None] | None = None   # how many tokens were just produced
 ```
 
-`LLM.answer(system, user, max_tokens, control=None)` and the
-vision-language extractor take it as one optional argument, so the seven
-bricks pass a single thing down rather than growing two parameters each.
-`GenerationStats` gains `cancelled: bool`.
+`LLM.answer(system, user, max_tokens, control=None)` and the vision-language
+extractor take it as one optional argument, so a brick passes a single thing
+down. `GenerationStats` has `cancelled: bool`. With no control passed,
+nothing changes: no streamer is installed.
 
-- **OpenVINO**: the streamer is a closure -- call `on_text`, return `CANCEL`
-  when `should_stop()` is true, else `RUNNING`.
-- **llama.cpp**: iterate `create_chat_completion(..., stream=True)`, call
-  `on_text`, break when `should_stop()`.
+- **OpenVINO** (`openvino_streamer`): a `StreamerBase` whose `write` counts
+  the token and hands it to a `TextStreamer`; that calls `on_text` and
+  answers `CANCEL` when `should_stop()` is true.
+- **llama.cpp**: iterate `create_chat_completion(..., stream=True)`, one
+  token per chunk, and stop by abandoning the iterator.
+- A brick that makes several calls for one answer (code review's two, a long
+  meeting's parts) puts its own headings into the text with `say(control,
+  ...)` and checks `stopped(control)` before starting the next call.
 
-With no control passed, nothing changes: no streamer is installed, and the
-8% is not paid.
+### 2. The launcher holds the answer in flight
 
-### 2. The launcher: a cancel flag and a live rate per brick
+`launcher/generation.py`: a runner calls `generation.get(demo_id).begin()`
+and passes the returned control to its brick. That one object keeps the text
+so far, reports a live `tok/s` to the hardware panel (over the last 1.5 s,
+starting afresh at each heading so the pause before a second answer is not
+counted as slow writing), and holds the stop flag.
 
-- Each one-shot runner owns a `threading.Event`. `POST
-  /api/bricks/<id>/stop` sets it while a request is in flight (and still
-  unloads the model when the brick is idle), so `can_stop` becomes true for
-  every brick and the panel's ✕ is never disabled.
-- The runner's `on_text` ticks a `metrics.RateMeter`, reporting a live
-  `tok/s` -- the panel already draws whatever is reported, so the live
-  number needs no front-end change.
+- `POST /api/bricks/<id>/stop` stops an answer in flight and leaves the
+  model loaded; with nothing in flight it unloads the model, as before.
+  `?stage=notes` stops meeting notes' summary without ending the
+  transcription.
+- `GET /api/bricks/<id>/partial` returns `{active, text, cancelled}`.
 
-### 3. Getting partial text to the page: poll first
+### 3. The page asks for the text
 
-Three ways to carry the text of a request/response brick:
-
-| | How | Cost |
-| --- | --- | --- |
-| **Poll** | the runner keeps `partial_text`; the page asks `GET /api/<id>/partial` a few times a second while its request is pending | no new transport; the same "latest wins" shape as the video feeds |
-| Server-sent events | one streaming response per brick | reconnect and ordering to handle |
-| WebSocket | as the streaming bricks use | most plumbing; duplicates R05's concerns |
-
-Polling first. Text at 3-4 updates a second reads as live, a missed poll
-loses nothing (the next one has more), and it adds no delivery mechanism
-while R05 is open. Server-sent events are the upgrade if it ever feels
-coarse.
-
-### 4. The page
-
-`Panel.run` accepts where partial text goes; it shows it with a caret while
-the request is pending and replaces it with the finished answer. A stopped
-answer keeps its text under a "Stopped -- incomplete" label.
-
-### 5. Order, and what each step delivers
-
-| Step | Delivers | Size |
-| --- | --- | --- |
-| **A** | control object in both backends and the extractor; cancel flag and route; live `tok/s` in the panel; ✕ enabled everywhere | about 1 day |
-| **B** | answers word by word in document Q&A, code review, HTML creator (raw until complete), screen OCR, and meeting notes' final merge (parts report "part 2 of 4" as now) | about 2 days |
-| **C** (optional) | the voice assistant speaks a reply sentence by sentence as it is written | 1-2 days |
-
-Step A alone delivers two of the three visible changes with no transport
-work, and is the natural first commit.
-
-### Not streamed to the screen
-
-Expense structuring, screen-memory OCR and embeddings: live rate and cancel
-only.
+While its request is pending, the page asks for the partial text every
+300 ms and shows it with a Stop button; the finished answer replaces it.
+Polling rather than server-sent events or a WebSocket: a missed ask loses
+nothing (the next one has more text), and it adds no delivery mechanism
+while R05 is open. At 40-55 tok/s the text grows by 40-90 characters per
+ask, which reads as live.
 
 ### Tests
 
-A fake LLM that yields pieces; cancel mid-way returns the partial text and
-`cancelled=True`; the live rate is reported and cleared; the stop route
-sets the flag for a busy brick and unloads an idle one; with no control
-passed, behaviour is byte-for-byte what it is today.
+`tests/test_streaming.py`: stand-in runtimes for both backends; a stop
+part-way returns the partial text and `cancelled=True`; tokens are counted
+apart from pieces of text; code review never starts its second answer after
+a stop; a long meeting keeps the parts already done; the stop route stops an
+answer first and unloads second. The page was checked by hand in the
+browser.
 
-## To decide
+## Decided
 
-1. Step A, then B -- or A only for now?
-2. Polling for partial text (recommended) or server-sent events from the
-   start?
-3. Should a stopped answer be kept on screen, labelled, or cleared?
+1. Steps A and B together (2026-10-03).
+2. Partial text is polled.
+3. A stopped answer stays on screen, labelled incomplete.
+
+## Not built
+
+- **Step C**: the voice assistant speaking its reply sentence by sentence
+  as it is written (1-2 days).
+- A live rate and a mid-answer stop for the language-model calls inside the
+  loop bricks (expense extraction, screen memory, voice assistant).

@@ -147,6 +147,13 @@ it. A demo that is idle but still holds a model is listed too, and its ✕
 unloads the model. Reopening a demo picks up exactly where it is -- the
 video reattaches, an index built five minutes ago is still there.
 
+**Answers appear as they are written.** Document Q&A, code review, the HTML
+creator, screen OCR and meeting notes show their text word by word, with
+the tokens per second moving in the hardware panel while they write. Stop
+(beside the text, or the panel's ✕) ends an answer part-way: what was
+written stays, marked incomplete, and the model stays loaded for the next
+question.
+
 <p align="center">
   <img src="docs/screenshot-running.png" alt="Two demos at once: the Now running strip lists Object Detection Overlay running on GPU.0 and the Commit and Code Review Assistant loading on GPU.1, with both GPU gauges lit and labelled" width="820" />
 </p>

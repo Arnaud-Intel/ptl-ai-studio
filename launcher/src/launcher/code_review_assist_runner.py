@@ -10,7 +10,7 @@ from code_review_assist.session import CodeReviewSession
 from code_review_assist.types import ReviewResult
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, energy, events, metrics
+from . import activity, energy, events, generation, metrics
 
 _DEMO_ID = "code-review-assist"
 
@@ -51,13 +51,17 @@ class CodeReviewAssistRunner:
                 # or may not turn into real work; on_ready flips it to
                 # "running" only once the model is actually ready.
                 events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
+                live = generation.get(_DEMO_ID)
                 try:
                     result = self._session.review(
-                        folder=folder, against=against, diff_text=diff_text, on_ready=on_ready, on_downloading=on_downloading
+                        folder=folder, against=against, diff_text=diff_text, on_ready=on_ready,
+                        on_downloading=on_downloading, control=live.begin(),
                     )
                 except Exception as exc:
                     events.set_phase(_DEMO_ID, "error", str(exc))
                     raise
+                finally:
+                    live.end()
                 if result.stats is not None and started:
                     result.stats.energy = energy.since(started[-1], _DEMO_ID)
                 if result.stats is not None:

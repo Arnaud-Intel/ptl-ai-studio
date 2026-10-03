@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 from pantherlake_ai_core.engine import ov_config_for
 from pantherlake_ai_core.model_cache import resolve_snapshot
-from pantherlake_ai_core.types import GenerationStats
+from pantherlake_ai_core.types import GenerationControl, GenerationStats, openvino_streamer
 
 # openvino itself is imported where it's used, not here: this brick's
 # `openvino` extra is optional, and importing this module must not require
@@ -72,16 +72,23 @@ class OpenVINOExtractor:
         self.device = resolve_device(device)
         self.pipeline = ov_genai.VLMPipeline(resolved_dir, self.device, **ov_config_for(self.device))
 
-    def extract(self, image: np.ndarray, translate: bool = False) -> ExtractionResult:
+    def extract(
+        self, image: np.ndarray, translate: bool = False, control: GenerationControl | None = None
+    ) -> ExtractionResult:
         import openvino as ov
 
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         tensor = ov.Tensor(np.ascontiguousarray(rgb))
 
         prompt = _TRANSLATE_PROMPT if translate else _EXTRACT_PROMPT
-        result = self.pipeline.generate(prompt, images=[tensor], max_new_tokens=512)
+        streaming, was_cancelled = {}, lambda: False
+        if control is not None:
+            import openvino_genai as ov_genai
+
+            streaming["streamer"], was_cancelled = openvino_streamer(control, ov_genai, self.pipeline.get_tokenizer())
+        result = self.pipeline.generate(prompt, images=[tensor], max_new_tokens=512, **streaming)
         text = result.texts[0].strip()
-        stats = GenerationStats.from_openvino(result, self.device)
+        stats = GenerationStats.from_openvino(result, self.device, cancelled=was_cancelled())
 
         if translate:
             return ExtractionResult(text="", regions=[], translated_text=text, stats=stats)

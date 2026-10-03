@@ -24,6 +24,23 @@ a new one or the deferred list, and moves its original wording to
   meeting notes, but was not watched live -- nothing was played through the
   speakers while building it. Check it on the next run with audio.
   (filed 2026-10-03, hardware panel)
+- [ ] **The iGPU's tokens per second fall by about a third on battery, and
+  nothing on screen says so.** Measured while testing streaming, on battery
+  at 28% with the Balanced plan: Qwen2.5-1.5B ran at 86-88 tok/s for its
+  first two answers, then 50-58 for the next twenty; the 30B coder held
+  about 29-33 tok/s. Earlier the same day the same models gave 87 and
+  44-45. The NPU did not move (51-55 throughout). Not yet separated: the
+  battery's power limit against heat after repeated runs. Worth knowing
+  before a show (plug in, or say the number is the on-battery one), and the
+  hardware panel could show mains or battery beside the power figure.
+  Related: R18's battery drain rate. (filed 2026-10-03, streaming tests)
+- [ ] **What streaming left out.** R32's optional step C -- the voice
+  assistant speaking its reply sentence by sentence as it is written -- is
+  not built. The language-model calls inside the loop bricks (expense
+  structuring, screen-memory OCR, the voice assistant's reply) have no live
+  tokens per second and stop between items, not mid-answer. Meeting notes'
+  streaming was verified through its runner with a typed transcript, not
+  from the page with real audio. (filed 2026-10-03, R32)
 
 ## What we are showing
 
@@ -372,29 +389,6 @@ the release gate.
   Piccadilly/St James's camera decoded successfully with the new timeouts.
   The curated-source health picker part of R27 remains open.
 
-- [ ] **R32 · P2 · Stream the language models: live speed, answers as they
-  are written, and cancel.** *Proves C5.*
-  Every LLM call blocks until the whole answer exists: the panel's tokens/s
-  appears afterwards, the audience watches a spinner (54 s for an HTML page),
-  and a brick that answers one request at a time can't be stopped mid-way.
-  One control object through both LLM backends and the vision-language
-  extractor gives all three. Design, alternatives and the open decisions are
-  in [docs/STREAMING.md](docs/STREAMING.md).
-  **Evidence (2026-10-03):** Qwen2.5-1.5B, 200 tokens: streaming costs 8% on
-  the iGPU (83.9 against 91.0 tok/s) and nothing on the NPU (55.8 against
-  53.9); first text after 0.09 s and 0.39 s; a cancel returns in 0.30 s and
-  0.79 s with the partial text, and the model answers the next request
-  normally. llama.cpp streams and stops the same way.
-  **Done:** step A -- every brick's ✕ works mid-answer and the panel shows a
-  live tokens/s while it generates; step B -- document Q&A, code review, HTML
-  creator, screen OCR and meeting notes show their answer as it is written,
-  and a stopped answer is labelled incomplete. With no control passed, a
-  call behaves exactly as today.
-  **Estimate:** A about 1 day, B about 2 days; C (the voice assistant speaking
-  sentence by sentence) optional, 1-2 days. **Depends on:** none; partial text
-  is polled so it adds no delivery mechanism while R05 is open.
-  (filed 2026-10-03, user request)
-
 ### Sturdiness
 
 - [ ] **R05 · P2 · Bound event delivery and coordinate shutdown.**
@@ -589,6 +583,43 @@ verified on 2026-09-11. For R02, manual correction remains through the CSV;
 no in-app approval flow is claimed. R04 restores history without resurrecting
 previously active workers.
 
+- [x] **R32 · P2 · Stream the language models: live speed, answers as they
+  are written, and cancel.** *Proves C5.*
+  Every LLM call blocks until the whole answer exists: the panel's tokens/s
+  appears afterwards, the audience watches a spinner (54 s for an HTML page),
+  and a brick that answers one request at a time can't be stopped mid-way.
+  One control object through both LLM backends and the vision-language
+  extractor gives all three. Design, alternatives and the open decisions are
+  in [docs/STREAMING.md](docs/STREAMING.md).
+  **Evidence (2026-10-03):** Qwen2.5-1.5B, 200 tokens: streaming costs 8% on
+  the iGPU (83.9 against 91.0 tok/s) and nothing on the NPU (55.8 against
+  53.9); first text after 0.09 s and 0.39 s; a cancel returns in 0.30 s and
+  0.79 s with the partial text, and the model answers the next request
+  normally. llama.cpp streams and stops the same way.
+  **Done:** step A -- every brick's ✕ works mid-answer and the panel shows a
+  live tokens/s while it generates; step B -- document Q&A, code review, HTML
+  creator, screen OCR and meeting notes show their answer as it is written,
+  and a stopped answer is labelled incomplete. With no control passed, a
+  call behaves exactly as today.
+  **Estimate:** A about 1 day, B about 2 days; C (the voice assistant speaking
+  sentence by sentence) optional, 1-2 days. **Depends on:** none; partial text
+  is polled so it adds no delivery mechanism while R05 is open.
+  (filed 2026-10-03, user request)
+  **Done 2026-10-03:** steps A and B, for the five bricks that answer a
+  request with a language model. Verified through the launcher on the XPS 14
+  (on battery): document Q&A on the NPU 51.5 tok/s with a live reading of
+  34-55 while writing; code review 33.0 and HTML creator 32.2 on the iGPU's
+  30B model; screen OCR 20.1 on the 7B vision model; a long meeting on the
+  NPU summarised part by part at 46.8. Each stop returned in 0.30-0.36 s with
+  the text so far and the model still loaded; from the page, the text grows
+  every 300 ms and a stopped answer stays under "Stopped -- this answer is
+  incomplete". Two things the evidence above got wrong, corrected in the
+  build: the 8% cost was run-to-run variation (interleaved medians show
+  none, on the 1.5B and the 30B); and a callback is not a token (154
+  callbacks for 220 tokens of HTML), so the live rate counts tokens through
+  a streamer that sees each one. "Every brick's ✕" holds for those five; the
+  loop bricks stop as before, between items. Step C and those loops are in
+  the Inbox.
 - [x] **R01 · P1 · Correct hardware identity and capability labels.**
   Replace substring-based NPU discovery with validated device identity;
   distinguish hardware branding, telemetry visibility, and engine support.

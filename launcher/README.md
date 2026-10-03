@@ -76,8 +76,20 @@ and `--no-browser` do what they say. Leave it running in a terminal;
   `POST /api/bricks/<id>/stop`: a brick with a loop is stopped; one that
   answers a request at a time has its model unloaded, which is what frees
   the chip's memory (measured: 6.8 GB -> 2.2 GB of GPU memory when the 7B
-  OCR model is unloaded). While such a brick is mid-answer its ✕ is
-  disabled -- there is no cancelling a generation yet.
+  OCR model is unloaded). While such a brick is writing an answer, the ✕
+  stops the answer instead and leaves the model loaded: the request returns
+  within about a third of a second with the text so far and
+  `cancelled: true`.
+- **An answer shows while it is written.** The five bricks that answer a
+  request with a language model (document Q&A, code review, HTML creator,
+  screen OCR, meeting notes) pass a control from
+  [`generation.py`](src/launcher/generation.py) down to the model. It keeps
+  the text so far, which the page asks for every 300 ms
+  (`GET /api/bricks/<id>/partial`) and shows with a Stop button until the
+  finished answer replaces it; it counts tokens for the panel's live
+  tokens per second; and it holds the stop flag. A stopped answer stays on
+  screen under "Stopped -- this answer is incomplete". Design and
+  measurements: [docs/STREAMING.md](../docs/STREAMING.md).
 
 ### `static/app.js` in one paragraph
 
@@ -152,7 +164,9 @@ How it's real, not decorative:
   processing time, tokens per second from an answer's stats, receipts per
   minute for a batch. Tokens per second alone would leave a third of the
   bricks blank. A live number goes when its stage stops; the last result of
-  a one-shot brick stays ("last 19 tok/s") while its model is loaded.
+  a one-shot brick stays ("last 19 tok/s") while its model is loaded. While
+  such a brick writes an answer the number is live: tokens counted as they
+  are produced, over the last second and a half.
 - **CPU** comes from `psutil`, cross-platform, cheap.
 - **GPU/NPU** come from Windows' own "GPU Engine" performance-counter
   category (the same one Task Manager reads) -- see
@@ -216,7 +230,14 @@ polls that route every 2s.
    are reading. Report the brick's number with `metrics.report(...)` where
    the runner sees it happen, and add the runner to `_STOPPABLE` (it has a
    loop and a `stop()`) or `_UNLOADABLE` (it holds a model between requests)
-   in `app.py` -- a test fails if an available brick is in neither. For a threaded brick, guard `start()`
+   in `app.py` -- a test fails if an available brick is in neither. If the
+   brick answers a request with a language model, give its session call a
+   `control=None` argument that it passes to the model, wrap the call in
+   the runner with `live = generation.get(_DEMO_ID)`, `control=live.begin()`
+   and `finally: live.end()`, return `cancelled` in the route's JSON, and
+   pass `partial: { target: el("<output box>") }` to `this.run({...})` --
+   the text appearing as it is written, the live tokens per second and Stop
+   come with that. For a threaded brick, guard `start()`
    with `worker.refuse_if_busy(...)` and make `stop()`
    `if not worker.request_stop(...): return` before clearing state, so it
    gets the shared "already running" / "still stopping" handling for free.

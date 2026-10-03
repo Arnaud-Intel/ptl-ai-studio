@@ -434,6 +434,58 @@ function reflectStatus(target, status) {
 
 // --- Panels -------------------------------------------------------------------
 
+// While a brick writes an answer, show it as it grows. The page asks for
+// the text so far a few times a second (see generation.py): a missed ask
+// loses nothing, since the next one has more. Returns the function that ends
+// the following; whatever the brick renders when it finishes replaces this.
+const PARTIAL_POLL_MS = 300;
+
+function followPartial(demoId, { target, stage = "default", onUpdate = null }) {
+  const query = stage && stage !== "default" ? `?stage=${encodeURIComponent(stage)}` : "";
+  let block = null;
+  let ended = false;
+  const tick = async () => {
+    let data;
+    try {
+      data = await fetchJSON(`/api/bricks/${demoId}/partial${query}`);
+    } catch {
+      return; // a missed ask: the next one has everything so far
+    }
+    if (ended || !data.active || !data.text) return;
+    if (!block) {
+      target.innerHTML =
+        '<div class="partial"><div class="partial-head"><span class="partial-label">Writing…</span>' +
+        '<button type="button" class="link-btn partial-stop">Stop</button></div>' +
+        '<pre class="partial-text"></pre></div>';
+      block = target.querySelector(".partial");
+      block.querySelector(".partial-stop").addEventListener("click", async (event) => {
+        event.currentTarget.disabled = true;
+        block.querySelector(".partial-label").textContent = "Stopping…";
+        try {
+          await postJSON(`/api/bricks/${demoId}/stop${query}`, {});
+        } catch {
+          // The request itself reports what went wrong, if anything did.
+        }
+      });
+    }
+    const text = block.querySelector(".partial-text");
+    text.textContent = data.text.trimStart();
+    text.scrollTop = text.scrollHeight;
+    if (onUpdate) onUpdate();
+  };
+  const timer = setInterval(tick, PARTIAL_POLL_MS);
+  return () => {
+    ended = true;
+    clearInterval(timer);
+  };
+}
+
+// An answer that was stopped part-way stays on screen, and says so: half a
+// review that reads like a finished one would be worse than none.
+function stoppedNoteHtml(data) {
+  return data && data.cancelled ? '<p class="stopped-note">Stopped -- this answer is incomplete.</p>' : "";
+}
+
 class Panel {
   constructor(config) {
     Object.assign(this, { controls: [], portableDevices: ["cpu"] }, config);
@@ -527,20 +579,26 @@ class Panel {
   // One request/response action: disables `button`, shows `busy`, mirrors the
   // brick's phase (statusKey) into `statusEl` while the call is in flight,
   // then `done` (a string, or a function of the result) -- or the error.
-  async run({ button, statusEl = this.statusEl, key, busy, work, done = "Done" }) {
+  // `partial` ({ target, stage }) shows the answer in `target` as it is
+  // written, until `work` renders the finished one over it.
+  async run({ button, statusEl = this.statusEl, key, busy, work, done = "Done", partial = null }) {
     button.disabled = true;
     paintStatus(statusEl, busy, "loading");
     if (key) this.watch(key, statusEl);
+    const stopFollowing = partial ? followPartial(this.id, partial) : () => {};
     try {
       const result = await work();
+      stopFollowing();
       this.unwatch();
-      paintStatus(statusEl, typeof done === "function" ? done(result) : done, "live");
+      if (result && result.cancelled) paintStatus(statusEl, "Stopped -- the answer is incomplete");
+      else paintStatus(statusEl, typeof done === "function" ? done(result) : done, "live");
       return result;
     } catch (err) {
       this.unwatch();
       paintStatus(statusEl, `Error: ${err.message}`, "error");
       return undefined;
     } finally {
+      stopFollowing();
       button.disabled = false;
     }
   }
@@ -1017,10 +1075,12 @@ const PANELS = {
           button: el("mtg-generate"),
           statusEl: el("mtg-notes-status"),
           key: "meeting-notes:notes",
+          partial: { target: el("mtg-notes"), stage: "notes" },
           busy: "Generating notes…",
           work: async () => {
             const data = await postJSON("/api/meeting-notes/generate");
             renderTextBlock(el("mtg-notes"), data.text);
+            el("mtg-notes").insertAdjacentHTML("afterbegin", stoppedNoteHtml(data));
             return data;
           },
           done: (data) =>
@@ -1602,15 +1662,30 @@ const PANELS = {
         appendLine(box, "line-question", `Q: ${question}`);
         el("docqa-question").value = "";
         this.setBusy(true);
+        // The answer appears here as it is written, then gives way to the
+        // finished one.
+        const writing = document.createElement("div");
+        box.appendChild(writing);
+        const stopFollowing = followPartial("doc-qa", {
+          target: writing,
+          onUpdate: () => {
+            box.scrollTop = box.scrollHeight;
+          },
+        });
         try {
           const answer = await postJSON("/api/doc-qa/ask", { question });
+          stopFollowing();
+          writing.remove();
           appendLine(box, "line-answer", answer.text);
+          if (answer.cancelled) appendLine(box, "line-note", "Stopped -- this answer is incomplete.");
           if (answer.sources && answer.sources.length) {
             appendLine(box, "line-note", "Sources: " + answer.sources.map((s) => `${s.source} [${s.score.toFixed(2)}]`).join(", "));
           }
         } catch (err) {
           appendLine(box, "line-answer", `Error: ${err.message}`);
         } finally {
+          stopFollowing();
+          writing.remove();
           this.setBusy(false);
         }
       };
@@ -1665,6 +1740,7 @@ const PANELS = {
         this.run({
           button: el("ocr-extract"),
           key: "screen-ocr",
+          partial: { target: el("ocr-result") },
           busy: source === "upload" ? "Uploading and reading…" : "Capturing and reading…",
           work: async () => {
             let data;
@@ -1708,7 +1784,7 @@ const PANELS = {
         html += '<p class="section-label">Detected regions</p>';
         html += data.regions.map((r) => statRow(r.text, `${Math.round(r.confidence * 100)}%`)).join("");
       }
-      container.innerHTML = html + generationStatsHtml(data.stats);
+      container.innerHTML = stoppedNoteHtml(data) + html + generationStatsHtml(data.stats);
     },
   }),
 
@@ -1915,6 +1991,7 @@ const PANELS = {
         this.run({
           button: el("cra-review"),
           key: "code-review-assist",
+          partial: { target: el("cra-result") },
           busy: "Reviewing…",
           work: async () => {
             const data = await postJSON("/api/code-review-assist/review", {
@@ -1938,7 +2015,7 @@ const PANELS = {
       }
       html += `<p class="section-label">Commit message</p><pre class="text-block">${escapeHtml(data.commit_message)}</pre>`;
       html += `<p class="section-label">Review notes</p><p class="text-block">${escapeHtml(data.review_notes)}</p>`;
-      el("cra-result").innerHTML = generationStatsHtml(data.stats) + html;
+      el("cra-result").innerHTML = stoppedNoteHtml(data) + generationStatsHtml(data.stats) + html;
     },
   }),
 
@@ -1975,6 +2052,7 @@ const PANELS = {
         this.run({
           button: el("htmlc-generate"),
           key: "html-creator",
+          partial: { target: el("htmlc-result") },
           busy: "Generating…",
           work: async () => {
             const data = await postJSON("/api/html-creator/generate", {
@@ -2002,7 +2080,7 @@ const PANELS = {
     renderResult(data) {
       this.currentHtml = data.html;
       const container = el("htmlc-result");
-      container.innerHTML = generationStatsHtml(data.stats);
+      container.innerHTML = stoppedNoteHtml(data) + generationStatsHtml(data.stats);
       if (data.html_truncated) {
         container.insertAdjacentHTML("beforeend", '<p class="section-label">Output doesn\'t end with </html> -- it may have been cut off.</p>');
       }
@@ -2402,7 +2480,7 @@ function rowHtml(row) {
   const current = currentPanel && currentPanel.id === row.demoId ? " current" : "";
   const verb = row.kind === "loaded" ? "Unload" : "Stop";
   const stopTitle = !row.canStop
-    ? "It is answering a request; it can be unloaded once that has finished."
+    ? "It is still loading its model, or isn't writing an answer; it can be unloaded once that has finished."
     : row.kind === "loaded"
       ? `Unload ${name}'s model and free this chip's memory`
       : `Stop ${name}`;
@@ -2412,7 +2490,7 @@ function rowHtml(row) {
     `<span class="chip-dot"></span><span class="chip-brick-name">${escapeHtml(name)}</span>` +
     (row.stageLabel ? `<span class="chip-brick-stage">${escapeHtml(row.stageLabel)}</span>` : "") +
     `</button>` +
-    `<button type="button" class="chip-brick-stop" data-stop="${escapeHtml(row.demoId)}" aria-label="${escapeHtml(`${verb} ${name}`)}" ` +
+    `<button type="button" class="chip-brick-stop" data-stop="${escapeHtml(row.demoId)}" data-stage="${escapeHtml(row.stage)}" aria-label="${escapeHtml(`${verb} ${name}`)}" ` +
     `title="${escapeHtml(stopTitle)}"${busy || !row.canStop ? " disabled" : ""}>✕</button>` +
     `<span class="chip-brick-metric">${rowMetricHtml(row, status)}</span></li>`
   );
@@ -2499,13 +2577,17 @@ async function pollTelemetry() {
 
 // The close button on a row: stops a brick that runs a loop, unloads the
 // model of one that only answers requests. The launcher knows which is which.
-async function stopBrick(demoId) {
+async function stopBrick(demoId, stage = "default") {
   if (PANEL.stopping.has(demoId)) return;
   PANEL.stopping.add(demoId);
   el("chip-panel-message").textContent = "";
   renderChipBricks();
   try {
-    await postJSON(`/api/bricks/${demoId}/stop`, {});
+    // A stage's own row stops that stage's answer (meeting notes' summary,
+    // without ending the transcription); the launcher falls back to the
+    // whole brick when the stage isn't writing one.
+    const query = stage && stage !== "default" ? `?stage=${encodeURIComponent(stage)}` : "";
+    await postJSON(`/api/bricks/${demoId}/stop${query}`, {});
   } catch (err) {
     const demo = demoById(demoId);
     el("chip-panel-message").textContent = `${demo ? demo.name : demoId}: ${err.message}`;
@@ -2549,7 +2631,7 @@ function wireChipPanel() {
     }
     const stop = event.target.closest("[data-stop]");
     if (stop) {
-      if (!stop.disabled) stopBrick(stop.dataset.stop);
+      if (!stop.disabled) stopBrick(stop.dataset.stop, stop.dataset.stage);
       return;
     }
     const open = event.target.closest("[data-open]");

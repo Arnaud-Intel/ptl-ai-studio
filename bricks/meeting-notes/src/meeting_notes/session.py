@@ -17,7 +17,7 @@ from typing import Callable
 from doc_qa.engine_factory import TEMPLATE_TOKENS, create_llm
 from live_translation import pipeline as live_translation_pipeline
 from pantherlake_ai_core.engine import Engine
-from pantherlake_ai_core.types import TranslationResult, combine_stats
+from pantherlake_ai_core.types import GenerationControl, TranslationResult, combine_stats, say, stopped
 
 from .types import MeetingNotes, TranscriptLine
 
@@ -197,6 +197,7 @@ class MeetingSession:
         on_ready: Callable[[], None] | None = None,
         on_downloading: Callable[[], None] | None = None,
         on_progress: Callable[[int, int], None] | None = None,
+        control: GenerationControl | None = None,
     ) -> MeetingNotes:
         """`on_ready`/`on_downloading`, if given, mirror `transcribe`'s: the
         notes LLM is also lazy (built on first call, reused after), so a
@@ -234,15 +235,16 @@ class MeetingSession:
         llm = self._llm
         budget = llm.prompt_budget(max_tokens) - llm.count_tokens(_NOTES_SYSTEM_PROMPT) - TEMPLATE_TOKENS
         if llm.count_tokens(transcript_text) <= budget:
-            notes_text = llm.answer(_NOTES_SYSTEM_PROMPT, transcript_text, max_tokens=max_tokens)
+            notes_text = llm.answer(_NOTES_SYSTEM_PROMPT, transcript_text, max_tokens=max_tokens, control=control)
             return MeetingNotes(
                 text=without_contradicting_none(notes_text),
                 transcript_line_count=line_count,
                 stats=getattr(llm, "last_stats", None),
+                cancelled=stopped(control),
             )
-        return self._notes_in_parts(llm, lines, line_count, max_tokens, on_progress)
+        return self._notes_in_parts(llm, lines, line_count, max_tokens, on_progress, control)
 
-    def _notes_in_parts(self, llm, lines, line_count, max_tokens, on_progress) -> MeetingNotes:
+    def _notes_in_parts(self, llm, lines, line_count, max_tokens, on_progress, control=None) -> MeetingNotes:
         part_budget = llm.prompt_budget(_PART_MAX_TOKENS) - llm.count_tokens(_PART_SYSTEM_PROMPT) - TEMPLATE_TOKENS
         parts = split_to_fit(lines, llm.count_tokens, part_budget)
         steps = len(parts) + 1  # each part, then the merge
@@ -250,14 +252,33 @@ class MeetingSession:
         stats = []  # one entry per model call, combined at the end
 
         def ask(system_prompt: str, text: str, tokens: int) -> str:
-            answer = llm.answer(system_prompt, text, max_tokens=tokens)
+            answer = llm.answer(system_prompt, text, max_tokens=tokens, control=control)
             stats.append(getattr(llm, "last_stats", None))
             return answer
 
+        def stopped_notes() -> MeetingNotes:
+            """Asked to stop part-way: the notes on the parts done so far,
+            marked as not being the finished notes."""
+            return MeetingNotes(
+                text="\n\n".join(f"Part {i} of {len(parts)}:\n{text}" for i, text in enumerate(partial, 1)),
+                transcript_line_count=line_count,
+                parts=len(parts),
+                stats=combine_stats([s for s in stats if s is not None]),
+                cancelled=True,
+            )
+
+        # Each part's notes go to `control` under a heading as they are
+        # written: someone watching a long meeting being summarised sees the
+        # work, and the finished notes replace it at the end.
         for index, part in enumerate(parts, 1):
+            if stopped(control):
+                return stopped_notes()
             if on_progress is not None:
                 on_progress(index, steps)
+            say(control, f"\n\n-- Part {index} of {len(parts)} --\n\n")
             partial.append(ask(_PART_SYSTEM_PROMPT, part, _PART_MAX_TOKENS))
+        if stopped(control):
+            return stopped_notes()
 
         merge_budget = llm.prompt_budget(max_tokens) - llm.count_tokens(_MERGE_SYSTEM_PROMPT) - TEMPLATE_TOKENS
         notes = [f"Part {i} of {len(partial)}:\n{text}" for i, text in enumerate(partial, 1)]
@@ -270,11 +291,18 @@ class MeetingSession:
             # were bigger than the window and got cut up.)
             if len(groups) >= len(notes):
                 raise RuntimeError("This meeting is too long to condense into one set of notes on this device.")
-            notes = [ask(_MERGE_SYSTEM_PROMPT, group, _PART_MAX_TOKENS) for group in groups]
+            notes = []
+            for group in groups:
+                if stopped(control):
+                    return stopped_notes()
+                notes.append(ask(_MERGE_SYSTEM_PROMPT, group, _PART_MAX_TOKENS))
             groups = split_to_fit(notes, llm.count_tokens, merge_budget, separator="\n\n")
         if on_progress is not None:
             on_progress(steps, steps)
+        say(control, "\n\n-- All parts together --\n\n")
         notes_text = ask(_MERGE_SYSTEM_PROMPT, groups[0], max_tokens)
+        if stopped(control):
+            return stopped_notes()
         return MeetingNotes(
             text=without_contradicting_none(notes_text),
             transcript_line_count=line_count,

@@ -11,7 +11,7 @@ from pantherlake_ai_core.engine import Engine
 from screen_ocr.pipeline import OcrSession
 from screen_ocr.types import ExtractionResult
 
-from . import activity, energy, events, metrics
+from . import activity, energy, events, generation, metrics
 
 _DEMO_ID = "screen-ocr"
 
@@ -45,7 +45,11 @@ class ScreenOcrRunner:
                 activity.set_active(_DEMO_ID, engine=engine, device=self._session.device)
                 events.set_phase(_DEMO_ID, "running", "Extracting text...")
                 started = energy.mark()
-                result = self._session.extract(image, translate=translate)
+                live = generation.get(_DEMO_ID)
+                try:
+                    result = self._session.extract(image, translate=translate, control=live.begin())
+                finally:
+                    live.end()
                 if result.stats is not None:
                     result.stats.energy = energy.since(started, _DEMO_ID)
                     metrics.report(_DEMO_ID, result.stats.tokens_per_second, "tok/s", sticky=True)

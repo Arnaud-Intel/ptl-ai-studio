@@ -57,7 +57,7 @@ class _FakeLLM:
         self.rates = list(rates)
         self.last_stats = None
 
-    def answer(self, system_prompt, user_prompt, max_tokens=512):
+    def answer(self, system_prompt, user_prompt, max_tokens=512, control=None):
         rate = self.rates.pop(0)
         self.last_stats = GenerationStats(
             "GPU.0", tokens=100, seconds=100 / rate, tokens_per_second=rate, first_token_seconds=0.4

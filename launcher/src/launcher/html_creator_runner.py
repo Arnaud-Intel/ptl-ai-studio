@@ -10,7 +10,7 @@ from html_creator.session import HtmlCreatorSession
 from html_creator.types import HtmlResult
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, energy, events, metrics
+from . import activity, energy, events, generation, metrics
 
 _DEMO_ID = "html-creator"
 
@@ -47,13 +47,17 @@ class HtmlCreatorRunner:
                     events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine})...")
 
                 events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
+                live = generation.get(_DEMO_ID)
                 try:
                     result = self._session.generate(
-                        mode=mode, prompt=prompt, folder=folder, on_ready=on_ready, on_downloading=on_downloading
+                        mode=mode, prompt=prompt, folder=folder, on_ready=on_ready,
+                        on_downloading=on_downloading, control=live.begin(),
                     )
                 except Exception as exc:
                     events.set_phase(_DEMO_ID, "error", str(exc))
                     raise
+                finally:
+                    live.end()
                 if result.stats is not None and started:
                     result.stats.energy = energy.since(started[-1], _DEMO_ID)
                 if result.stats is not None:

@@ -15,7 +15,7 @@ from typing import Callable
 
 from doc_qa.engine_factory import create_llm
 from pantherlake_ai_core.engine import Engine
-from pantherlake_ai_core.types import combine_stats
+from pantherlake_ai_core.types import GenerationControl, combine_stats, say, stopped
 
 from . import diff
 from .types import ReviewResult
@@ -63,6 +63,7 @@ class CodeReviewSession:
         max_tokens: int = 400,
         on_ready: Callable[[], None] | None = None,
         on_downloading: Callable[[], None] | None = None,
+        control: GenerationControl | None = None,
     ) -> ReviewResult:
         """`on_ready`/`on_downloading`, if given: the LLM is lazy (built on
         the first `review()` call, reused after) so a caller wanting to
@@ -88,14 +89,26 @@ class CodeReviewSession:
         if on_ready is not None:
             on_ready()
 
-        commit_message = self._llm.answer(_COMMIT_MESSAGE_SYSTEM_PROMPT, text, max_tokens=120).strip()
+        # Both answers reach `control` as they are written, each under its
+        # heading, so a page following along can tell them apart. The
+        # finished result replaces that running text.
+        say(control, "Commit message\n\n")
+        commit_message = self._llm.answer(
+            _COMMIT_MESSAGE_SYSTEM_PROMPT, text, max_tokens=120, control=control
+        ).strip()
         stats = [self._llm.last_stats]
-        review_notes = self._llm.answer(_REVIEW_NOTES_SYSTEM_PROMPT, text, max_tokens=max_tokens).strip()
-        stats.append(self._llm.last_stats)
+        review_notes = ""
+        if not stopped(control):  # stopped during the first answer: don't start the second
+            say(control, "\n\nReview notes\n\n")
+            review_notes = self._llm.answer(
+                _REVIEW_NOTES_SYSTEM_PROMPT, text, max_tokens=max_tokens, control=control
+            ).strip()
+            stats.append(self._llm.last_stats)
         return ReviewResult(
             commit_message=commit_message,
             review_notes=review_notes,
             diff_char_count=len(raw),
             diff_truncated=truncated,
             stats=combine_stats([s for s in stats if s is not None]),
+            cancelled=stopped(control),
         )

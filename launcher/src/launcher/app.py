@@ -61,7 +61,7 @@ from smart_city_monitor import sources as smart_city_sources
 from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
 from voice_clone_studio import engine_factory as voice_clone_models
 
-from . import activity, events, loaded, metrics, registry, updates
+from . import activity, events, generation, loaded, metrics, registry, updates
 from . import demo_assets
 from pantherlake_ai_core.demo_samples import SAMPLE_ROOT
 from .code_review_assist_runner import CodeReviewAssistRunner
@@ -158,6 +158,13 @@ def resolve(
         picked = preferred_device()
     # Those two answer "AUTO" on a machine with no GPU; here that means the CPU.
     return resolved, "CPU" if picked == "AUTO" else picked
+
+
+def _was_stopped(result) -> bool:
+    """True if an answer was stopped part-way: said by the result itself
+    when it spans several model calls, else by its one call's stats."""
+    stats = getattr(result, "stats", None)
+    return bool(getattr(result, "cancelled", False) or (stats is not None and stats.cancelled))
 
 
 def error_response(exc: BaseException) -> JSONResponse:
@@ -323,8 +330,13 @@ def telemetry_snapshot() -> JSONResponse:
     telemetry_poller.py for why this isn't queried fresh per request),
     plus which demo (if any) is currently driving each device."""
     payload = telemetry_poller.snapshot()
-    # can_stop: a loop can be stopped mid-work; a brick answering one request cannot (yet).
-    payload["active"] = [{**entry, "can_stop": entry["demo_id"] in _STOPPABLE} for entry in activity.snapshot()]
+    # can_stop: a loop can be stopped, and so can an answer being written.
+    # What can't is a one-shot brick still loading its model, or one that
+    # doesn't generate text (voice cloning).
+    payload["active"] = [
+        {**entry, "can_stop": entry["demo_id"] in _STOPPABLE or generation.in_flight(entry["demo_id"])}
+        for entry in activity.snapshot()
+    ]
     # For the side panel: each brick's own number, and the bricks that are
     # idle but still holding a model on a chip.
     payload["metrics"] = metrics.snapshot()
@@ -357,19 +369,36 @@ _UNLOADABLE = {
 
 
 @app.post("/api/bricks/{demo_id}/stop")
-async def stop_brick(demo_id: str) -> JSONResponse:
-    """Stop a running brick, or unload an idle one's model -- one route, so
-    the panel doesn't need to know which kind each brick is."""
+async def stop_brick(demo_id: str, stage: str | None = None) -> JSONResponse:
+    """Stop a running brick, stop an answer being written, or unload an idle
+    brick's model -- one route, so the panel doesn't need to know which kind
+    each brick is. `stage` narrows it to one stage's answer: meeting notes'
+    summary can be stopped without ending the transcription."""
     try:
+        if stage and stage != "default" and generation.cancel(demo_id, stage):
+            return JSONResponse({"status": "cancelling"})
         if demo_id in _STOPPABLE:
+            generation.cancel(demo_id)  # so the stop doesn't wait for a summary to finish
             await run_in_threadpool(_STOPPABLE[demo_id].stop)
             return JSONResponse({"status": "stopped"})
         if demo_id in _UNLOADABLE:
+            # Mid-answer, the close button stops the answer; the model stays
+            # loaded, and a second press unloads it.
+            if generation.cancel(demo_id):
+                return JSONResponse({"status": "cancelling"})
             had_model = await run_in_threadpool(loaded.unload, _UNLOADABLE[demo_id], demo_id)
             return JSONResponse({"status": "unloaded" if had_model else "idle"})
     except Exception as exc:
         return error_response(exc)
     return JSONResponse({"error": f"No brick called '{demo_id}' can be stopped."}, status_code=404)
+
+
+@app.get("/api/bricks/{demo_id}/partial")
+def brick_partial(demo_id: str, stage: str = "default") -> JSONResponse:
+    """The answer a brick is writing, so far. Asked a few times a second by
+    the page while its request is pending (see generation.py for why it is
+    polled rather than pushed)."""
+    return JSONResponse(generation.snapshot(demo_id, stage))
 
 
 @app.get("/api/status")
@@ -527,6 +556,7 @@ async def doc_qa_ask(req: DocQAAskRequest) -> JSONResponse:
                 for r in answer.sources
             ],
             "stats": asdict(answer.stats) if answer.stats else None,
+            "cancelled": _was_stopped(answer),
         }
     )
 
@@ -712,6 +742,7 @@ def _serialize_extraction(result) -> dict:
         "text": result.text,
         "translated_text": result.translated_text,
         "regions": [{"text": r.text, "confidence": r.confidence, "box": list(r.box)} for r in result.regions],
+        "cancelled": _was_stopped(result),
         "stats": asdict(result.stats) if result.stats else None,
     }
 
@@ -816,7 +847,7 @@ async def generate_meeting_notes() -> JSONResponse:
         notes = await run_in_threadpool(meeting_notes_runner.generate_notes)
     except Exception as exc:
         return error_response(exc)
-    return JSONResponse({"text": notes.text, "transcript_line_count": notes.transcript_line_count, "parts": notes.parts})
+    return JSONResponse({"text": notes.text, "transcript_line_count": notes.transcript_line_count, "parts": notes.parts, "cancelled": _was_stopped(notes)})
 
 
 # --- webcam-effects ---------------------------------------------------------------
@@ -1286,6 +1317,7 @@ async def code_review_assist_review(req: CodeReviewRequest) -> JSONResponse:
             "review_notes": result.review_notes,
             "diff_char_count": result.diff_char_count,
             "diff_truncated": result.diff_truncated,
+            "cancelled": _was_stopped(result),
             "stats": asdict(result.stats) if result.stats else None,
         }
     )
@@ -1324,6 +1356,7 @@ async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
             "source_truncated": result.source_truncated,
             "fence_stripped": result.fence_stripped,
             "html_truncated": result.html_truncated,
+            "cancelled": _was_stopped(result),
             "stats": asdict(result.stats) if result.stats else None,
         }
     )

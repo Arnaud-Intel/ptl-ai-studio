@@ -48,7 +48,7 @@ class _WordLLM:
     def prompt_budget(self, max_tokens: int) -> int:
         return self.window
 
-    def answer(self, system_prompt: str, user_prompt: str, max_tokens: int = 512) -> str:
+    def answer(self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control=None) -> str:
         needed = self.count_tokens(system_prompt) + self.count_tokens(user_prompt) + 32
         if needed > self.window:
             raise PromptTooLong(needed, self.window, "NPU")

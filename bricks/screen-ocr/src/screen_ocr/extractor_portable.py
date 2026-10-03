@@ -18,7 +18,9 @@ class PortableExtractor:
 
         self.engine = RapidOCR()
 
-    def extract(self, image: np.ndarray, translate: bool = False) -> ExtractionResult:
+    def extract(self, image: np.ndarray, translate: bool = False, control=None) -> ExtractionResult:
+        # `control` is for the vision-language engine, which writes its answer
+        # token by token; this one returns every region at once.
         if translate:
             raise ValueError(
                 "Translation requires the openvino engine (it uses a vision-language model; "

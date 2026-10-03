@@ -33,5 +33,5 @@ class OcrSession:
         # device, since its model can't run on AUTO (see extractor_openvino).
         self.device = getattr(self.extractor, "device", device)
 
-    def extract(self, image: np.ndarray, translate: bool = False) -> ExtractionResult:
-        return self.extractor.extract(image, translate=translate)
+    def extract(self, image: np.ndarray, translate: bool = False, control=None) -> ExtractionResult:
+        return self.extractor.extract(image, translate=translate, control=control)

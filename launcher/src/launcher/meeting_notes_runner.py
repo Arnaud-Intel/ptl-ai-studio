@@ -14,7 +14,7 @@ from meeting_notes.session import MeetingSession
 from meeting_notes.types import MeetingNotes, TranscriptLine
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, events, metrics, worker
+from . import activity, events, generation, metrics, worker
 from .errors import Conflict
 
 _DEMO_ID = "meeting-notes"
@@ -130,13 +130,17 @@ class MeetingNotesRunner:
         # the transcription thread's while that is still running.
         activity.set_active(_DEMO_ID, engine=engine.value, device=device, stage="notes", stage_label="notes")
         events.set_phase(_DEMO_ID, "loading", "Preparing notes model...", stage="notes")
+        live = generation.get(_DEMO_ID, "notes")  # its own stage: stopping it leaves the transcription running
         with self._notes_lock:
             try:
-                notes = session.generate_notes(on_ready=on_ready, on_downloading=on_downloading, on_progress=on_progress)
+                notes = session.generate_notes(
+                    on_ready=on_ready, on_downloading=on_downloading, on_progress=on_progress, control=live.begin()
+                )
             except Exception as exc:
                 events.set_phase(_DEMO_ID, "error", str(exc), stage="notes")
                 raise
             finally:
+                live.end()
                 activity.clear_active(_DEMO_ID, stage="notes")
         events.clear_phase(_DEMO_ID, stage="notes")
         if notes.stats is not None:

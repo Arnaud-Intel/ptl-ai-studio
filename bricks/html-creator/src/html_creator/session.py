@@ -13,6 +13,7 @@ from typing import Callable
 
 from doc_qa.engine_factory import create_llm
 from pantherlake_ai_core.engine import Engine
+from pantherlake_ai_core.types import GenerationControl
 
 from . import folder_input
 from .html_cleanup import strip_code_fence
@@ -76,6 +77,7 @@ class HtmlCreatorSession:
         max_tokens: int | None = None,
         on_ready: Callable[[], None] | None = None,
         on_downloading: Callable[[], None] | None = None,
+        control: GenerationControl | None = None,
     ) -> HtmlResult:
         """`on_ready`/`on_downloading`, if given: the LLM is lazy (built on
         the first `generate()` call, reused after) so a caller wanting to
@@ -114,7 +116,7 @@ class HtmlCreatorSession:
             on_ready()
 
         tokens = max_tokens or _MAX_TOKENS_BY_MODE[mode]
-        raw_output = self._llm.answer(system_prompt, source_text, max_tokens=tokens)
+        raw_output = self._llm.answer(system_prompt, source_text, max_tokens=tokens, control=control)
         html, fence_stripped = strip_code_fence(raw_output)
 
         return HtmlResult(
