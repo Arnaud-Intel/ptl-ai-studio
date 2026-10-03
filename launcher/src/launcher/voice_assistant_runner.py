@@ -11,7 +11,7 @@ import threading
 from pantherlake_ai_core.engine import Engine
 from voice_assistant import session
 
-from . import activity, events, worker
+from . import activity, events, metrics, worker
 
 _DEMO_ID = "voice-assistant"
 
@@ -69,6 +69,7 @@ class VoiceAssistantRunner:
                     on_heard=lambda text: emit({"type": "heard", "text": text}),
                     on_reply=lambda text: emit({"type": "reply", "text": text}),
                     on_ready=on_ready,
+                    on_stats=lambda stats: metrics.report(_DEMO_ID, stats.tokens_per_second, "tok/s", detail="last reply"),
                     speak_replies=speak_replies,
                     stop_event=stop_event,
                 )

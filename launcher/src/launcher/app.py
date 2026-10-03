@@ -51,6 +51,7 @@ from pantherlake_ai_core.engine import (
     default_device,
     list_gpu_devices,
     list_openvino_devices,
+    preferred_device,
     preferred_large_model_device,
     preferred_realtime_vision_device,
     resolve_engine,
@@ -60,7 +61,7 @@ from smart_city_monitor import sources as smart_city_sources
 from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
 from voice_clone_studio import engine_factory as voice_clone_models
 
-from . import activity, events, registry, updates
+from . import activity, events, loaded, metrics, registry, updates
 from . import demo_assets
 from pantherlake_ai_core.demo_samples import SAMPLE_ROOT
 from .code_review_assist_runner import CodeReviewAssistRunner
@@ -121,34 +122,42 @@ def resolve(
     large_model: bool = False,
     realtime_vision: bool = False,
 ) -> tuple[Engine, str]:
-    """Engine + device for a request, by the rule the CLIs use: `engine` if
-    given (an unknown name is a ValueError, i.e. a 400), else the best
-    available; `device` if given, else the engine's default -- or, for a
-    brick with a large openvino model (`large_model`), the machine's fastest
-    GPU, discrete if it has one, else integrated; or, for one running a small model on live
-    video (`realtime_vision`), the iGPU, because AUTO is four times slower
-    there for identical results."""
+    """Engine + device for a request: `engine` if given (an unknown name is a
+    ValueError, i.e. a 400), else the best available; `device` if given and
+    available.
+
+    A device left to the app -- nothing chosen, or "Auto" -- is resolved here
+    to a real chip, never passed on as OpenVINO's "AUTO": the integrated GPU
+    by default; for a brick with a large model (`large_model`) the fastest
+    GPU, discrete if there is one; for a small model on live video
+    (`realtime_vision`) the integrated GPU. A brick that ran on "AUTO"
+    reported "AUTO" as its device and so showed up under no chip at all,
+    which is the one thing this app exists to show (see
+    pantherlake_ai_core.engine.preferred_device)."""
     resolved = resolve_engine(engine)
-    if device:
-        if resolved == Engine.OPENVINO:
-            available = list_openvino_devices()
-            normalized = device.upper()
-            if normalized != "AUTO" and normalized not in available and not (
-                normalized == "GPU" and any(d.startswith("GPU.") for d in available)
-            ):
-                raise ValueError(f"OpenVINO device {device!r} is unavailable; choose from {', '.join(available)}")
-            if not available:
-                raise ValueError("No OpenVINO devices are available; choose the portable engine")
-            device = normalized
-        elif device.lower() != "cpu" and not (device.lower() == "cuda" or device.lower().startswith("cuda:")):
+    if resolved != Engine.OPENVINO:
+        if not device:
+            return resolved, default_device(resolved)
+        if device.lower() != "cpu" and not (device.lower() == "cuda" or device.lower().startswith("cuda:")):
             raise ValueError("Portable engines support cpu or a compatible CUDA device, not OpenVINO device IDs")
         return resolved, device
-    if resolved == Engine.OPENVINO:
-        if large_model:
-            return resolved, preferred_large_model_device()
-        if realtime_vision:
-            return resolved, preferred_realtime_vision_device()
-    return resolved, default_device(resolved)
+
+    available = list_openvino_devices()
+    asked = (device or "AUTO").upper()
+    if asked != "AUTO":
+        if not available:
+            raise ValueError("No OpenVINO devices are available; choose the portable engine")
+        if asked not in available and not (asked == "GPU" and any(d.startswith("GPU.") for d in available)):
+            raise ValueError(f"OpenVINO device {device!r} is unavailable; choose from {', '.join(available)}")
+        return resolved, asked
+    if large_model:
+        picked = preferred_large_model_device()
+    elif realtime_vision:
+        picked = preferred_realtime_vision_device()
+    else:
+        picked = preferred_device()
+    # Those two answer "AUTO" on a machine with no GPU; here that means the CPU.
+    return resolved, "CPU" if picked == "AUTO" else picked
 
 
 def error_response(exc: BaseException) -> JSONResponse:
@@ -314,8 +323,53 @@ def telemetry_snapshot() -> JSONResponse:
     telemetry_poller.py for why this isn't queried fresh per request),
     plus which demo (if any) is currently driving each device."""
     payload = telemetry_poller.snapshot()
-    payload["active"] = activity.snapshot()
+    # can_stop: a loop can be stopped mid-work; a brick answering one request cannot (yet).
+    payload["active"] = [{**entry, "can_stop": entry["demo_id"] in _STOPPABLE} for entry in activity.snapshot()]
+    # For the side panel: each brick's own number, and the bricks that are
+    # idle but still holding a model on a chip.
+    payload["metrics"] = metrics.snapshot()
+    payload["loaded"] = [
+        {"demo_id": demo_id, **held} for demo_id, runner in _UNLOADABLE.items() if (held := loaded.info(runner))
+    ]
     return JSONResponse(payload)
+
+
+# What the side panel's close button reaches. A brick with a loop is stopped;
+# one that answers a request at a time has nothing to stop, so its model is
+# unloaded instead -- which is what frees the chip's memory.
+_STOPPABLE = {
+    "live-translation": live_translation_runner,
+    "object-detection": object_detection_runner,
+    "smart-city-monitor": smart_city_monitor_runner,
+    "meeting-notes": meeting_notes_runner,
+    "webcam-effects": webcam_effects_runner,
+    "voice-assistant": voice_assistant_runner,
+    "expense-extract": expense_extract_runner,
+    "smart-recall": smart_recall_runner,
+}
+_UNLOADABLE = {
+    "doc-qa": doc_qa_runner,
+    "screen-ocr": screen_ocr_runner,
+    "voice-clone-studio": voice_clone_studio_runner,
+    "code-review-assist": code_review_assist_runner,
+    "html-creator": html_creator_runner,
+}
+
+
+@app.post("/api/bricks/{demo_id}/stop")
+async def stop_brick(demo_id: str) -> JSONResponse:
+    """Stop a running brick, or unload an idle one's model -- one route, so
+    the panel doesn't need to know which kind each brick is."""
+    try:
+        if demo_id in _STOPPABLE:
+            await run_in_threadpool(_STOPPABLE[demo_id].stop)
+            return JSONResponse({"status": "stopped"})
+        if demo_id in _UNLOADABLE:
+            had_model = await run_in_threadpool(loaded.unload, _UNLOADABLE[demo_id], demo_id)
+            return JSONResponse({"status": "unloaded" if had_model else "idle"})
+    except Exception as exc:
+        return error_response(exc)
+    return JSONResponse({"error": f"No brick called '{demo_id}' can be stopped."}, status_code=404)
 
 
 @app.get("/api/status")
@@ -472,6 +526,7 @@ async def doc_qa_ask(req: DocQAAskRequest) -> JSONResponse:
                 {"source": r.chunk.source, "chunk_index": r.chunk.chunk_index, "score": r.score}
                 for r in answer.sources
             ],
+            "stats": asdict(answer.stats) if answer.stats else None,
         }
     )
 
@@ -682,7 +737,7 @@ async def screen_ocr_extract(req: ScreenOcrExtractRequest) -> JSONResponse:
         return screen_ocr_runner.extract(image=image, engine=engine.value, device=device, translate=req.translate)
 
     try:
-        engine, device = resolve(req.engine, req.compute_device)
+        engine, device = resolve(req.engine, req.compute_device, large_model=True)
         result = await run_in_threadpool(work)
     except Exception as exc:
         return error_response(exc)
@@ -708,7 +763,7 @@ async def screen_ocr_extract_upload(
         return screen_ocr_runner.extract(image=image, engine=resolved.value, device=device, translate=translate)
 
     try:
-        resolved, device = resolve(engine, compute_device)
+        resolved, device = resolve(engine, compute_device, large_model=True)
         result = await run_in_threadpool(work)
     except Exception as exc:
         return error_response(exc)
@@ -789,11 +844,15 @@ class WebcamEffectsStartRequest(BaseModel):
 @app.post("/api/webcam-effects/start")
 async def start_webcam_effects(req: WebcamEffectsStartRequest) -> JSONResponse:
     try:
-        engine, device = resolve(req.engine, req.compute_device or ("cpu" if req.engine == "portable" else "CPU"))
+        requested = req.compute_device or ("cpu" if req.engine == "portable" else "CPU")
+        engine, device = resolve(req.engine, requested)
         if engine == Engine.OPENVINO:
             from webcam_effects.capabilities import validate_device
 
-            validate_device(device)
+            # What was asked for, not what it resolved to: "Auto" stays
+            # refused here, because it could land on the GPU this gate
+            # exists to keep out. The default above is an explicit CPU.
+            validate_device(requested)
         webcam_effects_runner.start(
             camera_index=req.camera_index,
             engine=engine,
@@ -1008,7 +1067,7 @@ class ExpenseExtractStartRequest(BaseModel):
 @app.post("/api/expense-extract/start")
 async def start_expense_extract(req: ExpenseExtractStartRequest) -> JSONResponse:
     try:
-        ocr_engine, ocr_device = resolve(req.ocr_engine, req.ocr_compute_device)
+        ocr_engine, ocr_device = resolve(req.ocr_engine, req.ocr_compute_device, large_model=True)
         llm_engine, llm_device = resolve(req.llm_engine, req.llm_compute_device)
         expense_extract_runner.start(
             loop=asyncio.get_running_loop(),
@@ -1116,7 +1175,7 @@ class SmartRecallStartRequest(BaseModel):
 @app.post("/api/smart-recall/start")
 async def start_smart_recall(req: SmartRecallStartRequest) -> JSONResponse:
     try:
-        ocr_engine, ocr_device = resolve(req.ocr_engine, req.ocr_compute_device)
+        ocr_engine, ocr_device = resolve(req.ocr_engine, req.ocr_compute_device, large_model=True)
         embed_engine, embed_device = resolve(req.embed_engine, req.embed_compute_device)
         smart_recall_runner.start(
             loop=asyncio.get_running_loop(),

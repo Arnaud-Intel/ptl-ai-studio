@@ -21,3 +21,4 @@ class RetrievedChunk:
 class Answer:
     text: str
     sources: list[RetrievedChunk] = field(default_factory=list)
+    stats: object | None = None  # GenerationStats: how fast the answer came

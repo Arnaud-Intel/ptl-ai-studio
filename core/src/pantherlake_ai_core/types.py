@@ -9,6 +9,10 @@ class TranslationResult:
     text: str
     detected_language: str
     language_probability: float
+    # How long the utterance was and how long it took to process, filled in
+    # by the capture loop: speech is measured in times real time, not tokens.
+    audio_seconds: float | None = None
+    processing_seconds: float | None = None
 
 
 @dataclass

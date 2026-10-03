@@ -83,7 +83,7 @@ class DocQASession:
         text = self.llm.answer(_SYSTEM_PROMPT, _user_prompt(used, question), max_tokens=max_tokens)
         # Only what the model actually saw: citing an excerpt it never read
         # would make the [number] references point at the wrong passage.
-        return Answer(text=text, sources=used)
+        return Answer(text=text, sources=used, stats=getattr(self.llm, "last_stats", None))
 
 
 def _user_prompt(retrieved: list, question: str) -> str:

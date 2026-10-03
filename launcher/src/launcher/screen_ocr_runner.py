@@ -11,7 +11,7 @@ from pantherlake_ai_core.engine import Engine
 from screen_ocr.pipeline import OcrSession
 from screen_ocr.types import ExtractionResult
 
-from . import activity, energy, events
+from . import activity, energy, events, metrics
 
 _DEMO_ID = "screen-ocr"
 
@@ -48,6 +48,7 @@ class ScreenOcrRunner:
                 result = self._session.extract(image, translate=translate)
                 if result.stats is not None:
                     result.stats.energy = energy.since(started, _DEMO_ID)
+                    metrics.report(_DEMO_ID, result.stats.tokens_per_second, "tok/s", sticky=True)
                 events.clear_phase(_DEMO_ID)
                 return result
             except Exception as exc:  # covers the session build too, so a failed load can't stick at "loading"

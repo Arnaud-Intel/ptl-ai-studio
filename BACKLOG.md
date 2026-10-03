@@ -19,7 +19,20 @@ a new one or the deferred list, and moves its original wording to
 
 <!-- - [ ] **Title.** Short description. (filed YYYY-MM-DD, source) -->
 
-*Empty -- last sorted 2026-09-11.*
+- [ ] **Stream the language models: live tokens/s, answers word by word,
+  and cancelling one mid-way.** The hardware panel (0.2.53) shows tokens/s
+  only once an answer is finished, because no LLM call streams; a brick that
+  answers one request at a time can't be stopped mid-answer, so its ✕ is
+  disabled until it finishes. One change covers all three: a streamer in the
+  two LLM backends that counts tokens as they arrive, passes text on, and can
+  return "stop". Agreed with the user as the step after the panel; likely
+  its own ticket next to R19/R21. (filed 2026-10-03, user request)
+
+- [ ] **Speech speed in the panel is untested with real audio.** Times real
+  time is computed per utterance (unit-tested) for live translation and
+  meeting notes, but was not watched live -- nothing was played through the
+  speakers while building it. Check it on the next run with audio.
+  (filed 2026-10-03, hardware panel)
 
 ## What we are showing
 
@@ -426,6 +439,11 @@ the release gate.
   OCR asks for about 40 GB against the ~36 GB the iGPU can address. It
   worked in the R20 run, but one loaded model shared between bricks is the
   first thing to fix here.
+  **Part done 2026-10-03:** an idle brick's model can now be unloaded from
+  the hardware panel (or `POST /api/bricks/<id>/stop`); unloading the 7B OCR
+  model took GPU memory from 6.8 GB to 2.2 GB. Still open: one model shared
+  between code review and HTML creator, a memory figure per brick in the
+  panel, and the 20-cycle growth test.
 
 - [ ] **R12 · P2 · Profile before optimizing video and screen history.**
   Covers the original smart-city throughput report. Instrument capture, infer,

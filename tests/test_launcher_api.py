@@ -51,7 +51,9 @@ def test_resolve_applies_the_cli_rule(monkeypatch):
     monkeypatch.setattr(launcher_app, "list_openvino_devices", lambda: FAKE_OPENVINO_DEVICES)
     monkeypatch.setattr(launcher_app, "resolve_engine", lambda explicit: Engine(explicit) if explicit else Engine.OPENVINO)
     monkeypatch.setattr(launcher_app, "preferred_large_model_device", lambda: "GPU.1")
-    assert launcher_app.resolve(None, None) == (Engine.OPENVINO, "AUTO")
+    monkeypatch.setattr(launcher_app, "preferred_device", lambda: "GPU.0")
+    # Nothing chosen is a real chip now, not "AUTO" (see test_side_panel.py).
+    assert launcher_app.resolve(None, None) == (Engine.OPENVINO, "GPU.0")
     assert launcher_app.resolve("portable", None) == (Engine.PORTABLE, "cpu")
     assert launcher_app.resolve("openvino", "NPU") == (Engine.OPENVINO, "NPU")
     assert launcher_app.resolve(None, None, large_model=True) == (Engine.OPENVINO, "GPU.1")

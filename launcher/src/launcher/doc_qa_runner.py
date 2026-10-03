@@ -10,7 +10,7 @@ from doc_qa.pipeline import DocQASession
 from doc_qa.types import Answer
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, events
+from . import activity, events, metrics
 from .errors import Conflict
 
 _DEMO_ID = "doc-qa"
@@ -72,4 +72,6 @@ class DocQARunner:
             finally:
                 activity.clear_active(_DEMO_ID)
             events.clear_phase(_DEMO_ID)
+            if answer.stats is not None:
+                metrics.report(_DEMO_ID, answer.stats.tokens_per_second, "tok/s", sticky=True)
             return answer

@@ -18,7 +18,7 @@ from smart_city_monitor import pipeline
 from smart_city_monitor.draw import draw_tracks
 from smart_city_monitor.types import CountSnapshot, FeedSpec, TrackedDetection
 
-from . import activity, events, worker
+from . import activity, events, metrics, worker
 
 _DEMO_ID = "smart-city-monitor"
 _JPEG_QUALITY = 80
@@ -57,7 +57,10 @@ class SmartCityMonitorRunner:
         self._stop_event = threading.Event()
         stop_event = self._stop_event
 
+        frames: dict[str, metrics.RateMeter] = {}  # one rate per feed, as each has its own chip
+
         def on_frame(feed_id: str, frame: np.ndarray, tracks: list[TrackedDetection]) -> None:
+            metrics.report(_DEMO_ID, frames.setdefault(feed_id, metrics.RateMeter()).tick(), "fps", stage=feed_id)
             annotated = draw_tracks(frame, tracks)
             ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, _JPEG_QUALITY])
             if not ok:

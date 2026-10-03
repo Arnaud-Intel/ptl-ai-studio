@@ -174,6 +174,30 @@ def preferred_large_model_device() -> str:
     return "AUTO"
 
 
+def preferred_device() -> str:
+    """The chip a brick gets when the choice is left to the app ("Auto"):
+    the integrated GPU if there is one, otherwise the CPU. Always a real
+    device, never OpenVINO's "AUTO".
+
+    "AUTO" hides the one thing this showcase exists to show -- which chip is
+    doing the work: a brick started on it reported "AUTO" as its device and
+    so appeared under no chip at all. It was also measurably the worst
+    choice for a small vision model (see preferred_realtime_vision_device)
+    and fails outright for the vision-language model (screen_ocr).
+
+    The integrated GPU rather than a discrete one: for the small models this
+    covers, the trip to a discrete card costs more than its extra compute
+    returns. A big model wants preferred_large_model_device() instead. The
+    NPU is never picked automatically -- some models don't compile for it,
+    so it stays an explicit choice.
+    """
+    gpus = list_gpu_devices()
+    if gpus:
+        integrated = [g for g in gpus if "dGPU" not in g.full_name]
+        return (integrated or gpus)[0].id
+    return "CPU"
+
+
 def preferred_realtime_vision_device() -> str:
     """The OpenVINO device to default a *live video* model to: the
     integrated GPU if there is one, otherwise "AUTO".

@@ -17,7 +17,7 @@ import numpy as np
 from pantherlake_ai_core.engine import Engine
 from webcam_effects import matte, pipeline
 
-from . import activity, events, worker
+from . import activity, events, metrics, worker
 
 _DEMO_ID = "webcam-effects"
 _JPEG_QUALITY = 80
@@ -64,7 +64,10 @@ class WebcamEffectsRunner:
         self._stop_event = threading.Event()
         stop_event = self._stop_event
 
+        frames = metrics.RateMeter()
+
         def on_frame(frame: np.ndarray, mask: np.ndarray) -> None:
+            metrics.report(_DEMO_ID, frames.tick(), "fps")
             with self._frame_lock:
                 current_effect = self._effect
                 current_color = self._color

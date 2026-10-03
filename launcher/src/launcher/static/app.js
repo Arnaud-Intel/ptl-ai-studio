@@ -144,7 +144,7 @@ function deviceLabel(id) {
     const gpu = GPU_DEVICES.find((g) => g.id === id);
     return gpu ? gpu.full_name : id;
   }
-  if (upper === "AUTO") return "AUTO (let OpenVINO choose)";
+  if (upper === "AUTO") return "Auto (the app picks the chip)";
   if (upper === "CPU") return "CPU";
   if (upper === "NPU") return "NPU";
   if (upper === "CUDA") return "CUDA (NVIDIA GPU)";
@@ -2143,7 +2143,7 @@ async function showPanel(demo) {
   el("panel-description").textContent = demo.description;
   renderBadges(el("panel-badges"), demo);
   document.title = `${demo.name} · Panther Lake AI Studio`;
-  renderRunningStrip();
+  renderRunning();
   window.scrollTo(0, 0);
   el("panel-title").focus({ preventScroll: true });
   if (switching) {
@@ -2160,7 +2160,7 @@ function showHome() {
   el("view-brick").hidden = true;
   el("view-home").hidden = false;
   document.title = "Panther Lake AI Studio";
-  renderRunningStrip();
+  renderRunning();
   if (lastLaunchButton) {
     lastLaunchButton.focus({ preventScroll: true });
     lastLaunchButton = null;
@@ -2185,32 +2185,18 @@ function summarizeStatus(entries) {
   return entries.find((e) => e.phase === "error" && nowSeconds - e.at < 120) || null;
 }
 
-// The same chips render in the full strip and in the compact header, so a
-// running demo is one click away whether or not you've scrolled.
-function fillChips(containerId, markup) {
-  const container = el(containerId);
-  if (!container || container.innerHTML === markup) return;
-  container.innerHTML = markup;
-  for (const chip of container.querySelectorAll(".running-chip")) {
-    chip.addEventListener("click", () => {
-      location.hash = `#/brick/${chip.dataset.id}`;
-    });
-  }
-}
-
-// Show the compact header exactly once the real one has left the viewport.
-// Asking the element where it is beats caching a scroll offset: it stays
-// right when the running strip appears, the window resizes, or a wrapped
-// header row changes height.
+// The header in one line, shown once the real one has scrolled out of view.
+// (It used to carry the running demos as well; the hardware panel has them
+// now, and it never scrolls away.) Asking the element where it is beats
+// caching a scroll offset: it stays right when the window resizes or a
+// wrapped header row changes height.
 let compactFrame = 0;
 
 function updateCompactBar() {
   const bar = el("compact-bar");
   const topbar = document.querySelector(".topbar");
   if (!bar || !topbar) return;
-  const strip = el("running-strip");
-  const anchor = strip && !strip.hidden ? strip : topbar;
-  bar.classList.toggle("is-visible", anchor.getBoundingClientRect().bottom <= 0);
+  bar.classList.toggle("is-visible", topbar.getBoundingClientRect().bottom <= 0);
 }
 
 function wireCompactBar() {
@@ -2226,36 +2212,19 @@ function wireCompactBar() {
   updateCompactBar();
 }
 
-function renderRunningStrip() {
+// Each card on the grid says whether its brick is loading or running.
+function renderCardStates() {
   const groups = new Map();
   for (const [key, entry] of Object.entries(STATUS.snapshot)) {
     const base = key.split(":")[0];
     if (!groups.has(base)) groups.set(base, []);
     groups.get(base).push(entry);
   }
-
-  const chips = [];
   const phases = new Map();
   for (const [base, entries] of groups) {
     const status = summarizeStatus(entries);
-    if (!status) continue;
-    phases.set(base, status.phase);
-    const demo = demoById(base);
-    const devices = [...new Set(STATUS.active.filter((a) => a.demo_id === base).map((a) => a.device))];
-    const meta = [status.phase, ...devices].join(" · ");
-    const current = currentPanel && currentPanel.id === base ? " current" : "";
-    chips.push(
-      `<button type="button" class="running-chip phase-${status.phase}${current}" data-id="${escapeHtml(base)}" title="${escapeHtml(status.message || "")}">` +
-        `<span class="chip-dot"></span><span class="chip-name">${escapeHtml(demo ? demo.name : base)}</span>` +
-        `<span class="chip-meta">${escapeHtml(meta)}</span></button>`,
-    );
+    if (status) phases.set(base, status.phase);
   }
-  const markup = chips.join("");
-  fillChips("running-chips", markup);
-  fillChips("compact-chips", markup);  // the compact header shows the same set
-  el("running-strip").hidden = chips.length === 0;
-  updateCompactBar();  // the strip appearing/disappearing moves what we scroll past
-
   for (const card of document.querySelectorAll(".card[data-id]")) {
     const phase = phases.get(card.dataset.id);
     card.classList.toggle("is-running", phase === "running");
@@ -2264,84 +2233,216 @@ function renderRunningStrip() {
   }
 }
 
+// Everything on the page that says what is running: the cards, and the
+// bricks listed under each chip in the hardware panel.
+function renderRunning() {
+  renderCardStates();
+  renderChipBricks();
+}
+
 async function pollStatus() {
   try {
     STATUS.snapshot = await fetchJSON("/api/status");
   } catch {
     return; // best-effort -- a missed poll just skips this tick
   }
-  renderRunningStrip();
+  renderRunning();
   if (currentPanel) currentPanel.onStatus();
 }
 
-// --- Telemetry --------------------------------------------------------------------
+// --- Hardware panel ---------------------------------------------------------------
+// Power first, then every chip in a fixed order -- CPU, integrated GPU,
+// discrete GPU when there is one, NPU. Each shows its load and, under it,
+// what is running on it: the brick's name, its own number in its own unit
+// (tokens/s, frames/s, times real time), and a button to stop it.
 
-function matchGaugeKind(device) {
-  const d = (device || "").toUpperCase();
-  if (d === "CPU") return "cpu";
-  // A specific GPU id ("GPU.0", "GPU.1", or bare "GPU" on a single-GPU
-  // machine), so pinning a demo's stage to one physical GPU lights up only
-  // that GPU's gauge.
-  if (d.startsWith("GPU")) return d;
-  if (d === "NPU") return "npu";
-  return null; // "AUTO" or "cuda": picked internally by the runtime, not pinned to one gauge
+const PANEL = { sections: [], markup: new Map(), stopping: new Set() };
+
+function gpuKind(gpu) {
+  const name = gpu.full_name || "";
+  return name.includes("dGPU") ? "dGPU" : name.includes("iGPU") ? "iGPU" : "GPU";
+}
+
+function chipSectionsFor(gpus) {
+  const integrated = gpus.filter((gpu) => gpuKind(gpu) !== "dGPU");
+  const discrete = gpus.filter((gpu) => gpuKind(gpu) === "dGPU");
+  return [
+    { key: "CPU", label: "CPU", name: "" },
+    ...integrated.map((gpu) => ({ key: gpu.id, label: gpuKind(gpu), name: shortGpuName(gpu.full_name) })),
+    ...discrete.map((gpu) => ({ key: gpu.id, label: "dGPU", name: shortGpuName(gpu.full_name) })),
+    { key: "NPU", label: "NPU", name: "" },
+  ];
+}
+
+// The section a device belongs under. Nothing is ever dropped: a device
+// that is none of the chips (cuda, say) gets an "Other" section. A brick
+// left on "Auto" never reaches here as "AUTO" -- the launcher resolves it to
+// a real chip before starting, which is what used to make such bricks
+// vanish from the gauges.
+function chipKeyFor(device) {
+  const id = String(device || "").toUpperCase();
+  const keys = PANEL.sections.map((section) => section.key);
+  if (keys.includes(id)) return id;
+  if (id.startsWith("GPU")) {
+    // "GPU" on a machine that numbers its GPUs, or "GPU.0" on one that doesn't.
+    const gpuKeys = keys.filter((key) => key.startsWith("GPU"));
+    if (gpuKeys.length) return gpuKeys[0];
+  }
+  return "OTHER";
+}
+
+function chipNode(key) {
+  return document.querySelector(`#chip-sections .chip-section[data-chip="${key}"]`);
+}
+
+function buildChipPanel() {
+  PANEL.sections = chipSectionsFor(GPU_DEVICES);
+  PANEL.markup.clear();
+  const container = el("chip-sections");
+  container.replaceChildren();
+  for (const section of [...PANEL.sections, { key: "OTHER", label: "Other", name: "" }]) {
+    const node = document.createElement("section");
+    node.className = "chip-section";
+    node.dataset.chip = section.key;
+    node.dataset.count = "0";
+    node.hidden = section.key === "OTHER";
+    node.innerHTML =
+      `<div class="chip-head"><span class="chip-label" data-short="${escapeHtml(section.label)}">${escapeHtml(section.label)}</span>` +
+      `<span class="chip-name">${escapeHtml(section.name)}</span><span class="chip-value">--</span></div>` +
+      `<div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>` +
+      `<ul class="chip-bricks"></ul><p class="chip-empty">Nothing running</p>`;
+    container.append(node);
+  }
 }
 
 function renderTelemetry(data) {
   STATUS.active = data.active || [];
-  // data.active is a list, not a dict keyed by demo id: a demo like
-  // expense-extract has two entries at once (one per stage, on two devices).
-  // A list per device, not one label: two demos (or two stages, or two
-  // smart-city feeds) can be pinned to the same chip at once, and the old
-  // single-slot version let whichever came last silently win -- so a
-  // shared GPU looked exactly like a GPU with one demo on it.
-  const activeByKind = {};
-  for (const info of STATUS.active) {
-    const kind = matchGaugeKind(info.device);
-    if (!kind) continue;
-    const demo = demoById(info.demo_id);
-    const baseName = demo ? demo.name : info.demo_id;
-    (activeByKind[kind] ||= []).push(info.stage_label ? `${baseName} (${info.stage_label})` : baseName);
-  }
+  STATUS.metrics = data.metrics || [];
+  STATUS.loaded = data.loaded || [];
 
-  const gauges = {
-    cpu: { value: data.cpu_percent, name: null, selector: '.telemetry-gauge[data-device="cpu"]' },
-    npu: { value: data.npu_percent, name: data.npu_name, selector: '.telemetry-gauge[data-device="npu"]' },
-  };
-  for (const gpu of data.gpus || []) {
-    gauges[gpu.id] = { value: gpu.percent, name: gpu.name, selector: `.telemetry-gauge[data-gpu-id="${gpu.id}"]` };
-  }
-
-  for (const [kind, { value, name, selector }] of Object.entries(gauges)) {
-    const gauge = document.querySelector(selector);
-    if (!gauge) continue;
-    const valueEl = gauge.querySelector(".telemetry-gauge-value");
-    const fillEl = gauge.querySelector(".telemetry-bar-fill");
-    const noteEl = gauge.querySelector(".telemetry-gauge-note");
-    if (value === null || value === undefined) {
-      valueEl.textContent = "N/A";
-      fillEl.style.width = "0%";
-      gauge.classList.add("unavailable");
-    } else {
-      valueEl.textContent = `${Math.round(value)}%`;
-      fillEl.style.width = `${Math.min(value, 100)}%`;
-      gauge.classList.remove("unavailable");
-    }
-    const sharing = activeByKind[kind] || [];
-    // The note line is narrow, so lead with the count when a chip is
-    // shared -- that is the fact worth noticing -- and put the full list
-    // on the tooltip, which survives the ellipsis.
-    noteEl.textContent = sharing.length > 1 ? `${sharing.length} demos: ${sharing.join(", ")}` : sharing[0] || name || "";
-    if (sharing.length) noteEl.title = sharing.join(", ");
-    else noteEl.removeAttribute("title");
-    gauge.classList.toggle("active-gauge", sharing.length > 0);
-    gauge.classList.toggle("shared-gauge", sharing.length > 1);
+  const loads = { CPU: { value: data.cpu_percent }, NPU: { value: data.npu_percent, name: data.npu_name } };
+  for (const gpu of data.gpus || []) loads[chipKeyFor(gpu.id)] = { value: gpu.percent };
+  for (const section of PANEL.sections) {
+    const node = chipNode(section.key);
+    if (!node) continue;
+    const load = loads[section.key] || {};
+    const known = load.value !== null && load.value !== undefined;
+    node.querySelector(".chip-value").textContent = known ? `${Math.round(load.value)}%` : "N/A";
+    node.querySelector(".telemetry-bar-fill").style.width = known ? `${Math.min(load.value, 100)}%` : "0%";
+    node.classList.toggle("unavailable", !known);
+    if (load.name) node.querySelector(".chip-name").textContent = load.name.replace(/Intel\(R\)\s*/g, "");
   }
   renderPower(data.power);
   renderDeviceSummary(data);
-  // The chips' device labels come from this poll, not the status one --
-  // refresh them now rather than up to 1.5s later.
-  renderRunningStrip();
+  renderChipBricks();
+}
+
+// One row per running stage (a brick with two stages on two chips appears
+// under both), plus the bricks that are idle but still hold a model.
+function panelRows() {
+  const rows = STATUS.active.map((entry) => ({
+    demoId: entry.demo_id,
+    stage: entry.stage || "default",
+    stageLabel: entry.stage_label,
+    device: entry.device,
+    kind: "active",
+    canStop: entry.can_stop !== false,
+  }));
+  for (const held of STATUS.loaded || []) {
+    if (rows.some((row) => row.demoId === held.demo_id)) continue;
+    rows.push({ demoId: held.demo_id, stage: "default", stageLabel: null, device: held.device, kind: "loaded", canStop: true });
+  }
+  return rows;
+}
+
+function rowStatus(row) {
+  if (row.kind === "loaded") return { phase: "loaded", message: "Idle, with its model still loaded on this chip." };
+  const key = row.stage === "default" ? row.demoId : `${row.demoId}:${row.stage}`;
+  const entry = STATUS.snapshot[key] || STATUS.snapshot[row.demoId];
+  return entry ? { phase: entry.phase, message: entry.message || "" } : { phase: "running", message: "" };
+}
+
+function formatMetric(metric) {
+  const value = Number(metric.value);
+  if (metric.unit === "fps") return `${value >= 10 ? Math.round(value) : value.toFixed(1)} fps`;
+  if (metric.unit === "x real time") return `${value.toFixed(1)}× real time`;
+  return `${value.toFixed(1)} ${metric.unit}`;
+}
+
+// A brick's own number, in its own unit. "last" marks one from a finished
+// answer rather than work happening now.
+function rowMetricHtml(row, status) {
+  const mine = (STATUS.metrics || []).filter((metric) => metric.demo_id === row.demoId);
+  const parts = [];
+  const own = mine.find((metric) => metric.stage === row.stage);
+  if (own) {
+    const prefix = own.sticky || row.kind === "loaded" ? "last " : "";
+    const suffix = !prefix && own.detail ? ` (${escapeHtml(own.detail)})` : "";
+    parts.push(`${prefix}<strong>${escapeHtml(formatMetric(own))}</strong>${suffix}`);
+  }
+  // A finished stage's number (meeting notes' summary, say) rides on the
+  // brick's main row, since that stage no longer has a row of its own.
+  if (row.stage === "default") {
+    for (const metric of mine) {
+      if (metric === own || !metric.sticky) continue;
+      parts.push(`${escapeHtml(metric.detail || metric.stage)} <strong>${escapeHtml(formatMetric(metric))}</strong>`);
+    }
+  }
+  if (parts.length) return parts.join(" · ");
+  if (status.phase === "loading") return "loading the model…";
+  if (status.phase === "stopping") return "stopping…";
+  return row.kind === "loaded" ? "model loaded, idle" : "";
+}
+
+function rowHtml(row) {
+  const demo = demoById(row.demoId);
+  const name = demo ? demo.name : row.demoId;
+  const status = rowStatus(row);
+  const busy = PANEL.stopping.has(row.demoId) || status.phase === "stopping";
+  const current = currentPanel && currentPanel.id === row.demoId ? " current" : "";
+  const verb = row.kind === "loaded" ? "Unload" : "Stop";
+  const stopTitle = !row.canStop
+    ? "It is answering a request; it can be unloaded once that has finished."
+    : row.kind === "loaded"
+      ? `Unload ${name}'s model and free this chip's memory`
+      : `Stop ${name}`;
+  return (
+    `<li class="chip-brick kind-${row.kind} phase-${escapeHtml(status.phase)}${current}">` +
+    `<button type="button" class="chip-brick-open" data-open="${escapeHtml(row.demoId)}" title="${escapeHtml(status.message)}">` +
+    `<span class="chip-dot"></span><span class="chip-brick-name">${escapeHtml(name)}</span>` +
+    (row.stageLabel ? `<span class="chip-brick-stage">${escapeHtml(row.stageLabel)}</span>` : "") +
+    `</button>` +
+    `<button type="button" class="chip-brick-stop" data-stop="${escapeHtml(row.demoId)}" aria-label="${escapeHtml(`${verb} ${name}`)}" ` +
+    `title="${escapeHtml(stopTitle)}"${busy || !row.canStop ? " disabled" : ""}>✕</button>` +
+    `<span class="chip-brick-metric">${rowMetricHtml(row, status)}</span></li>`
+  );
+}
+
+function renderChipBricks() {
+  if (!PANEL.sections.length) return;
+  const byChip = new Map();
+  for (const row of panelRows()) {
+    const key = chipKeyFor(row.device);
+    if (!byChip.has(key)) byChip.set(key, []);
+    byChip.get(key).push(row);
+  }
+  for (const key of [...PANEL.sections.map((section) => section.key), "OTHER"]) {
+    const node = chipNode(key);
+    if (!node) continue;
+    const rows = byChip.get(key) || [];
+    const markup = rows.map(rowHtml).join("");
+    // Only touch the list when it changed: this runs twice a second, and
+    // rewriting it would drop hover and focus from under the pointer.
+    if (PANEL.markup.get(key) !== markup) {
+      PANEL.markup.set(key, markup);
+      node.querySelector(".chip-bricks").innerHTML = markup;
+    }
+    const running = new Set(rows.filter((row) => row.kind === "active").map((row) => row.demoId));
+    node.classList.toggle("active", running.size > 0);
+    node.classList.toggle("shared", running.size > 1);
+    node.dataset.count = String(rows.length);
+    if (key === "OTHER") node.hidden = rows.length === 0;
+  }
 }
 
 // Watts for the whole processor package, from its RAPL energy counters
@@ -2351,19 +2452,19 @@ function renderTelemetry(data) {
 const POWER_SCALE_W = 80;
 
 function renderPower(power) {
-  const gauge = document.querySelector('.telemetry-gauge[data-device="power"]');
-  if (!gauge) return;
-  gauge.hidden = !(power && power.available);
-  if (gauge.hidden) return;
+  const section = el("chip-power");
+  if (!section) return;
+  section.hidden = !(power && power.available);
+  if (section.hidden) return;
   const fmt = (w) => (w === null || w === undefined ? "?" : `${w.toFixed(1)} W`);
   const hasIdle = power.idle_w !== null && power.idle_w !== undefined;
-  gauge.querySelector(".telemetry-gauge-value").textContent = fmt(power.package_w);
-  gauge.querySelector(".telemetry-bar-fill").style.width = `${Math.min((power.package_w / POWER_SCALE_W) * 100, 100)}%`;
+  el("chip-power-value").textContent = fmt(power.package_w);
+  el("chip-power-fill").style.width = `${Math.min((power.package_w / POWER_SCALE_W) * 100, 100)}%`;
   const notes = [];
   if (hasIdle) notes.push(`+${Math.max(power.package_w - power.idle_w, 0).toFixed(1)} W over idle`);
   const battery = power.battery;
   if (battery && !battery.plugged) notes.push(`on battery, ${battery.percent}%`);
-  gauge.querySelector(".telemetry-gauge-note").textContent = notes.join(" · ") || "processor package";
+  el("chip-power-note").textContent = notes.join(" · ") || "processor package";
   let title =
     `Processor package ${fmt(power.package_w)}: CPU cores ${fmt(power.cores_w)}, graphics ${fmt(power.graphics_w)}, ` +
     `rest of the chip ${fmt(power.rest_w)} (the NPU, memory controller and I/O -- the NPU has no rail of its own). ` +
@@ -2374,8 +2475,8 @@ function renderPower(power) {
       ? ` Battery ${battery.percent}%, plugged in.`
       : ` Battery ${battery.percent}%` + (battery.seconds_left ? `, about ${Math.round(battery.seconds_left / 60)} min left.` : ".");
   }
-  gauge.title = title;
-  gauge.classList.toggle("active-gauge", STATUS.active.length > 0);
+  section.title = title;
+  section.classList.toggle("active", STATUS.active.length > 0);
 }
 
 let deviceSummaryDone = false;
@@ -2396,17 +2497,64 @@ async function pollTelemetry() {
   }
 }
 
-// One gauge per detected GPU; GPU_DEVICES is the source of truth for which
-// gauges exist, /api/telemetry polls only fill in their values.
-function initGpuGauges() {
-  const template = el("telemetry-gpu-gauge-template");
-  const container = document.querySelector(".telemetry-gpu-gauges");
-  for (const gpu of GPU_DEVICES) {
-    const gauge = template.content.cloneNode(true).querySelector(".telemetry-gauge");
-    gauge.dataset.gpuId = gpu.id;
-    if (GPU_DEVICES.length > 1) gauge.querySelector(".telemetry-gauge-label").textContent = gpu.id;
-    container.appendChild(gauge);
+// The close button on a row: stops a brick that runs a loop, unloads the
+// model of one that only answers requests. The launcher knows which is which.
+async function stopBrick(demoId) {
+  if (PANEL.stopping.has(demoId)) return;
+  PANEL.stopping.add(demoId);
+  el("chip-panel-message").textContent = "";
+  renderChipBricks();
+  try {
+    await postJSON(`/api/bricks/${demoId}/stop`, {});
+  } catch (err) {
+    const demo = demoById(demoId);
+    el("chip-panel-message").textContent = `${demo ? demo.name : demoId}: ${err.message}`;
+  } finally {
+    PANEL.stopping.delete(demoId);
   }
+  await Promise.all([pollStatus(), pollTelemetry()]);
+}
+
+function setChipPanelCollapsed(collapsed, { remember = true } = {}) {
+  document.body.classList.toggle("chip-panel-collapsed", collapsed);
+  const toggle = el("chip-panel-toggle");
+  toggle.setAttribute("aria-expanded", String(!collapsed));
+  toggle.setAttribute("aria-label", collapsed ? "Expand the hardware panel" : "Collapse the hardware panel");
+  if (!remember) return;
+  try {
+    localStorage.setItem("ptl.chipPanel", collapsed ? "collapsed" : "open");
+  } catch {
+    // Private mode: the choice just doesn't outlive the page.
+  }
+}
+
+function wireChipPanel() {
+  let stored = null;
+  try {
+    stored = localStorage.getItem("ptl.chipPanel");
+  } catch {
+    stored = null;
+  }
+  // A rail by default where the page has no room to give up 300px.
+  setChipPanelCollapsed(stored ? stored === "collapsed" : window.innerWidth < 1100, { remember: false });
+  el("chip-panel-toggle").addEventListener("click", (event) => {
+    event.stopPropagation();
+    setChipPanelCollapsed(!document.body.classList.contains("chip-panel-collapsed"));
+  });
+  el("chip-panel").addEventListener("click", (event) => {
+    // As a rail, the whole thing is the way back in.
+    if (document.body.classList.contains("chip-panel-collapsed")) {
+      setChipPanelCollapsed(false);
+      return;
+    }
+    const stop = event.target.closest("[data-stop]");
+    if (stop) {
+      if (!stop.disabled) stopBrick(stop.dataset.stop);
+      return;
+    }
+    const open = event.target.closest("[data-open]");
+    if (open) location.hash = `#/brick/${open.dataset.open}`;
+  });
 }
 
 async function initTelemetry() {
@@ -2415,7 +2563,7 @@ async function initTelemetry() {
   } catch {
     GPU_DEVICES = [];
   }
-  initGpuGauges();
+  buildChipPanel();
   pollTelemetry();
   setInterval(pollTelemetry, 600);
 }
@@ -2854,6 +3002,7 @@ async function init() {
   // silently doing nothing when clicked, with no clue as to why.)
   window.addEventListener("hashchange", route);
   wireCompactBar();
+  wireChipPanel();
 
   el("panel-back").addEventListener("click", () => {
     location.hash = "#/";

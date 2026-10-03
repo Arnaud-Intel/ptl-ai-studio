@@ -38,10 +38,10 @@ and `--no-browser` do what they say. Leave it running in a terminal;
   panel: its description, its controls, its output. Browser Back, Escape, or
   "All demos" returns to the grid with focus back on the card you came from.
 - **Leaving a panel never stops the brick.** A run is a server-side thread;
-  the panel is just a window onto it. The **"Now running" strip** under the
-  header (polled from `/api/status` every 1.5s, devices from
-  `/api/telemetry`) shows one chip per brick that is loading or running,
-  wherever you are; click a chip to jump to it. Reopening a panel
+  the panel is just a window onto it. The **hardware panel** on the right
+  (phases from `/api/status` every 1.5s; devices, loads and each brick's
+  number from `/api/telemetry`) lists every brick that is loading or running
+  under the chip it is on, wherever you are; click one to jump to it. Reopening a panel
   rehydrates from that same status -- Start/Stop reflect the real state, a
   video stream reattaches, the WebSocket reconnects -- and the bricks with
   their own state route (`doc-qa`, `voice-clone-studio`, `smart-recall`)
@@ -64,12 +64,20 @@ and `--no-browser` do what they say. Leave it running in a terminal;
   does. A Start during that window is refused with "still stopping --
   try again in a moment", which is a different thing from "already
   running": only one of them clears on its own.
-- **The gauges live in a dock fixed to the bottom of the window** (CPU, one
-  per GPU, NPU), so which chip is working never scrolls out of sight. Each
-  is labelled with whichever brick -- and stage -- is driving it, and a
-  device with more than one on it says so ("2 demos: ...") and turns amber:
-  two gauges lit and one gauge doing double duty are very different stories
-  about the hardware.
+- **The hardware panel is fixed to the right edge** -- power usage first,
+  then CPU, integrated GPU, discrete GPU when present, NPU -- so which chip
+  is working never scrolls out of sight. Under each chip are the bricks (and
+  stages) running on it, each with its own number and a ✕. A chip carrying
+  more than one demo turns amber: every chip lit and one chip doing double
+  duty are very different stories about the hardware. It collapses to a
+  narrow rail (remembered in `localStorage`), and is a rail by default on a
+  window under 1100px.
+- **The ✕ means stop or unload**, through one route,
+  `POST /api/bricks/<id>/stop`: a brick with a loop is stopped; one that
+  answers a request at a time has its model unloaded, which is what frees
+  the chip's memory (measured: 6.8 GB -> 2.2 GB of GPU memory when the 7B
+  OCR model is unloaded). While such a brick is mid-answer its ✕ is
+  disabled -- there is no cancelling a generation yet.
 
 ### `static/app.js` in one paragraph
 
@@ -130,14 +138,21 @@ extra selects, the request body, how to render its messages -- typically
 
 ## Hardware telemetry
 
-A dock fixed to the bottom of the window shows a live CPU / GPU / NPU gauge
-strip and highlights whichever gauge a running brick is actually using (e.g. starting Live Speech
-Translation on the NPU lights up the NPU gauge with "Live Speech
-Translation" underneath it). This is the answer to "what silicon is this
+The hardware panel shows a live load for the CPU, each GPU and the NPU, and
+lists each running brick under the chip it is actually using (e.g. starting
+Live Speech Translation on the NPU puts "Live Speech Translation" under the
+NPU, with its speed in times real time). This is the answer to "what silicon is this
 actually using" -- the whole point of the showcase.
 
 How it's real, not decorative:
 
+- **Each brick's own number** comes from [`metrics.py`](src/launcher/metrics.py):
+  the runner reports it from what it already sees -- frames per second from
+  frames arriving, times real time from each utterance's length and
+  processing time, tokens per second from an answer's stats, receipts per
+  minute for a batch. Tokens per second alone would leave a third of the
+  bricks blank. A live number goes when its stage stops; the last result of
+  a one-shot brick stays ("last 19 tok/s") while its model is loaded.
 - **CPU** comes from `psutil`, cross-platform, cheap.
 - **GPU/NPU** come from Windows' own "GPU Engine" performance-counter
   category (the same one Task Manager reads) -- see
@@ -151,9 +166,13 @@ How it's real, not decorative:
 - **Which brick is active** comes from [`activity.py`](src/launcher/activity.py):
   each runner records `{engine, device}` for the exact device string it
   passed to the brick, for the duration of the call -- ground truth, not
-  inferred. A device string like `AUTO` or `cuda` isn't pinned to one gauge
-  (OpenVINO's `AUTO` can pick any device internally), so it just won't
-  highlight anything -- still honest, no fabricated attribution. Keyed by
+  inferred. The launcher never passes `AUTO` on: `resolve()` turns a device
+  left to the app into a real chip before the brick starts
+  (`engine.preferred_device()`: the integrated GPU, else the CPU; the
+  fastest GPU for a large model), so every brick has a chip to appear under
+  -- on `AUTO` it reported "AUTO" and appeared under none. A device that is
+  none of the chips (`cuda`) gets an "Other" section rather than being
+  dropped. Keyed by
   `(demo_id, stage)`: `expense-extract` and `smart-recall` run two stages
   on two devices at once, `smart-city-monitor` one stage per feed, and each
   needs its own gauge label ("Expense Report Extractor (OCR)" on one,
@@ -189,12 +208,15 @@ polls that route every 2s.
    a stream's start request, `onMessage` / `onRunning` for its output, or a
    `wire()` that binds the action button to `this.run({...})`. Everything
    else -- opening, rehydrating, the status pill, Start/Stop, reconnecting,
-   the running strip -- is inherited.
+   the brick's row in the hardware panel -- is inherited.
 5. In the runner, call `activity.set_active(...)` / `clear_active(...)`
    around the inference and `events.set_phase(...)` at the loading ->
    running -> done boundaries (with `stage=` if the brick runs several
-   things at once) -- that is what the gauges, the status pill, and the
-   running strip are all reading. For a threaded brick, guard `start()`
+   things at once) -- that is what the hardware panel and the status pill
+   are reading. Report the brick's number with `metrics.report(...)` where
+   the runner sees it happen, and add the runner to `_STOPPABLE` (it has a
+   loop and a `stop()`) or `_UNLOADABLE` (it holds a model between requests)
+   in `app.py` -- a test fails if an available brick is in neither. For a threaded brick, guard `start()`
    with `worker.refuse_if_busy(...)` and make `stop()`
    `if not worker.request_stop(...): return` before clearing state, so it
    gets the shared "already running" / "still stopping" handling for free.

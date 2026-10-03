@@ -16,7 +16,7 @@ from object_detection.draw import draw_detections
 from object_detection.types import Detection
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, events, worker
+from . import activity, events, metrics, worker
 
 _DEMO_ID = "object-detection"
 _JPEG_QUALITY = 80
@@ -53,7 +53,10 @@ class ObjectDetectionRunner:
         self._stop_event = threading.Event()
         stop_event = self._stop_event
 
+        frames = metrics.RateMeter()
+
         def on_frame(frame: np.ndarray, detections: list[Detection]) -> None:
+            metrics.report(_DEMO_ID, frames.tick(), "fps")
             annotated = draw_detections(frame, detections)
             ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, _JPEG_QUALITY])
             if not ok:

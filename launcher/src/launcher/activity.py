@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import threading
 
+from . import metrics
+
 _lock = threading.Lock()
 _active: dict[tuple[str, str], dict[str, str]] = {}
 
@@ -27,6 +29,9 @@ def set_active(
     with _lock:
         _active[(demo_id, stage)] = {
             "demo_id": demo_id,
+            # Which of the demo's stages this is: what the panel matches a
+            # stage's status and metric by.
+            "stage": stage,
             "engine": engine,
             "device": device,
             "stage_label": stage_label,
@@ -36,6 +41,9 @@ def set_active(
 def clear_active(demo_id: str, stage: str = "default") -> None:
     with _lock:
         _active.pop((demo_id, stage), None)
+    # A stopped stage takes its live number with it; a sticky "last
+    # result" stays (see metrics.py).
+    metrics.clear_live(demo_id, stage)
 
 
 def snapshot() -> list[dict[str, str]]:

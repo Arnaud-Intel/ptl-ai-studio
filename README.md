@@ -137,11 +137,14 @@ it from disk after, running, or stopping -- instead of a static "please
 wait".
 
 **Leaving a demo doesn't stop it.** Start object detection on the iGPU, go
-back to the grid, open live translation on the NPU: the
-"Now running" strip under the header keeps both in view wherever you are,
-each gauge names the demo driving it, and reopening a demo picks up exactly
-where it is -- the video reattaches, an index built five minutes ago is
-still there.
+back to the grid, open live translation on the NPU: the hardware panel on
+the right keeps both in view wherever you are. It lists power first, then
+every chip -- CPU, integrated GPU, discrete GPU if there is one, NPU -- each
+with its load and, under it, the demos running on it: name, its own number
+(frames per second, times real time, tokens per second) and a ✕ that stops
+it. A demo that is idle but still holds a model is listed too, and its ✕
+unloads the model. Reopening a demo picks up exactly where it is -- the
+video reattaches, an index built five minutes ago is still there.
 
 <p align="center">
   <img src="docs/screenshot-running.png" alt="Two demos at once: the Now running strip lists Object Detection Overlay running on GPU.0 and the Commit and Code Review Assistant loading on GPU.1, with both GPU gauges lit and labelled" width="820" />
@@ -149,8 +152,10 @@ still there.
 
 That attribution is real, not decorative: it comes from the exact device
 string each demo handed the inference runtime, not a guess. A demo left on
-`AUTO` lights no gauge at all rather than claim a chip it might not be
-using.
+Auto is given a real chip by the launcher before it starts -- the integrated
+GPU, or the fastest GPU for a big model -- so it appears under the chip it
+is actually on. (It used to be passed to OpenVINO's own `AUTO`, which hides
+which chip is working: such a demo showed up under no chip at all.)
 
 ## The demo suite
 
@@ -205,7 +210,7 @@ everywhere, with a much smaller model.
 
 ### Power and energy
 
-The dock's **Power** gauge is the processor package's power, read once a
+The panel's **Power usage** gauge is the processor package's power, read once a
 second from the chip's RAPL energy counters (Windows' "Energy Meter"
 performance counters) -- the whole package, with its CPU-core, graphics and
 memory rails in the tooltip. The NPU has no rail of its own, so its work

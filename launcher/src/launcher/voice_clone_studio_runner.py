@@ -7,15 +7,26 @@ from __future__ import annotations
 import os
 import tempfile
 import threading
+import time
 
 from pantherlake_ai_core import audio
 from pantherlake_ai_core.engine import Engine
 from voice_clone_studio.pipeline import VoiceCloneSession
 
-from . import activity, events
+from . import activity, events, metrics
 from .errors import Conflict
 
 _DEMO_ID = "voice-clone-studio"
+
+
+def _report_speed(result, seconds: float) -> None:
+    """Seconds of speech made per second of work. The number is for the
+    panel: it must never cost the caller the audio."""
+    try:
+        audio_out, sample_rate = result
+        metrics.report(_DEMO_ID, (len(audio_out) / sample_rate) / seconds, "x real time", sticky=True)
+    except Exception:
+        pass
 
 
 class VoiceCloneStudioRunner:
@@ -102,7 +113,9 @@ class VoiceCloneStudioRunner:
                 # the rule, and refuses a style on a model that has none
                 # rather than dropping it. Branching here instead would
                 # silently ignore what the caller actually asked for.
+                began = time.perf_counter()
                 result = self._session.synthesize(text, style=style, tau=tau)
+                _report_speed(result, time.perf_counter() - began)
             except Exception as exc:
                 events.set_phase(_DEMO_ID, "error", str(exc))
                 raise

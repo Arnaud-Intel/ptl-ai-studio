@@ -14,7 +14,7 @@ from meeting_notes.session import MeetingSession
 from meeting_notes.types import MeetingNotes, TranscriptLine
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, events, worker
+from . import activity, events, metrics, worker
 from .errors import Conflict
 
 _DEMO_ID = "meeting-notes"
@@ -63,6 +63,8 @@ class MeetingNotesRunner:
             session = self._session
 
             def on_line(line: TranscriptLine) -> None:
+                if line.realtime_factor:
+                    metrics.report(_DEMO_ID, line.realtime_factor, "x real time")
                 asyncio.run_coroutine_threadsafe(queue.put({"type": "line", **asdict(line)}), loop)
 
             def on_ready() -> None:
@@ -137,4 +139,7 @@ class MeetingNotesRunner:
             finally:
                 activity.clear_active(_DEMO_ID, stage="notes")
         events.clear_phase(_DEMO_ID, stage="notes")
+        if notes.stats is not None:
+            # Sticky: the notes stage is over, but its speed is still worth showing.
+            metrics.report(_DEMO_ID, notes.stats.tokens_per_second, "tok/s", stage="notes", sticky=True, detail="notes")
         return notes

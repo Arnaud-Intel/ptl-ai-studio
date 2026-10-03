@@ -4,6 +4,7 @@ front-end (e.g. the launcher) so the streaming logic lives in one place.
 from __future__ import annotations
 
 import threading
+import time
 from typing import Callable
 
 from pantherlake_ai_core import audio
@@ -58,6 +59,7 @@ def run(
         on_ready()
     blocks = audio.stream_blocks(source, audio_device, stop_event=stop_event)
     for segment in segment_stream(blocks, VADConfig()):
+        started = time.perf_counter()
         try:
             result = translator.translate(segment)
         except RuntimeError as exc:
@@ -76,4 +78,6 @@ def run(
             if on_ready is not None:
                 on_ready()
         if result is not None:
+            result.audio_seconds = len(segment) / audio.SAMPLE_RATE
+            result.processing_seconds = time.perf_counter() - started
             on_result(result)

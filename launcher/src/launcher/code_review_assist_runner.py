@@ -10,7 +10,7 @@ from code_review_assist.session import CodeReviewSession
 from code_review_assist.types import ReviewResult
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, energy, events
+from . import activity, energy, events, metrics
 
 _DEMO_ID = "code-review-assist"
 
@@ -60,6 +60,8 @@ class CodeReviewAssistRunner:
                     raise
                 if result.stats is not None and started:
                     result.stats.energy = energy.since(started[-1], _DEMO_ID)
+                if result.stats is not None:
+                    metrics.report(_DEMO_ID, result.stats.tokens_per_second, "tok/s", sticky=True)
                 events.clear_phase(_DEMO_ID)
                 return result
             finally:

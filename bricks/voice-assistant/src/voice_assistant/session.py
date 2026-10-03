@@ -72,6 +72,7 @@ def run(
     on_heard: Callable[[str], None] = lambda text: None,
     on_reply: Callable[[str], None] = lambda text: None,
     on_ready: Callable[[], None] | None = None,
+    on_stats: Callable[[object], None] | None = None,
     speak_replies: bool = True,
     stop_event: threading.Event | None = None,
 ) -> None:
@@ -116,6 +117,10 @@ def run(
 
         reply = session.ask(heard.text)
         on_reply(reply)
+        # How fast the reply came, for a caller showing it (the launcher's panel).
+        stats = getattr(session.llm, "last_stats", None)
+        if on_stats is not None and stats is not None:
+            on_stats(stats)
 
         if speak_replies:
             audio_out, sample_rate = session.speak(reply)

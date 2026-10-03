@@ -145,9 +145,10 @@ not just one.
 
    The `core` helpers every brick is expected to use rather than re-implement:
    - `engine.resolve_engine(args.engine)` and `engine.default_device(engine)`
-     for the `--engine` / `--compute-device` defaults. The launcher applies
-     the same two, so "no choice" means the same thing in the UI and on the
-     command line. `preferred_large_model_device()` is for a model of tens
+     for the `--engine` / `--compute-device` defaults. The launcher uses the
+     same engine rule but never the "AUTO" device: its `resolve()` picks a
+     real chip (`engine.preferred_device()`), because a brick on "AUTO" can't
+     be shown under the chip it runs on. `preferred_large_model_device()` is for a model of tens
      of GB (see code-review-assist): the discrete GPU when there is one,
      else the integrated GPU, which holds such models in shared memory.
    - `engine.print_devices(mics=..., cameras=..., ...)` for `--list-devices`.
@@ -176,8 +177,8 @@ not just one.
    propagate (a 500 carrying the message). The panel itself is one
    `<section>` in `static/index.html` plus one entry in `static/app.js`'s
    `PANELS` table (a `StreamPanel` or a `Panel` config -- opening,
-   rehydrating, the status pill, Start/Stop and the "Now running" strip are
-   all inherited). Three server-side shapes to follow, depending on the
+   rehydrating, the status pill, Start/Stop and its row in the hardware
+   panel are all inherited). Three server-side shapes to follow, depending on the
    demo's (see [launcher/README.md](launcher/README.md) for the detail):
    `live-translation`'s WebSocket/background-thread routes for a stream
    where every result matters, `doc-qa`'s (and `screen-ocr`'s) plain

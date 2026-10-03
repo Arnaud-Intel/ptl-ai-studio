@@ -14,12 +14,13 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 
 from expense_extract import pipeline
 from expense_extract.types import totals_by_currency
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, events, worker
+from . import activity, events, metrics, worker
 from .expense_report import ExpenseReports
 
 _DEMO_ID = "expense-extract"
@@ -62,10 +63,24 @@ class ExpenseExtractRunner:
         def emit(message: dict) -> None:
             asyncio.run_coroutine_threadsafe(queue.put(message), loop)
 
+        # Receipts a minute, per stage: a batch has no frame rate, and its two
+        # stages sit on two chips.
+        began = time.monotonic()
+        done = {"ocr": 0, "llm": 0}
+
+        def report_rate(stage: str) -> None:
+            minutes = max((time.monotonic() - began) / 60, 1e-6)
+            metrics.report(_DEMO_ID, done[stage] / minutes, "receipts/min", stage=stage)
+
         def on_ocr_start(path, index, total) -> None:
+            done["ocr"] = max(index - 1, 0)  # the ones before this have been read
+            if done["ocr"]:
+                report_rate("ocr")
             emit({"type": "ocr_progress", "file": path.name, "index": index, "total": total})
 
         def on_structured(line) -> None:
+            done["llm"] += 1
+            report_rate("llm")
             item = self.reports.add(report_id, line)
             emit({"type": "structured", "line": item, "report_id": report_id})
 

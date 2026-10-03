@@ -12,7 +12,7 @@ from live_translation import pipeline
 from pantherlake_ai_core.engine import Engine
 from pantherlake_ai_core.types import TranslationResult
 
-from . import activity, energy, events, worker
+from . import activity, energy, events, metrics, worker
 
 _DEMO_ID = "live-translation"
 
@@ -50,6 +50,8 @@ class LiveTranslationRunner:
         window = [None]
 
         def on_result(result: TranslationResult) -> None:
+            if result.audio_seconds and result.processing_seconds:
+                metrics.report(_DEMO_ID, result.audio_seconds / result.processing_seconds, "x real time")
             message = {"type": "result", **asdict(result)}
             now = energy.mark()
             if window[0] is not None and now is not None:

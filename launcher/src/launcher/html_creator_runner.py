@@ -10,7 +10,7 @@ from html_creator.session import HtmlCreatorSession
 from html_creator.types import HtmlResult
 from pantherlake_ai_core.engine import Engine
 
-from . import activity, energy, events
+from . import activity, energy, events, metrics
 
 _DEMO_ID = "html-creator"
 
@@ -56,6 +56,8 @@ class HtmlCreatorRunner:
                     raise
                 if result.stats is not None and started:
                     result.stats.energy = energy.since(started[-1], _DEMO_ID)
+                if result.stats is not None:
+                    metrics.report(_DEMO_ID, result.stats.tokens_per_second, "tok/s", sticky=True)
                 events.clear_phase(_DEMO_ID)
                 return result
             finally:
