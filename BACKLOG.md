@@ -82,6 +82,20 @@ a new one or the deferred list, and moves its original wording to
   cannot write in a voice; guided drafts invented a deadline. Five decisions
   wait in the note, and it may deserve its own ticket rather than a place
   inside R26. (filed 2026-10-04, user request)
+  **Set aside by the user on 2026-10-04:** not convinced by this demo. The
+  note stays as it is; nothing is to be built from it for now.
+- [ ] **An Auto Demo for a stand: the app runs itself in a loop, several
+  demos at once, and says what is happening.** Groundwork in
+  [docs/AUTO_DEMO.md](docs/AUTO_DEMO.md): scenes as data (which is R21), a
+  director in the launcher that the page follows, captions with live
+  figures, and what it takes to run for hours with nobody there. Measured on
+  the XPS 14: the iGPU carries object detection and the 30B model together
+  (43.5 tok/s against 45.7, 10.3 fps against 12.0), the NPU is unaffected by
+  GPU work, a model that takes every CPU core costs the other two chips a
+  third; a three-scene playlist ran eight times with no failure and nothing
+  left loaded. Needs first: R21, a keep-awake request (the app has none), a
+  way to delete one expense report. Five decisions wait in the note.
+  (filed 2026-10-04, user request)
 
 ## What we are showing
 

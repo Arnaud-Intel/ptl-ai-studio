@@ -1,6 +1,7 @@
 # Email in your own voice: plan for the drafting demo
 
-Status: plan, not built. Written 2026-10-04. It covers the "Inbox Triage &
+Status: plan, not built, and set aside on 2026-10-04: the user is not
+convinced by this demo. Kept for the measurements. It covers the "Inbox Triage &
 Draft Assistant" card (`smart-inbox`), with the aim the user set for it: the
 laptop learns how a person writes from the mail they have sent, then drafts
 new mail the way they would.
