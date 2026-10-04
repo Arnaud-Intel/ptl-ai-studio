@@ -71,6 +71,17 @@ a new one or the deferred list, and moves its original wording to
   scenarios' pages under the switch were checked. Still open: the same
   history-dependence applies to every GPU answer in the app (code review,
   document Q&A on the GPU), where nothing reloads the model.
+- [ ] **The drafting demo should learn how we write, then write email our
+  way.** The user's aim for the planned "Inbox Triage & Draft Assistant"
+  card, which the roadmap had folded into the agent ticket (R26). Planned in
+  [docs/EMAIL_VOICE.md](docs/EMAIL_VOICE.md): a style card plus the writer's
+  own most similar emails as examples, a check that marks facts the draft
+  made up, a fictional mailbox for the stage. A feasibility test on the XPS
+  14: the 30B model on the integrated GPU went from 3 to 6 of 7 of a
+  writer's habits when guided, in 3.3 s a draft; the 1.5B model on the NPU
+  cannot write in a voice; guided drafts invented a deadline. Five decisions
+  wait in the note, and it may deserve its own ticket rather than a place
+  inside R26. (filed 2026-10-04, user request)
 
 ## What we are showing
 
