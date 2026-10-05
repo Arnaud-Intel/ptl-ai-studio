@@ -96,6 +96,71 @@ a new one or the deferred list, and moves its original wording to
   left loaded. Needs first: R21, a keep-awake request (the app has none), a
   way to delete one expense report. Five decisions wait in the note.
   (filed 2026-10-04, user request)
+- [ ] **A model picker for each brick: nine candidate models tried, and what
+  each would take.** Asked for with Qwen3.8 27B for coding, an NPU
+  alternative for summarising and Gemma 4 as examples. Tried on the XPS 14,
+  plugged in, B60 attached: every model was given the bricks' own prompts
+  and bundled samples, speeds were taken one job at a time, one run per
+  cell.
+  *Large models*, review notes in tok/s, integrated GPU / B60:
+  Qwen3-Coder-30B-A3B (today's) 49 / 77; Qwen3.6-35B-A3B 44 / 60; Gemma 4
+  26B-A4B 37 / 68; Qwen3.8-27B 7.6 / 22 (14 / 35 with its draft head);
+  Gemma 4 31B 6.4 / 19. All four candidates named the three planted faults
+  in the tenant-export diff; today's coder names two, among false alarms.
+  *On the NPU* only today's Qwen2.5-1.5B (58 tok/s) and Qwen3-8B int4-cw
+  (18.8 tok/s, 1.2 s to the first token, 95 s first compile) run. Qwen3-4B
+  int4 loads and answers garbage; Gemma 4 E2B and Qwen3.5-4B had not
+  finished compiling after 40 minutes; Gemma 4 E4B fails to compile.
+  *Small-model scores* (meeting action items of 7 / document facts of 17 /
+  expense fields of 70): 1.5B on the NPU 0 / 15 / 47; 8B on the NPU
+  4 / 15 / 62; on the integrated GPU Qwen3.5-4B 7 / 17 / 63 at 38 tok/s,
+  Gemma 4 E4B 6 / 16 / 64 at 32, Gemma 4 E2B 3 / 12 / 63 at 59.
+  *Reading receipts* on the integrated GPU, expected values read of 68 and
+  time per image: Qwen2.5-VL-7B (today's) 68, 7-9 s; Qwen3.5-4B 68, 5 s;
+  Gemma 4 E4B 67, 5 s; Gemma 4 E2B 61, 2.6 s; the 35B and Gemma 26B read
+  all 68 too.
+  *What adopting them takes.* Everything but Qwen3-8B needs OpenVINO 2026.4
+  (the project is on 2026.3) and loads through the vision pipeline, not the
+  text one `doc_qa.llm_openvino` uses. Qwen3 and later think aloud unless
+  the chat history carries `enable_thinking: false`. The tokenizer in the
+  Gemma 4 builds turns ten tags (`<html>`, `<body>`, `<span>`, `<code>`,
+  `</div>` among them) into U+FFFD, so its HTML has to be rebuilt from
+  token ids; and without sampling Gemma did not stop cleanly (the 26B
+  started its page again, the 31B repeated `</html>` to the token limit).
+  The 35B loads in 70-84 s against 19 s for today's coder and holds 21 GB
+  against 17.
+  *The HTML Creator scenarios do not transfer.* With "Same page every
+  time", Neon Breakout plays only on today's model with today's OpenVINO:
+  on 2026.4 today's coder draws the game and never moves the ball, the 35B
+  misspells a variable, the 27B never launches the ball. An OpenVINO
+  upgrade alone needs the five scenarios checked again.
+  *Worth a slot, least work first:* Qwen3-8B int4-cw as a second, better
+  NPU model (runs on 2026.3; needs only the thinking switch); after an
+  OpenVINO upgrade, Qwen3.5-4B for screen OCR and as the small model on the
+  integrated GPU, and Qwen3.6-35B-A3B, or Qwen3.8-27B on a B60, as a
+  code-review choice. All nine are Apache-2.0 on their cards (R17). The
+  models (91 GB) are in the Hugging Face cache; nothing in the app uses
+  them. (filed 2026-10-05, user request)
+- [ ] **Live translation lost the NPU when the expense extractor started
+  beside it.** `logs/events.log`, 2026-10-05 at 10:41-10:44: live
+  translation was running on the NPU; the expense extractor started
+  about two minutes later; half a minute on, an utterance failed with
+  `ZE_RESULT_ERROR_DEVICE_LOST` ("device hung, reset, was removed, or
+  driver update occurred"), and the reload-and-retry failed with
+  `zeMemAllocHost ... ZE_RESULT_ERROR_UNKNOWN`, leaving the brick in error.
+  The log does not record which chip the expense run's language step used;
+  if it was the NPU, this is two models on the NPU at once. Worth
+  reproducing before a scenario or an Auto Demo scene puts two NPU
+  workloads side by side (R21, C1). (filed 2026-10-05, events.log)
+- [ ] **Day-first dates on receipts are read month-first, whichever model
+  structures them.** In the model trial, the two French scanned receipts
+  dated `12/09/2026` came back as 2026-12-09 from every model that
+  answered, small or large (expected 2026-09-12 in
+  `scanned-receipts-expected.json`), and none returned the scanned hotel's
+  balance of 406.00 (504.00, 374.00, 180.00 or nothing). The structuring
+  prompt says nothing about date order, and a date that is valid both ways
+  is not flagged for review the way an ambiguous amount is. (filed
+  2026-10-05, model trial)
 
 ## What we are showing
 
