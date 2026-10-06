@@ -138,6 +138,160 @@ function shortGpuName(fullName) {
     .trim();
 }
 
+// ---- Subtitles: what live translation hears, kept in view ---------------------------
+//
+// For presenting. Turned on, the lines show in a bar docked at the bottom of
+// the page whichever demo is open: inside the window being shared in a call,
+// in any browser. From the bar they can be popped out into a small window the
+// browser keeps above every other application (Document Picture-in-Picture,
+// in Chrome and Edge), for subtitles over slides or another program.
+const SUBTITLES = { on: false, win: null, panel: null, lines: [], spoken: false, stale: false, note: "", timers: [] };
+const SUBTITLE_STALE_MS = 8000; // a line nobody has followed up dims...
+const SUBTITLE_CLEAR_MS = 25000; // ...and then leaves the screen
+const SUBTITLE_LINES = '<div class="lines"><p class="previous"></p><p class="current"></p><p class="hint"></p></div>';
+
+// The pop-out is its own document: it gets its own copy of the bar's look.
+const SUBTITLE_WINDOW_STYLE = `
+  html, body { height: 100%; margin: 0; }
+  body { background: #05070b; color: #fff; font-family: "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  #stage {
+    box-sizing: border-box; height: 100%; padding: 8px 20px; display: flex; flex-direction: column;
+    justify-content: center; text-align: center; line-height: 1.25; font-weight: 600;
+  }
+  .lines { display: flex; flex-direction: column; gap: 0.18em; }
+  p { margin: 0; overflow-wrap: anywhere; transition: opacity 0.6s; }
+  [hidden] { display: none; }
+  .previous { opacity: 0.45; font-weight: 500; }
+  .stale .current { opacity: 0.45; }
+  .hint { font-size: 14px; font-weight: 400; opacity: 0.6; }
+`;
+
+function subtitleWindowsStayOnTop() {
+  return "documentPictureInPicture" in window;
+}
+
+// Where the lines are drawn now: the pop-out if there is one, else the bar.
+function subtitleStage() {
+  if (SUBTITLES.win) return SUBTITLES.win.document.getElementById("stage");
+  return SUBTITLES.on ? el("subtitle-stage") : null;
+}
+
+function clearSubtitleTimers() {
+  SUBTITLES.timers.forEach(clearTimeout);
+  SUBTITLES.timers = [];
+}
+
+function reflectSubtitles() {
+  const docked = SUBTITLES.on && !SUBTITLES.win;
+  el("lt-subtitles").setAttribute("aria-pressed", String(SUBTITLES.on));
+  el("subtitle-bar").hidden = !docked;
+  document.body.classList.toggle("subtitles-docked", docked); // room under the page for the bar
+  renderSubtitles();
+}
+
+function setSubtitles(on, panel = null) {
+  if (on === SUBTITLES.on) return;
+  SUBTITLES.on = on;
+  clearSubtitleTimers();
+  if (on) {
+    Object.assign(SUBTITLES, { panel, lines: [], spoken: false, stale: false, note: "" });
+    // The lines have to keep coming while another demo is on screen, which
+    // is the point: the panel keeps its connection until subtitles are
+    // turned off (it normally lets go when you leave it).
+    panel.stayConnected = true;
+    panel.connect();
+  } else {
+    const { win, panel: was } = SUBTITLES;
+    SUBTITLES.win = null;
+    SUBTITLES.panel = null;
+    if (win) win.close();
+    if (was) {
+      was.stayConnected = false;
+      if (!was.isOpen) was.disconnect(); // nobody is reading the lines any more
+    }
+  }
+  reflectSubtitles();
+}
+
+async function popOutSubtitles() {
+  if (!SUBTITLES.on || SUBTITLES.win) return;
+  let win = null;
+  if (subtitleWindowsStayOnTop()) {
+    try {
+      win = await window.documentPictureInPicture.requestWindow({ width: 920, height: 170 });
+    } catch {
+      win = null; // an embedded browser can announce the feature and not have it
+    }
+  }
+  if (!win) {
+    SUBTITLES.note = "This browser can't keep a window above other applications (Chrome and Edge can). The bar stays here.";
+    SUBTITLES.timers.push(setTimeout(() => { SUBTITLES.note = ""; renderSubtitles(); }, 7000));
+    renderSubtitles();
+    return;
+  }
+  const doc = win.document;
+  doc.title = "Subtitles · Panther Lake AI Studio";
+  const style = doc.createElement("style");
+  style.textContent = SUBTITLE_WINDOW_STYLE;
+  doc.head.append(style);
+  doc.body.innerHTML = `<div id="stage">${SUBTITLE_LINES}</div>`;
+  SUBTITLES.win = win;
+  SUBTITLES.note = "";
+  // Closing the window brings the subtitles back to the bar; the switch in
+  // the panel is what turns them off.
+  win.addEventListener("pagehide", () => {
+    if (SUBTITLES.win !== win) return;
+    SUBTITLES.win = null;
+    reflectSubtitles();
+  });
+  win.addEventListener("resize", renderSubtitles);
+  reflectSubtitles();
+}
+
+function showSubtitle(text) {
+  if (!SUBTITLES.on || !text) return;
+  SUBTITLES.lines = [...SUBTITLES.lines, text].slice(-2);
+  SUBTITLES.spoken = true;
+  SUBTITLES.stale = false;
+  SUBTITLES.note = "";
+  clearSubtitleTimers();
+  SUBTITLES.timers.push(setTimeout(() => { SUBTITLES.stale = true; renderSubtitles(); }, SUBTITLE_STALE_MS));
+  SUBTITLES.timers.push(setTimeout(() => { SUBTITLES.lines = []; renderSubtitles(); }, SUBTITLE_CLEAR_MS));
+  renderSubtitles();
+}
+
+// The newest line, with the one before it above while both fit, in the
+// largest type there is room for.
+function renderSubtitles() {
+  const stage = subtitleStage();
+  if (!stage) return;
+  const current = SUBTITLES.lines[SUBTITLES.lines.length - 1] || "";
+  const previous = SUBTITLES.lines.length > 1 ? SUBTITLES.lines[0] : "";
+  const previousNode = stage.querySelector(".previous");
+  const hint = stage.querySelector(".hint");
+  stage.classList.toggle("stale", SUBTITLES.stale);
+  stage.querySelector(".current").textContent = current;
+  previousNode.textContent = previous;
+  hint.textContent = SUBTITLES.note || (SUBTITLES.spoken ? "" : "What Live Speech Translation hears will appear here.");
+  hint.hidden = !hint.textContent;
+  // Measured on the lines themselves: text that spills out of the top of a
+  // box is not counted as overflow, so the box cannot be asked.
+  const lines = stage.querySelector(".lines");
+  const padding = getComputedStyle(stage);
+  const room = stage.clientHeight - parseFloat(padding.paddingTop) - parseFloat(padding.paddingBottom);
+  const largest = Math.round(Math.max(15, Math.min(room * 0.4, stage.clientWidth * 0.05, 46)));
+  // The line before stays only while the newest keeps a comfortable size;
+  // a long sentence gets the whole space to itself, shrinking as needed.
+  const comfortable = Math.max(20, Math.round(largest * 0.7));
+  for (const [withPrevious, smallest] of [[Boolean(previous), comfortable], [false, 13]]) {
+    previousNode.hidden = !withPrevious;
+    for (let size = largest; size >= smallest; size -= 1) {
+      stage.style.fontSize = `${size}px`;
+      if (lines.offsetHeight <= room + 1) return;
+    }
+  } // still too long at the smallest type: it is cut, not hidden
+}
+
 // The "Spoken language" menu: detect automatically, then the languages the
 // launcher offers. The choice is kept when the panel is opened again.
 function fillSpokenLanguages(select, data) {
@@ -623,7 +777,9 @@ class StreamPanel extends Panel {
 
   leave() {
     super.leave();
-    this.disconnect();
+    // stayConnected: something outside the panel still shows its lines (the
+    // subtitles).
+    if (!this.stayConnected) this.disconnect();
     if (this.img) this.detachVideo();
   }
 
@@ -749,7 +905,7 @@ class StreamPanel extends Panel {
     // panel is open, a dropped connection just reconnects.
     ws.onclose = () => {
       this.ws = null;
-      if (this.isOpen) setTimeout(() => this.connect(), 1000);
+      if (this.isOpen || this.stayConnected) setTimeout(() => this.connect(), 1000);
     };
     this.ws = ws;
   }
@@ -1045,7 +1201,15 @@ const PANELS = {
     onMessage(message) {
       if (message.type === "result") {
         appendTimedLine(el("lt-transcript"), new Date().toLocaleTimeString(), message.detected_language, message.text, message.energy);
+        showSubtitle(message.text);
       }
+    },
+    wireExtra() {
+      el("lt-subtitles").addEventListener("click", () => setSubtitles(!SUBTITLES.on, this));
+      el("subtitle-close").addEventListener("click", () => setSubtitles(false));
+      el("subtitle-popout").addEventListener("click", popOutSubtitles);
+      el("subtitle-popout").hidden = !subtitleWindowsStayOnTop();
+      window.addEventListener("resize", renderSubtitles);
     },
   }),
 

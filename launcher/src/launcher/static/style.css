@@ -662,6 +662,8 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
 }
 
 .btn-secondary:disabled { color: var(--text-faint); }
+/* A button that is a switch: lit while what it turned on is on. */
+.btn-toggle[aria-pressed="true"] { border-color: var(--accent-hover); background: var(--accent-soft); color: var(--text); }
 
 .btn-danger {
   background: transparent;
@@ -1690,3 +1692,44 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .partial-label::before, .partial-text::after { animation: none; }
 }
+
+/* Subtitles: what live translation hears, docked at the bottom of the page
+   whichever demo is open (app.js, "Subtitles"). */
+.subtitle-bar {
+  position: fixed;
+  left: 0;
+  right: var(--panel-width);
+  bottom: 0;
+  z-index: 44;
+  height: 104px;
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  padding: 0 12px 0 20px;
+  background: rgba(5, 7, 11, 0.96);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -10px 24px rgba(0, 0, 0, 0.45);
+}
+body.subtitles-docked { padding-bottom: 104px; }
+.subtitle-stage {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 100%;
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  text-align: center;
+  line-height: 1.25;
+  font-weight: 600;
+  color: #fff;
+}
+.subtitle-stage .lines { display: flex; flex-direction: column; gap: 0.18em; }
+.subtitle-stage p { margin: 0; overflow-wrap: anywhere; transition: opacity 0.6s; }
+.subtitle-stage .previous { opacity: 0.45; font-weight: 500; }
+.subtitle-stage.stale .current { opacity: 0.45; }
+.subtitle-stage .hint { font-size: 13px; font-weight: 400; opacity: 0.6; }
+.subtitle-tools { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 6px; }
+.subtitle-tools .btn { padding: 4px 10px; font-size: 12px; white-space: nowrap; }

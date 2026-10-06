@@ -241,3 +241,30 @@ def test_an_upgrade_from_before_commits_were_recorded_still_gets_its_changelog(m
     )
     assert [version["version"] for version in updates.last_result()["changelog"]] == ["0.2.47", "0.2.46"]
     assert calls[-1].endswith("c0ffee..HEAD")
+
+
+def test_a_copy_that_already_holds_the_change_still_says_what_the_new_version_brings(monkeypatch):
+    # The machine a change was pushed from: it has the commit, and lacks only
+    # CI's "bump version" on top. Asked "which commits am I missing", the
+    # answer is that bump alone, and the update window had nothing to list.
+    log = "log --reverse --format=%s%x1f%b%x1f%cs%x1e "
+    fake_git(
+        monkeypatch,
+        {
+            **BEHIND,
+            "show origin/main:VERSION": "0.2.46",
+            "rev-list --count HEAD..origin/main": "1",
+            log + "HEAD..origin/main": "chore: bump version to 0.2.46 [skip ci]\x1f\x1e\n",
+            "log -1 --format=%H --fixed-strings --grep=chore: bump version to 0.2.45 ": "abc123",
+            log + "abc123..origin/main": (
+                "Hear a presenter who is already talking\x1fThe noise floor was measured once.\x1f2026-10-06\x1e\n"
+                "chore: bump version to 0.2.46 [skip ci]\x1f\x1f2026-10-06\x1e\n"
+            ),
+        },
+    )
+    status = updates.check()
+    assert status.update_available and status.latest == "0.2.46"
+    assert [(v["version"], [c["summary"] for c in v["changes"]]) for v in status.changelog] == [
+        ("0.2.46", ["Hear a presenter who is already talking"])
+    ]
+    assert status.changes == ["Hear a presenter who is already talking"]

@@ -111,6 +111,8 @@
           <button id="lt-start" class="btn btn-primary" type="button">Start</button>
           <button id="lt-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
           <span id="lt-status" class="run-status" role="status" aria-live="polite">Idle</span>
+          <button id="lt-subtitles" class="btn btn-secondary btn-toggle" type="button" aria-pressed="false"
+            title="Shows the translated lines as subtitles in a bar at the bottom of the page. It stays there, and keeps going, while you open other demos.">Subtitles</button>
         </div>
         <div id="lt-transcript" class="output">
           <p class="placeholder">Translated speech will appear here once you press Start.</p>
@@ -770,6 +772,15 @@
   <!-- Power, then every chip -- how loaded it is and what is running on it,
        each brick with its own number and a way to stop it. One place and
        always in view: which chip does the work is the point of the showcase. -->
+  <aside id="subtitle-bar" class="subtitle-bar" aria-label="Subtitles" hidden>
+    <div id="subtitle-stage" class="subtitle-stage" aria-live="off"><div class="lines"><p class="previous"></p><p class="current"></p><p class="hint"></p></div></div>
+    <div class="subtitle-tools">
+      <button id="subtitle-popout" class="btn btn-secondary" type="button"
+        title="Moves the subtitles into a small window that stays above every other application: over slides, a call or another program. Close that window to bring them back here.">Keep on top</button>
+      <button id="subtitle-close" class="icon-btn" type="button" aria-label="Turn subtitles off" title="Turn subtitles off">&times;</button>
+    </div>
+  </aside>
+
   <aside id="chip-panel" class="chip-panel" aria-label="Hardware and running demos">
     <div class="chip-panel-head">
       <h2 class="chip-panel-title">Hardware</h2>

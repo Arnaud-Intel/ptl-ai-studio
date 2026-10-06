@@ -77,6 +77,21 @@ uv run live-translate --source system --audio-device "Speakers" --model medium -
 
 Press `Ctrl+C` to stop.
 
+## Subtitles, in the launcher
+
+**Subtitles** in the launcher's panel shows the translated lines in a bar
+docked at the bottom of the page: the newest line in large type, the one
+before it above while both fit, dimming after a few seconds of silence. The
+bar stays, and keeps receiving lines, while you open other demos -- so it is
+in the picture when the launcher's window is shared in a call, in any
+browser.
+
+**Keep on top**, on the bar, moves the subtitles into a small window the
+browser keeps above every other application (Document Picture-in-Picture:
+Chrome and Edge), for subtitles over slides or another program. Closing that
+window brings them back to the bar. A browser that cannot do it says so and
+keeps the bar.
+
 ## Options
 
 | Flag | Description |

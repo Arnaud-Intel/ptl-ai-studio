@@ -167,6 +167,22 @@ def history() -> dict:
         }
 
 
+def incoming_changelog(local: str) -> list[dict]:
+    """What upgrading from version `local` brings, version by version:
+    everything on GitHub since the commit that numbered `local`.
+
+    Not "the commits this checkout lacks". On a copy that only ever pulls,
+    the two are the same. On the copy a change was pushed from they are not:
+    it already holds the change and lacks only CI's commit numbering it, so
+    the update window announced a version and listed nothing under it
+    (2026-10-06: "v0.2.64 is available", and an empty What's new)."""
+    try:
+        numbered = _commit_for_version(local)
+    except GitError:
+        numbered = None
+    return changelog(f"{numbered or 'HEAD'}..origin/{BRANCH}")
+
+
 def check() -> UpdateStatus:
     """Ask GitHub whether there's a newer version. Never raises: this runs at
     every start, and a laptop without a network isn't an error anyone needs
@@ -182,7 +198,7 @@ def check() -> UpdateStatus:
         behind = int(_git("rev-list", "--count", f"HEAD..origin/{BRANCH}"))
         status.update_available = behind > 0 and version_key(status.latest) > version_key(status.local)
         if status.update_available:
-            status.changelog = changelog(f"HEAD..origin/{BRANCH}")
+            status.changelog = incoming_changelog(status.local)
             status.changes = [change["summary"] for version in status.changelog for change in version["changes"]]
     except (GitError, ValueError) as exc:
         status.update_available = False
