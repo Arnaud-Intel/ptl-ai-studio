@@ -24,6 +24,7 @@ def run(
     compute_device: str,
     compute_type: str = "auto",
     ov_model_dir: str | None = None,
+    language: str | None = None,
     on_result: Callable[[TranslationResult], None],
     on_ready: Callable[[], None] | None = None,
     on_downloading: Callable[[], None] | None = None,
@@ -45,7 +46,9 @@ def run(
     fires again once it's back. `on_device(device)`, if given, fires when
     the model has had to move to another chip mid-session -- the NPU can be
     reset under a running model (see core's `npu` module), and the session
-    carries on elsewhere rather than end.
+    carries on elsewhere rather than end. `language`, if given, is the
+    language being spoken (see `languages.py`); left out, the model detects
+    it for each utterance.
     """
 
     def load():
@@ -56,6 +59,7 @@ def run(
             compute_type=compute_type,
             ov_model_dir=ov_model_dir,
             on_downloading=on_downloading,
+            language=language,
         )
 
     translator = load()

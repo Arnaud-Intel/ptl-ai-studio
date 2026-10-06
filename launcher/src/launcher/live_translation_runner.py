@@ -37,6 +37,7 @@ class LiveTranslationRunner:
         engine: Engine,
         model_size: str,
         compute_device: str,
+        language: str | None = None,
     ) -> None:
         worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
@@ -92,6 +93,7 @@ class LiveTranslationRunner:
                     engine=engine,
                     model_size=model_size,
                     compute_device=compute_device,
+                    language=language,
                     on_result=on_result,
                     on_ready=on_ready,
                     on_downloading=on_downloading,

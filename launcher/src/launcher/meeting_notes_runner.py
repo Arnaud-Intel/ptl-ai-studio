@@ -50,6 +50,7 @@ class MeetingNotesRunner:
         engine: Engine,
         compute_device: str,
         whisper_model_size: str,
+        spoken_language: str | None = None,
     ) -> None:
         with self._state_lock:
             worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
@@ -57,7 +58,9 @@ class MeetingNotesRunner:
             self.error = None
             self._engine = engine
             self._compute_device = compute_device
-            self._session = MeetingSession(engine, compute_device=compute_device, whisper_model_size=whisper_model_size)
+            self._session = MeetingSession(
+                engine, compute_device=compute_device, whisper_model_size=whisper_model_size, spoken_language=spoken_language
+            )
             self._stop_event = threading.Event()
             stop_event = self._stop_event
             session = self._session

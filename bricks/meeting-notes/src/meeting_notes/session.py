@@ -129,10 +129,13 @@ class MeetingSession:
     """One live meeting: accumulates a transcript as audio comes in, and
     can generate notes from everything accumulated so far, any time."""
 
-    def __init__(self, engine: Engine, *, compute_device: str, whisper_model_size: str):
+    def __init__(
+        self, engine: Engine, *, compute_device: str, whisper_model_size: str, spoken_language: str | None = None
+    ):
         self.engine = engine
         self.compute_device = compute_device
         self.whisper_model_size = whisper_model_size
+        self.spoken_language = spoken_language  # None: detected for each utterance
         self._transcript: list[TranscriptLine] = []
         self._lock = threading.Lock()
         self._llm = None  # built lazily -- no reason to load it if notes are never requested
@@ -177,6 +180,7 @@ class MeetingSession:
             engine=self.engine,
             model_size=self.whisper_model_size,
             compute_device=self.compute_device,
+            language=self.spoken_language,
             on_result=handle_result,
             on_ready=on_ready,
             on_downloading=on_downloading,

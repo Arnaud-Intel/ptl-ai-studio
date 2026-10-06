@@ -15,14 +15,19 @@ from pantherlake_ai_core.types import TranslationResult
 class PortableTranslator:
     """Loads a local Whisper model once and translates audio chunks to English text."""
 
-    def __init__(self, model_size: str = "small", device: str = "auto", compute_type: str = "auto", task: str = "translate"):
+    def __init__(
+        self, model_size: str = "small", device: str = "auto", compute_type: str = "auto", task: str = "translate",
+        language: str | None = None,
+    ):
         self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
         self.task = task
+        self.language = language  # None: detect it for each utterance
 
     def translate(self, audio: np.ndarray) -> TranslationResult | None:
         segments, info = self.model.transcribe(
             audio,
             task=self.task,
+            language=self.language,
             beam_size=1,
             condition_on_previous_text=False,
         )

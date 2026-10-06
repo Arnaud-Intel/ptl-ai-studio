@@ -138,6 +138,19 @@ function shortGpuName(fullName) {
     .trim();
 }
 
+// The "Spoken language" menu: detect automatically, then the languages the
+// launcher offers. The choice is kept when the panel is opened again.
+function fillSpokenLanguages(select, data) {
+  const chosen = select.value || "auto";
+  const options = [`<option value="auto">Detect automatically</option>`];
+  for (const language of data.spoken_languages || []) {
+    options.push(`<option value="${escapeHtml(language.code)}">${escapeHtml(language.name)}</option>`);
+  }
+  select.innerHTML = options.join("");
+  select.value = chosen;
+  if (select.value !== chosen) select.value = "auto";
+}
+
 function deviceLabel(id) {
   const upper = String(id).toUpperCase();
   if (upper.startsWith("GPU")) {
@@ -1002,9 +1015,10 @@ const PANELS = {
     prefix: "lt",
     transport: "ws",
     statusKey: "live-translation",
-    controls: ["lt-source", "lt-audio-device", "lt-engine", "lt-compute-device", "lt-model"],
+    controls: ["lt-source", "lt-audio-device", "lt-engine", "lt-compute-device", "lt-model", "lt-language"],
     populate(data) {
       wireAudioSource(el("lt-source"), el("lt-audio-device"), data);
+      fillSpokenLanguages(el("lt-language"), data);
       const modelSelect = el("lt-model");
       const small = modelSelect.querySelector('option[value="small"]');
       wireEngineAndDevice(el("lt-engine"), el("lt-compute-device"), data, {
@@ -1025,6 +1039,7 @@ const PANELS = {
         engine: el("lt-engine").value,
         model_size: el("lt-model").value,
         compute_device: el("lt-compute-device").value,
+        language: el("lt-language").value,
       };
     },
     onMessage(message) {
@@ -1039,9 +1054,10 @@ const PANELS = {
     prefix: "mtg",
     transport: "ws",
     statusKey: "meeting-notes",
-    controls: ["mtg-source", "mtg-audio-device", "mtg-engine", "mtg-compute-device"],
+    controls: ["mtg-source", "mtg-audio-device", "mtg-engine", "mtg-compute-device", "mtg-language"],
     populate(data) {
       wireAudioSource(el("mtg-source"), el("mtg-audio-device"), data);
+      fillSpokenLanguages(el("mtg-language"), data);
       wireEngineAndDevice(el("mtg-engine"), el("mtg-compute-device"), data, { portableDevices: ["cpu", "cuda"] });
     },
     body() {
@@ -1050,6 +1066,7 @@ const PANELS = {
         audio_device: el("mtg-audio-device").value || null,
         engine: el("mtg-engine").value,
         compute_device: el("mtg-compute-device").value,
+        language: el("mtg-language").value,
       };
     },
     onMessage(message) {

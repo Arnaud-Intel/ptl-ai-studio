@@ -22,6 +22,7 @@ def create_translator(
     ov_model_dir: str | None = None,
     task: str = "translate",
     on_downloading: Callable[[], None] | None = None,
+    language: str | None = None,
 ) -> Translator:
     """`task="translate"` (the default) always outputs English text,
     whatever language is spoken. Pass `task="transcribe"` for same-language
@@ -29,17 +30,23 @@ def create_translator(
     way, since a voice assistant should hear you in the language you spoke,
     not have it silently translated. `on_downloading`, if given, fires
     before an openvino model that isn't already cached locally starts
-    downloading (portable's faster-whisper models aren't covered)."""
+    downloading (portable's faster-whisper models aren't covered).
+    `language`, if given, is the language being spoken (a code from
+    `languages.SPOKEN_LANGUAGES`): the model is told instead of working it
+    out afresh, and sometimes wrongly, for every utterance."""
     if engine == Engine.PORTABLE:
         from .transcriber_portable import PortableTranslator
 
-        return PortableTranslator(model_size=model_size, device=device, compute_type=compute_type, task=task)
+        return PortableTranslator(
+            model_size=model_size, device=device, compute_type=compute_type, task=task, language=language
+        )
 
     if engine == Engine.OPENVINO:
         from .transcriber_openvino import OpenVINOTranslator
 
         return OpenVINOTranslator(
-            model_size=model_size, device=device, model_dir=ov_model_dir, task=task, on_downloading=on_downloading
+            model_size=model_size, device=device, model_dir=ov_model_dir, task=task, on_downloading=on_downloading,
+            language=language,
         )
 
     raise ValueError(f"Unknown engine '{engine}'.")

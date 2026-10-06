@@ -322,6 +322,7 @@ def test_a_speech_model_that_loses_the_npu_redoes_the_utterance_on_another_chip(
     translator._pipeline_cls = _Speech
     translator._model_dir = "model"
     translator.task = "translate"
+    translator.language = None
     translator._load("NPU")
     lost_pipeline = translator.pipeline
 
@@ -329,3 +330,4 @@ def test_a_speech_model_that_loses_the_npu_redoes_the_utterance_on_another_chip(
     assert result.text == "heard on GPU.0" and result.detected_language == "fr"
     assert translator.device == "GPU.0"
     assert lost_pipeline.calls == 1 and lost_pipeline in npu._retired
+

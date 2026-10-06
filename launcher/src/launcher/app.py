@@ -46,6 +46,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from live_translation.languages import SPOKEN_LANGUAGES, spoken_language
 from pantherlake_ai_core import audio, npu, video
 from pantherlake_ai_core.engine import (
     Engine,
@@ -477,6 +478,9 @@ def demo_devices(demo_id: str) -> JSONResponse:
         payload["openvino_unsupported"] = {
             d: GPU_REASON for d in ["AUTO", *payload["openvino_devices"]] if d == "AUTO" or d.startswith("GPU")
         }
+    if demo_id in ("live-translation", "meeting-notes"):
+        # What the "Spoken language" menu offers after "Detect automatically".
+        payload["spoken_languages"] = [{"code": code, "name": name} for code, name in SPOKEN_LANGUAGES.items()]
     for kind in demo.devices:
         payload[kind] = _DEVICE_SOURCES[kind]()
     if demo.samples:
@@ -493,6 +497,7 @@ class LiveTranslationStartRequest(BaseModel):
     engine: str | None = None
     model_size: str | None = None
     compute_device: str | None = None
+    language: str | None = None  # the language being spoken; nothing or "auto" = detect it
 
 
 @app.post("/api/live-translation/start")
@@ -507,6 +512,7 @@ async def start_live_translation(req: LiveTranslationStartRequest) -> JSONRespon
             engine=engine,
             model_size=req.model_size or _WHISPER_SIZE_DEFAULTS[engine],
             compute_device=device,
+            language=spoken_language(req.language),
         )
     except Exception as exc:
         return error_response(exc)
@@ -827,6 +833,7 @@ class MeetingNotesStartRequest(BaseModel):
     engine: str | None = None
     compute_device: str | None = None
     whisper_model: str | None = None
+    language: str | None = None  # the language being spoken; nothing or "auto" = detect it
 
 
 @app.post("/api/meeting-notes/start")
@@ -841,6 +848,7 @@ async def start_meeting_notes(req: MeetingNotesStartRequest) -> JSONResponse:
             engine=engine,
             compute_device=device,
             whisper_model_size=req.whisper_model or _WHISPER_SIZE_DEFAULTS[engine],
+            spoken_language=spoken_language(req.language),
         )
     except Exception as exc:
         return error_response(exc)

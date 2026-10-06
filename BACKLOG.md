@@ -152,6 +152,17 @@ a new one or the deferred list, and moves its original wording to
   if it was the NPU, this is two models on the NPU at once. Worth
   reproducing before a scenario or an Auto Demo scene puts two NPU
   workloads side by side (R21, C1). (filed 2026-10-05, events.log)
+  **2026-10-06:** it took the launcher down a second time (11:14), and both
+  times the process died inside the NPU driver 20-30 s after the loss, on
+  the retry. Reproduced outside the launcher and handled in v0.2.63
+  (`pantherlake_ai_core.npu`): bricks take turns on the NPU, and after a
+  loss nothing touches it again -- speech and language models carry on on
+  the GPU. The cause is upstream (openvinotoolkit/openvino#38403, NPU
+  driver 32.0.100.5540). Left open: turn-taking kept the NPU in four runs
+  of the scenario that lost it in two of three without, which is an
+  indication, not proof; the detector, segmenter, embedder and voice models
+  stop with a clear message on a loss rather than move; retest on the next
+  NPU driver.
 - [ ] **Day-first dates on receipts are read month-first, whichever model
   structures them.** In the model trial, the two French scanned receipts
   dated `12/09/2026` came back as 2026-12-09 from every model that
@@ -161,6 +172,21 @@ a new one or the deferred list, and moves its original wording to
   prompt says nothing about date order, and a date that is valid both ways
   is not flagged for review the way an ambiguous amount is. (filed
   2026-10-05, model trial)
+- [ ] **Live translation during a call: what is still not handled.** Fixed
+  on 2026-10-06 after a demo given in a Teams meeting: the segmenter took
+  its noise floor from the first 0.6 s, so a presenter talking while
+  pressing Start was heard badly or not at all (now measured continuously);
+  and a spoken language can be chosen instead of detected. Not done:
+  (1) with the laptop's own speakers and microphone, the other
+  participants' voices reach the microphone and are transcribed as if the
+  presenter said them, in whatever language they speak -- needs the
+  speaker output as a reference to gate or cancel, or a headset;
+  (2) what a call does to this microphone (Cirrus Logic array: gain, noise
+  suppression in communications mode) has not been measured -- record what
+  the segmenter receives during a Teams test call and compare;
+  (3) checked only on synthesised English speech: no recorded speech in
+  another language is on this machine.
+  (filed 2026-10-06, user report)
 
 ## What we are showing
 

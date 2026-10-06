@@ -100,6 +100,12 @@
               <option value="large-v3">large-v3</option>
             </select>
           </label>
+          <label class="field">
+            <span>Spoken language</span>
+            <select id="lt-language" title="Tell the model which language is being spoken, or let it work that out for each sentence. Detection can slip on short phrases; a fixed language cannot.">
+              <option value="auto">Detect automatically</option>
+            </select>
+          </label>
         </div>
         <div class="run-row">
           <button id="lt-start" class="btn btn-primary" type="button">Start</button>
@@ -306,6 +312,12 @@
           <label class="field">
             <span>Compute device</span>
             <select id="mtg-compute-device"></select>
+          </label>
+          <label class="field">
+            <span>Spoken language</span>
+            <select id="mtg-language" title="Tell the model which language is being spoken, or let it work that out for each sentence. Detection can slip on short phrases; a fixed language cannot.">
+              <option value="auto">Detect automatically</option>
+            </select>
           </label>
         </div>
         <div class="run-row">

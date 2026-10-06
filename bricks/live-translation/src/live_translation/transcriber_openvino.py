@@ -69,10 +69,14 @@ class OpenVINOTranslator:
         model_dir: str | None = None,
         task: str = "translate",
         on_downloading: Callable[[], None] | None = None,
+        language: str | None = None,
     ):
         self._pipeline_cls = _load_pipeline_class()
         self._model_dir = _resolve_model_dir(model_size, model_dir, on_downloading)
         self.task = task
+        # A fixed spoken language (a code from languages.SPOKEN_LANGUAGES), or
+        # None to let the model detect it utterance by utterance.
+        self.language = language
         if npu.is_npu(device) and npu.lost():
             device = npu.fallback_device()  # the NPU went earlier in this session (see core's npu module)
         self._load(device)
@@ -86,9 +90,12 @@ class OpenVINOTranslator:
 
     def translate(self, audio: np.ndarray) -> TranslationResult | None:
         samples = audio.tolist()
+        options = {"task": self.task}
+        if self.language:
+            options["language"] = f"<|{self.language}|>"  # the model's own token for it
         try:
             with npu.guard(self.device):
-                result = self.pipeline.generate(samples, task=self.task)
+                result = self.pipeline.generate(samples, **options)
         except npu.NpuLost:
             # Windows reset the NPU under this utterance. Asking it again is
             # what ends the whole process (2026-10-05 and -06: the launcher
@@ -97,7 +104,7 @@ class OpenVINOTranslator:
             # is done again on another chip, where the session carries on.
             npu.retire(self.pipeline)
             self._load(npu.fallback_device())
-            result = self.pipeline.generate(samples, task=self.task)
+            result = self.pipeline.generate(samples, **options)
         text = str(result).strip()
         if not text:
             return None

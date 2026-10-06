@@ -24,6 +24,11 @@ Either way, Whisper's `translate` task automatically detects the spoken
 language and translates it straight to English, so this works for speech in
 essentially any language Whisper supports.
 
+Detection is done afresh for every utterance, from that utterance alone, and
+it can slip on a short phrase -- the smaller the model, the more often. If you
+know what will be spoken, say so: **Spoken language** in the launcher, or
+`--language fr` here. The model is then told instead of guessing.
+
 ## Setup
 
 From the workspace root (`local_demo/`):
@@ -82,6 +87,7 @@ Press `Ctrl+C` to stop.
 | `--model NAME` | Model size: `tiny`, `base`, `small`, `medium`, `large-v3`. Default depends on `--engine` (`small` for portable, `base` for openvino). |
 | `--compute-device NAME` | Device to run on. For `portable`: `cpu`, `cuda`, `auto`. For `openvino`: `AUTO`, `CPU`, `GPU`, `NPU`. Default: `cpu` for portable, `AUTO` for openvino. |
 | `--compute-type NAME` | `portable` engine only — faster-whisper compute type (`int8`, `float16`, `float32`, ...). Default: `auto`. |
+| `--language CODE` | The language being spoken (`fr`, `de`, `es`, ... -- see `languages.py`). Default: detected for each utterance. |
 | `--model-path PATH` | `openvino` engine only — use a model you converted yourself instead of Intel's default pre-converted one (the older `--ov-model-dir` spelling still works). |
 | `--output FILE` | Also append each translated line to a text file. |
 | `--list-devices` | List available microphones, output devices, and inference devices, then exit. |

@@ -8,6 +8,7 @@ import sys
 from pantherlake_ai_core import engine as engine_mod
 
 from . import pipeline
+from .languages import spoken_language
 
 # Whisper size per engine: faster-whisper is comfortable with "small" on
 # CPU; "base" is the largest multilingual size Intel pre-converts for
@@ -63,6 +64,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     # The flag's old name, still accepted for existing scripts but not advertised.
     p.add_argument("--ov-model-dir", dest="model_path", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    p.add_argument(
+        "--language", default=None,
+        help="The language being spoken, as a code (fr, de, es, ...). Default: detected for each utterance.",
+    )
     p.add_argument("--output", default=None, help="Also append translated lines to this text file.")
     p.add_argument(
         "--list-devices", action="store_true",
@@ -110,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
             compute_device=compute_device,
             compute_type=args.compute_type,
             ov_model_dir=args.model_path,
+            language=spoken_language(args.language),
             on_result=handle_result,
         )
     except KeyboardInterrupt:
