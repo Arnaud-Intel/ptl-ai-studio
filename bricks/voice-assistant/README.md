@@ -147,11 +147,11 @@ not two.
   (or when spoken to directly), this should work as designed.
 - One wake word active at a time -- switching requires restarting the
   session (a new `WakeWordDetector` is constructed at start).
-- The energy-based segmenter recalibrates its noise floor for ~0.6s at the
-  start of every command capture. Pause briefly after the wake word before
-  speaking, the same way you naturally would with any wake-word assistant
-  -- speaking immediately risks the calibration window capturing your
-  voice instead of silence, throwing off the speech-detection threshold.
+- The energy-based segmenter measures the room's noise floor as it goes,
+  from the gaps between words, so a command spoken straight after the wake
+  word is heard (it used to need a pause first: the floor was measured
+  once, over the first 0.6 s). The first word can still lose its opening
+  if there has been no gap at all yet.
 - English only, matching `voice-clone-studio`'s current scope.
 - No barge-in -- you can't interrupt the assistant while it's speaking a
   reply; the next wake word is only heard after playback finishes.

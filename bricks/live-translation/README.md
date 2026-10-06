@@ -121,8 +121,11 @@ uv run live-translate --engine openvino --model-path ./whisper-small-ov
 
 ## Tuning for your setup
 
-- If speech gets cut off or missed, the auto-calibrated silence threshold may
-  not suit your room/device — adjust `VADConfig` in
+- Speech is told from the room by level: anything well above the noise floor,
+  which is measured continuously from the quietest moments of the last ten
+  seconds. You can be talking when you press Start, and a microphone whose
+  level moves during a call is followed. If speech still gets cut off or
+  missed on your room/device — adjust `VADConfig` in
   [`pantherlake_ai_core.segmenter`](../../core/src/pantherlake_ai_core/segmenter.py)
   (e.g. `threshold_multiplier`, `silence_hangover`).
 - If translations lag behind live audio, drop to a smaller `--model` (`tiny`

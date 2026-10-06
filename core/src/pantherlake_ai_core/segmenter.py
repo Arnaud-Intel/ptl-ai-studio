@@ -15,7 +15,10 @@ import numpy as np
 @dataclass
 class VADConfig:
     block_duration: float = 0.03
-    calibration_seconds: float = 0.6
+    # How far back the noise floor looks, and which of those blocks it takes
+    # for "the room with nobody talking" (see segment_stream).
+    floor_window: float = 10.0
+    floor_percentile: float = 5.0
     threshold_multiplier: float = 3.5
     min_threshold: float = 0.004
     min_speech_duration: float = 0.35
@@ -34,19 +37,30 @@ def segment_stream(blocks, config: VADConfig | None = None):
     """Consume an iterator of mono float32 blocks; yield complete speech
     segments as concatenated float32 numpy arrays.
 
-    The first `calibration_seconds` of audio are used to estimate the
-    ambient noise floor and set a speech-detection threshold from it.
+    Speech is whatever is `threshold_multiplier` times louder than the
+    room, and the room is measured all the time: the noise floor is a low
+    percentile of the last `floor_window` seconds of block levels, so it
+    sits in the gaps between words whoever is talking.
+
+    It used to be measured once, over the first 0.6 s after Start, and kept
+    for the session. That works for someone who presses Start and then
+    speaks. Someone presenting is already speaking: the floor was taken
+    from their voice, the threshold landed above it, and the session heard
+    little or nothing -- on a simulated microphone, not one segment out of
+    39 s of speech (2026-10-06, live translation restarted four times in
+    ninety seconds during a demo). A floor that follows the room also
+    survives what a call does to a microphone: a gain that moves, a fan
+    that starts.
     """
     config = config or VADConfig()  # a fresh default per call, not one shared mutable instance
     pre_roll_blocks = max(1, int(config.pre_roll / config.block_duration))
     hangover_blocks = max(1, int(config.silence_hangover / config.block_duration))
     min_speech_blocks = max(1, int(config.min_speech_duration / config.block_duration))
     max_speech_blocks = max(1, int(config.max_speech_duration / config.block_duration))
-    calib_blocks = max(1, int(config.calibration_seconds / config.block_duration))
+    floor_blocks = max(1, int(config.floor_window / config.block_duration))
 
     pre_roll: deque[np.ndarray] = deque(maxlen=pre_roll_blocks)
-    calibration: list[float] = []
-    threshold = config.min_threshold
+    recent_levels: deque[float] = deque(maxlen=floor_blocks)
 
     in_speech = False
     speech_blocks: list[np.ndarray] = []
@@ -54,14 +68,9 @@ def segment_stream(blocks, config: VADConfig | None = None):
 
     for block in blocks:
         level = _rms(block)
-
-        if len(calibration) < calib_blocks:
-            calibration.append(level)
-            pre_roll.append(block)
-            if len(calibration) == calib_blocks:
-                noise_floor = float(np.median(calibration))
-                threshold = max(config.min_threshold, noise_floor * config.threshold_multiplier)
-            continue
+        recent_levels.append(level)
+        noise_floor = float(np.percentile(recent_levels, config.floor_percentile))
+        threshold = max(config.min_threshold, noise_floor * config.threshold_multiplier)
 
         is_loud = level > threshold
 
