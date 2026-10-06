@@ -74,6 +74,14 @@ class LiveTranslationRunner:
                 _DEMO_ID, "loading", f"An utterance failed on {compute_device}; reloading the model and retrying ({cause})"
             )
 
+        def on_device(device: str) -> None:
+            # The model moved mid-session (the NPU was reset under it): the
+            # hardware panel has to show the chip doing the work now.
+            activity.set_active(_DEMO_ID, engine=engine.value, device=device)
+            events.set_phase(
+                _DEMO_ID, "running", f"{compute_device} stopped responding and was taken out of use; carrying on on {device}."
+            )
+
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
             events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine.value}, device={compute_device})...")
@@ -88,6 +96,7 @@ class LiveTranslationRunner:
                     on_ready=on_ready,
                     on_downloading=on_downloading,
                     on_recovering=on_recovering,
+                    on_device=on_device,
                     stop_event=stop_event,
                 )
             except Exception as exc:  # surfaced to the UI, not silently dropped

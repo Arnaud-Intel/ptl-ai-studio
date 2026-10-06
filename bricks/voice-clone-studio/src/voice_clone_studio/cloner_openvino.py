@@ -1,5 +1,6 @@
 import torch
 from openvino import Core
+from pantherlake_ai_core import npu
 from pantherlake_ai_core.engine import ov_config_for
 
 from . import voice_model
@@ -34,11 +35,14 @@ class OpenVINOCloner:
         ov_conv = self._convert_or_load(core, conv_ir_path, voice_model.OVWrapConverter(self.converter))
 
         config = ov_config_for(device)
-        compiled_tts = core.compile_model(ov_tts, device, config)
-        compiled_conv = core.compile_model(ov_conv, device, config)
+        # npu.guard: on the NPU, one brick's request at a time, and none at
+        # all once Windows has reset the chip (see core's npu module).
+        with npu.guard(device):
+            compiled_tts = core.compile_model(ov_tts, device, config)
+            compiled_conv = core.compile_model(ov_conv, device, config)
 
-        self.tts.model.infer = self._patched_infer(compiled_tts)
-        self.converter.model.voice_conversion = self._patched_voice_conversion(compiled_conv)
+        self.tts.model.infer = self._patched_infer(compiled_tts, device)
+        self.converter.model.voice_conversion = self._patched_voice_conversion(compiled_conv, device)
 
     @staticmethod
     def _convert_or_load(core, ir_path, wrapped_model):
@@ -51,16 +55,18 @@ class OpenVINOCloner:
         return converted
 
     @staticmethod
-    def _patched_infer(compiled_model):
+    def _patched_infer(compiled_model, device):
         def infer(x, x_lengths, sid, noise_scale, length_scale, noise_scale_w):
-            output = compiled_model((x, x_lengths, sid, noise_scale, length_scale, noise_scale_w))
+            with npu.guard(device):
+                output = compiled_model((x, x_lengths, sid, noise_scale, length_scale, noise_scale_w))
             return (torch.tensor(output[0]),)
         return infer
 
     @staticmethod
-    def _patched_voice_conversion(compiled_model):
+    def _patched_voice_conversion(compiled_model, device):
         def voice_conversion(y, y_lengths, sid_src, sid_tgt, tau):
-            output = compiled_model((y, y_lengths, sid_src, sid_tgt, tau))
+            with npu.guard(device):
+                output = compiled_model((y, y_lengths, sid_src, sid_tgt, tau))
             return (torch.tensor(output[0]),)
         return voice_conversion
 

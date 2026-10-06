@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Callable
 
 import numpy as np
+from pantherlake_ai_core import npu
 from pantherlake_ai_core.engine import ov_config_for
 from pantherlake_ai_core.model_cache import resolve_snapshot
 from pantherlake_ai_core.types import TranslationResult
@@ -69,13 +70,34 @@ class OpenVINOTranslator:
         task: str = "translate",
         on_downloading: Callable[[], None] | None = None,
     ):
-        pipeline_cls = _load_pipeline_class()
-        resolved_dir = _resolve_model_dir(model_size, model_dir, on_downloading)
-        self.pipeline = pipeline_cls(resolved_dir, device, **ov_config_for(device))
+        self._pipeline_cls = _load_pipeline_class()
+        self._model_dir = _resolve_model_dir(model_size, model_dir, on_downloading)
         self.task = task
+        if npu.is_npu(device) and npu.lost():
+            device = npu.fallback_device()  # the NPU went earlier in this session (see core's npu module)
+        self._load(device)
+
+    def _load(self, device: str) -> None:
+        with npu.guard(device):
+            self.pipeline = self._pipeline_cls(self._model_dir, device, **ov_config_for(device))
+        # The chip this model is on now, which is not always the one asked
+        # for: a caller reporting where the work happens reads it from here.
+        self.device = device
 
     def translate(self, audio: np.ndarray) -> TranslationResult | None:
-        result = self.pipeline.generate(audio.tolist(), task=self.task)
+        samples = audio.tolist()
+        try:
+            with npu.guard(self.device):
+                result = self.pipeline.generate(samples, task=self.task)
+        except npu.NpuLost:
+            # Windows reset the NPU under this utterance. Asking it again is
+            # what ends the whole process (2026-10-05 and -06: the launcher
+            # died in the NPU driver 20-30 s after a reload and retry), so
+            # the lost model is set aside, never released, and the utterance
+            # is done again on another chip, where the session carries on.
+            npu.retire(self.pipeline)
+            self._load(npu.fallback_device())
+            result = self.pipeline.generate(samples, task=self.task)
         text = str(result).strip()
         if not text:
             return None

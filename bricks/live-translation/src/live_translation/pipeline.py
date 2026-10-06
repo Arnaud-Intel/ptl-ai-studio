@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Callable
 
-from pantherlake_ai_core import audio
+from pantherlake_ai_core import audio, npu
 from pantherlake_ai_core.engine import Engine
 from pantherlake_ai_core.segmenter import VADConfig, segment_stream
 from pantherlake_ai_core.types import TranslationResult
@@ -28,6 +28,7 @@ def run(
     on_ready: Callable[[], None] | None = None,
     on_downloading: Callable[[], None] | None = None,
     on_recovering: Callable[[Exception], None] | None = None,
+    on_device: Callable[[str], None] | None = None,
     stop_event: threading.Event | None = None,
 ) -> None:
     """Blocks the calling thread, calling `on_result` for each translated
@@ -41,7 +42,10 @@ def run(
     model from the network rather than just reading it off local disk.
     `on_recovering(exc)`, if given, fires when an utterance fails to
     translate and the model is being reloaded to retry it; `on_ready`
-    fires again once it's back.
+    fires again once it's back. `on_device(device)`, if given, fires when
+    the model has had to move to another chip mid-session -- the NPU can be
+    reset under a running model (see core's `npu` module), and the session
+    carries on elsewhere rather than end.
     """
 
     def load():
@@ -55,6 +59,9 @@ def run(
         )
 
     translator = load()
+    device_in_use = getattr(translator, "device", compute_device)
+    if on_device is not None and device_in_use != compute_device:
+        on_device(device_in_use)
     if on_ready is not None:
         on_ready()
     blocks = audio.stream_blocks(source, audio_device, stop_event=stop_event)
@@ -62,6 +69,10 @@ def run(
         started = time.perf_counter()
         try:
             result = translator.translate(segment)
+        except npu.NpuLost:
+            # The model could not carry on elsewhere either. Reloading is
+            # the one thing not to do on a lost NPU.
+            raise
         except RuntimeError as exc:
             # Seen once on the NPU (2026-09-11, 42s into a session): the
             # driver rejected a single request -- Level Zero
@@ -77,6 +88,11 @@ def run(
             result = translator.translate(segment)
             if on_ready is not None:
                 on_ready()
+        now_on = getattr(translator, "device", device_in_use)
+        if now_on != device_in_use:
+            device_in_use = now_on
+            if on_device is not None:
+                on_device(now_on)
         if result is not None:
             result.audio_seconds = len(segment) / audio.SAMPLE_RATE
             result.processing_seconds = time.perf_counter() - started

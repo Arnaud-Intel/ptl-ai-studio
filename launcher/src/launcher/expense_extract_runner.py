@@ -88,6 +88,14 @@ class ExpenseExtractRunner:
             item = self.reports.add(report_id, line)
             emit({"type": "structured", "line": item, "report_id": report_id})
 
+        def on_llm_device(device: str) -> None:
+            # The structuring model moved (the NPU was reset under it): the
+            # hardware panel has to show the chip doing the work now.
+            activity.set_active(_DEMO_ID, engine=llm_engine.value, device=device, stage="llm", stage_label="Structuring")
+            events.set_phase(
+                _DEMO_ID, "running", f"{llm_device} stopped responding and was taken out of use; structuring on {device}.", stage="llm"
+            )
+
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=ocr_engine.value, device=ocr_device, stage="ocr", stage_label="OCR")
             activity.set_active(_DEMO_ID, engine=llm_engine.value, device=llm_device, stage="llm", stage_label="Structuring")
@@ -102,6 +110,7 @@ class ExpenseExtractRunner:
                     llm_device=llm_device,
                     on_ocr_start=on_ocr_start,
                     on_structured=on_structured,
+                    on_llm_device=on_llm_device,
                     stop_event=stop_event,
                 )
                 ok = [r for r in results if r.error is None]

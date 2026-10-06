@@ -395,6 +395,8 @@ body {
 
 .chip-empty { margin: 8px 0 0; font-size: 11px; color: var(--text-faint); }
 .chip-bricks:not(:empty) + .chip-empty { display: none; }
+/* The NPU after Windows has reset it: the note is the news, so it stays visible. */
+.chip-section.lost .chip-empty { display: block; color: var(--warning); line-height: 1.45; }
 
 .chip-panel-message { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--warning); }
 .chip-panel-message:empty { display: none; }

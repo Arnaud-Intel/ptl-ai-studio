@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 from typing import Callable
 
+from pantherlake_ai_core import npu
 from pantherlake_ai_core.engine import ov_config_for
 from pantherlake_ai_core.model_cache import resolve_snapshot
 from pantherlake_ai_core.types import GenerationControl, GenerationStats, openvino_streamer
@@ -67,13 +68,27 @@ class OpenVINOLLM:
         import openvino_genai as ov_genai
 
         self._ov_genai = ov_genai
-        resolved_dir = resolve_snapshot(model_repo or _DEFAULT_REPO, local_dir=model_dir, on_downloading=on_downloading)
-        self.pipeline = ov_genai.LLMPipeline(resolved_dir, device, **pipeline_config(device))
-        self._tokenizer = self.pipeline.get_tokenizer()
-        self._on_npu = device.upper().startswith("NPU")
-        self._context = _context_length(resolved_dir)
-        self.device = device
+        self._model_dir = resolve_snapshot(model_repo or _DEFAULT_REPO, local_dir=model_dir, on_downloading=on_downloading)
+        self._context = _context_length(self._model_dir)
+        if npu.is_npu(device) and npu.lost():
+            device = npu.fallback_device()  # the NPU went earlier in this session (see core's npu module)
+        self._load(device)
         self.last_stats: GenerationStats | None = None
+
+    def _load(self, device: str) -> None:
+        with npu.guard(device):
+            self.pipeline = self._ov_genai.LLMPipeline(self._model_dir, device, **pipeline_config(device))
+        self._tokenizer = self.pipeline.get_tokenizer()
+        self._on_npu = npu.is_npu(device)
+        # The chip this model is on now, which is not always the one asked
+        # for: a caller reporting where the work happens reads it from here.
+        self.device = device
+
+    def _leave_npu(self) -> None:
+        """The NPU was lost under this model: put what lived on it out of
+        the garbage collector's reach and carry on on another chip."""
+        npu.retire(self.pipeline, self._tokenizer)
+        self._load(npu.fallback_device())
 
     def count_tokens(self, text: str) -> int:
         return int(self._tokenizer.encode(text).input_ids.shape[-1])
@@ -107,12 +122,30 @@ class OpenVINOLLM:
                 {"role": "user", "content": user_prompt},
             ]
         )
-        streaming, was_cancelled = {}, lambda: False
-        if control is not None:
-            streaming["streamer"], was_cancelled = openvino_streamer(control, self._ov_genai, self._tokenizer)
         # The model's own settings draw each token at random among the likely
         # ones; 0.2 keeps that draw close to the first choice.
         choice = {"temperature": 0.2} if sample else {"do_sample": False}
-        result = self.pipeline.generate(history, max_new_tokens=max_tokens, **choice, **streaming)
-        self.last_stats = GenerationStats.from_openvino(result, self.device, cancelled=was_cancelled())
+
+        def generate():
+            streaming, was_cancelled = {}, lambda: False
+            if control is not None or self._on_npu:
+                # On the NPU a streamer is there even with nobody listening:
+                # it is where a long answer lets another brick's request in
+                # between two tokens instead of keeping the chip to itself.
+                streaming["streamer"], was_cancelled = openvino_streamer(
+                    control or GenerationControl(), self._ov_genai, self._tokenizer,
+                    on_token=npu.breathe if self._on_npu else None,
+                )
+            with npu.guard(self.device):
+                result = self.pipeline.generate(history, max_new_tokens=max_tokens, **choice, **streaming)
+            return result, was_cancelled()
+
+        try:
+            result, cancelled = generate()
+        except npu.NpuLost:
+            # Windows reset the NPU mid-answer. Asking it again is what ends
+            # the whole process, so the answer starts over on another chip.
+            self._leave_npu()
+            result, cancelled = generate()
+        self.last_stats = GenerationStats.from_openvino(result, self.device, cancelled=cancelled)
         return result.texts[0].strip()

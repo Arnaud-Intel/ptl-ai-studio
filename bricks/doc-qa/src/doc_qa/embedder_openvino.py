@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from pantherlake_ai_core import npu
 from pantherlake_ai_core.engine import ov_config_for
 from pantherlake_ai_core.model_cache import resolve_snapshot
 
@@ -20,10 +21,16 @@ class OpenVINOEmbedder:
         import openvino_genai as ov_genai
 
         resolved_dir = resolve_snapshot(_DEFAULT_REPO, local_dir=model_dir, on_downloading=on_downloading)
-        self.pipeline = ov_genai.TextEmbeddingPipeline(resolved_dir, device, **ov_config_for(device))
+        self.device = device
+        # npu.guard: on the NPU, one brick's request at a time, and none at
+        # all once Windows has reset the chip (see core's npu module).
+        with npu.guard(device):
+            self.pipeline = ov_genai.TextEmbeddingPipeline(resolved_dir, device, **ov_config_for(device))
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return self.pipeline.embed_documents(list(texts))
+        with npu.guard(self.device):
+            return self.pipeline.embed_documents(list(texts))
 
     def embed_query(self, text: str) -> list[float]:
-        return self.pipeline.embed_query(text)
+        with npu.guard(self.device):
+            return self.pipeline.embed_query(text)

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 import numpy as np
+from pantherlake_ai_core import npu
 
 from .types import Detection
 
@@ -72,17 +73,22 @@ class OpenVINODetector:
         # this model that means the NPU's compiled-model cache and, very
         # deliberately, no GPU cache: a cached GPU YOLO11n returns one
         # garbage box instead of a scene full of them (see ov_config_for).
-        adapter = OpenvinoAdapter(
-            core=create_core(),
-            model=str(model_path),
-            device=device,
-            plugin_config={**get_user_config(device, "1", None), **ov_config_for(device)},
-        )
-        self.model = Model.create_model(adapter)
+        self.device = device
+        # npu.guard: on the NPU, one brick's request at a time, and none at
+        # all once Windows has reset the chip (see core's npu module).
+        with npu.guard(device):
+            adapter = OpenvinoAdapter(
+                core=create_core(),
+                model=str(model_path),
+                device=device,
+                plugin_config={**get_user_config(device, "1", None), **ov_config_for(device)},
+            )
+            self.model = Model.create_model(adapter)
         self.confidence_threshold = confidence_threshold
 
     def detect(self, frame: np.ndarray) -> list[Detection]:
-        result = self.model(frame)
+        with npu.guard(self.device):
+            result = self.model(frame)
         detections = []
         for box, score, name in zip(result.bboxes, result.scores, result.label_names):
             if score < self.confidence_threshold:

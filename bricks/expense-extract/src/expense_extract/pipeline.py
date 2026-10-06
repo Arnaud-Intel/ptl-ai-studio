@@ -114,12 +114,18 @@ def run(
     llm_device: str,
     on_ocr_start: Callable[[Path, int, int], None] = lambda path, index, total: None,
     on_structured: Callable[[ExpenseLine], None] = lambda line: None,
+    on_llm_device: Callable[[str], None] = lambda device: None,
     stop_event: threading.Event | None = None,
 ) -> list[ExpenseLine]:
     """Blocks the calling thread until every image is processed (or
     `stop_event` is set). Returns the collected results in completion
     order (which, because the two stages run concurrently, is not
-    necessarily the same order the images were listed in)."""
+    necessarily the same order the images were listed in).
+
+    `on_llm_device(device)` fires if the structuring model ends up on a
+    chip other than `llm_device`: the NPU can be reset under a running
+    model, and the model then carries on elsewhere (see core's `npu`
+    module) rather than fail every receipt that is left."""
     images = list_receipt_images(folder)
     if not images:
         raise ValueError(f"No receipt images found under {folder} ({', '.join(sorted(SUPPORTED_SUFFIXES))})")
@@ -127,6 +133,15 @@ def run(
     ocr_session = OcrSession(ocr_engine, device=ocr_device)
     llm = create_llm(llm_engine, device=llm_device)
 
+    llm_on = [llm_device]
+
+    def report_llm_device() -> None:
+        now_on = getattr(llm, "device", llm_on[0])
+        if now_on != llm_on[0]:
+            llm_on[0] = now_on
+            on_llm_device(now_on)
+
+    report_llm_device()  # already elsewhere if the NPU was lost before this batch
     handoff: queue.Queue = queue.Queue(maxsize=_QUEUE_SIZE)
     results: list[ExpenseLine] = []
     results_lock = threading.Lock()
@@ -178,6 +193,7 @@ def run(
                     source_file=source_name, vendor="", date="", amount=None, category="Other",
                     raw_text=text, error=f"Structuring failed: {exc}",
                 )
+            report_llm_device()
             with results_lock:
                 results.append(line)
             on_structured(line)

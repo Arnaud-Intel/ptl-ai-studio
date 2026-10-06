@@ -2459,9 +2459,26 @@ function renderTelemetry(data) {
     node.classList.toggle("unavailable", !known);
     if (load.name) node.querySelector(".chip-name").textContent = load.name.replace(/Intel\(R\)\s*/g, "");
   }
+  renderNpuLost(data.npu_lost);
   renderPower(data.power);
   renderDeviceSummary(data);
   renderChipBricks();
+}
+
+// Windows can reset the NPU under a running model. From then on the app keeps
+// off it until it is restarted (pantherlake_ai_core.npu), and its section says
+// so in place of "Nothing running".
+function renderNpuLost(lost) {
+  const node = chipNode("NPU");
+  if (!node) return;
+  node.classList.toggle("lost", Boolean(lost));
+  let text = "Nothing running";
+  if (lost) {
+    const when = lost.at ? new Date(lost.at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+    text = `Reset by Windows${when ? ` at ${when}` : ""}: out of use until the app is restarted. Demos set to the NPU run on ${deviceLabel(lost.moved_to)}.`;
+  }
+  const empty = node.querySelector(".chip-empty");
+  if (empty.textContent !== text) empty.textContent = text;
 }
 
 // One row per running stage (a brick with two stages on two chips appears

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 import torch
+from pantherlake_ai_core import npu
 from pantherlake_ai_core.engine import ov_config_for
 from pantherlake_ai_core.model_cache import is_file_cached, resolve_file
 
@@ -93,10 +94,14 @@ def accelerate_tts_with_openvino(tts: BaseSpeakerTTS, device: str = "CPU") -> No
         ov_model = ov.convert_model(wrapped, example_input=wrapped.get_example_input())
         ov.save_model(ov_model, ir_path)
 
-    compiled = core.compile_model(ov_model, device, ov_config_for(device))
+    # npu.guard: on the NPU, one brick's request at a time, and none at all
+    # once Windows has reset the chip (see core's npu module).
+    with npu.guard(device):
+        compiled = core.compile_model(ov_model, device, ov_config_for(device))
 
     def infer(x, x_lengths, sid, noise_scale, length_scale, noise_scale_w):
-        output = compiled((x, x_lengths, sid, noise_scale, length_scale, noise_scale_w))
+        with npu.guard(device):
+            output = compiled((x, x_lengths, sid, noise_scale, length_scale, noise_scale_w))
         return (torch.tensor(output[0]),)
 
     tts.model.infer = infer

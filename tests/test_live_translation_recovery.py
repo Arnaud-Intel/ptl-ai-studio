@@ -63,3 +63,72 @@ def test_a_failure_the_reload_does_not_fix_still_surfaces(monkeypatch):
 def test_a_healthy_session_never_reloads(monkeypatch):
     loads, results, recovering, _ = _run(monkeypatch, [])
     assert loads == ["NPU"] and not recovering and len(results) == 3
+
+
+# --- the NPU reset under a running session (pantherlake_ai_core.npu) ---------------------
+
+
+class _MovingTranslator:
+    """Leaves the NPU on its second utterance, the way OpenVINOTranslator
+    does when Windows resets the chip under it."""
+
+    def __init__(self) -> None:
+        self.device = "NPU"
+        self.calls = 0
+
+    def translate(self, segment: str) -> TranslationResult:
+        self.calls += 1
+        if self.calls == 2:
+            self.device = "GPU.0"
+        return TranslationResult(text=f"heard {segment}", detected_language="fr", language_probability=1.0)
+
+
+def _run_with(monkeypatch, translator, **callbacks):
+    loads: list[str] = []
+
+    def fake_create_translator(**kwargs):
+        loads.append(kwargs["device"])
+        return translator
+
+    monkeypatch.setattr(pipeline, "create_translator", fake_create_translator)
+    monkeypatch.setattr(pipeline.audio, "stream_blocks", lambda *args, **kwargs: iter(()))
+    monkeypatch.setattr(pipeline, "segment_stream", lambda blocks, config: iter(["one", "two", "three"]))
+    results: list[TranslationResult] = []
+    pipeline.run(
+        source="mic", audio_device=None, engine=Engine.OPENVINO, model_size="base", compute_device="NPU",
+        on_result=results.append, **callbacks,
+    )
+    return loads, results
+
+
+def test_a_model_that_had_to_leave_the_npu_is_reported_once_and_the_session_carries_on(monkeypatch):
+    moved: list[str] = []
+    recovering: list[Exception] = []
+    loads, results = _run_with(monkeypatch, _MovingTranslator(), on_device=moved.append, on_recovering=recovering.append)
+    assert [r.text for r in results] == ["heard one", "heard two", "heard three"]
+    assert moved == ["GPU.0"]  # the hardware panel follows the model to its new chip
+    assert loads == ["NPU"] and not recovering  # no reload: the model moved itself
+
+
+def test_a_lost_npu_is_never_answered_with_a_reload(monkeypatch):
+    from pantherlake_ai_core import npu
+
+    class _Lost:
+        device = "NPU"
+
+        def translate(self, segment: str):
+            raise npu.NpuLost(npu.LOST_MESSAGE)
+
+    loads: list[str] = []
+    monkeypatch.setattr(pipeline, "create_translator", lambda **kwargs: loads.append(kwargs["device"]) or _Lost())
+    monkeypatch.setattr(pipeline.audio, "stream_blocks", lambda *args, **kwargs: iter(()))
+    monkeypatch.setattr(pipeline, "segment_stream", lambda blocks, config: iter(["one", "two"]))
+    recovering: list[Exception] = []
+    with pytest.raises(npu.NpuLost):
+        pipeline.run(
+            source="mic", audio_device=None, engine=Engine.OPENVINO, model_size="base", compute_device="NPU",
+            on_result=lambda result: None, on_recovering=recovering.append,
+        )
+    # Reloading onto a chip Windows has reset is what took the launcher down
+    # on 2026-10-05 and 2026-10-06: the driver ended the process 20-30 s later.
+    assert loads == ["NPU"] and not recovering

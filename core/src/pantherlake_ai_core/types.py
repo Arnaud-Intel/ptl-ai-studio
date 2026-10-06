@@ -52,11 +52,15 @@ def stopped(control: GenerationControl | None) -> bool:
     return control is not None and control.should_stop is not None and control.should_stop()
 
 
-def openvino_streamer(control: GenerationControl, ov_genai, tokenizer) -> tuple[object, Callable[[], bool]]:
+def openvino_streamer(
+    control: GenerationControl, ov_genai, tokenizer, on_token: Callable[[], None] | None = None
+) -> tuple[object, Callable[[], bool]]:
     """An openvino_genai streamer for `control`, and a way to ask afterwards
     whether it stopped the answer. `ov_genai` is the `openvino_genai` module
     and `tokenizer` the pipeline's, passed in so this module needs no
-    OpenVINO.
+    OpenVINO. `on_token`, if given, is called between every two tokens,
+    while the model is not on the chip -- where a model on the NPU lets
+    another brick take its turn (`npu.breathe`).
 
     It sees every token, and leaves turning them into text to the runtime's
     own `TextStreamer`. A plain callable would be simpler, but the runtime
@@ -88,6 +92,8 @@ def openvino_streamer(control: GenerationControl, ov_genai, tokenizer) -> tuple[
         def write(self, token):  # one token id, or a list of them
             if control.on_tokens is not None:
                 control.on_tokens(len(token) if isinstance(token, (list, tuple)) else 1)
+            if on_token is not None:
+                on_token()
             return self._text.write(token)
 
         def end(self) -> None:

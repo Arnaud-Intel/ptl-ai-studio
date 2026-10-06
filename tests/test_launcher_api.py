@@ -60,6 +60,29 @@ def test_resolve_applies_the_cli_rule(monkeypatch):
     assert launcher_app.resolve("portable", None, large_model=True) == (Engine.PORTABLE, "cpu")
 
 
+def test_a_brick_set_to_a_lost_npu_runs_where_its_models_moved_to(client, monkeypatch):
+    from pantherlake_ai_core import npu
+
+    monkeypatch.setattr(launcher_app, "list_openvino_devices", lambda: FAKE_OPENVINO_DEVICES)
+    monkeypatch.setattr(launcher_app, "resolve_engine", lambda explicit: Engine.OPENVINO)
+    monkeypatch.setattr(npu, "fallback_device", lambda: "GPU.0")
+    npu._reset_for_tests()
+    try:
+        assert launcher_app.resolve("openvino", "NPU") == (Engine.OPENVINO, "NPU")
+        assert client.get("/api/telemetry").json()["npu_lost"] is None
+        with pytest.raises(npu.NpuLost):
+            with npu.guard("NPU"):  # Windows resets the chip under some brick
+                raise RuntimeError("L0 zeFenceHostSynchronize result: ZE_RESULT_ERROR_DEVICE_LOST")
+        # From then on nothing is started on it, whatever the page still has selected...
+        assert launcher_app.resolve("openvino", "NPU") == (Engine.OPENVINO, "GPU.0")
+        assert launcher_app.resolve("openvino", "CPU") == (Engine.OPENVINO, "CPU")
+        # ...and the hardware panel is told, so it can say so under the NPU.
+        lost = client.get("/api/telemetry").json()["npu_lost"]
+        assert lost["moved_to"] == "GPU.0" and lost["at"] > 0
+    finally:
+        npu._reset_for_tests()
+
+
 @pytest.mark.parametrize(
     "exc, status",
     [

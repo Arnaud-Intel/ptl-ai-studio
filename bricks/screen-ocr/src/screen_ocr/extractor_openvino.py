@@ -12,6 +12,7 @@ from typing import Callable
 
 import cv2
 import numpy as np
+from pantherlake_ai_core import npu
 from pantherlake_ai_core.engine import ov_config_for
 from pantherlake_ai_core.model_cache import resolve_snapshot
 from pantherlake_ai_core.types import GenerationControl, GenerationStats, openvino_streamer
@@ -70,7 +71,10 @@ class OpenVINOExtractor:
         # The device actually used, which a caller can read back to report
         # honestly (the launcher labels its telemetry gauge from it).
         self.device = resolve_device(device)
-        self.pipeline = ov_genai.VLMPipeline(resolved_dir, self.device, **ov_config_for(self.device))
+        # npu.guard: on the NPU, one brick's request at a time, and none at
+        # all once Windows has reset the chip (see core's npu module).
+        with npu.guard(self.device):
+            self.pipeline = ov_genai.VLMPipeline(resolved_dir, self.device, **ov_config_for(self.device))
 
     def extract(
         self, image: np.ndarray, translate: bool = False, control: GenerationControl | None = None
@@ -86,7 +90,8 @@ class OpenVINOExtractor:
             import openvino_genai as ov_genai
 
             streaming["streamer"], was_cancelled = openvino_streamer(control, ov_genai, self.pipeline.get_tokenizer())
-        result = self.pipeline.generate(prompt, images=[tensor], max_new_tokens=512, **streaming)
+        with npu.guard(self.device):
+            result = self.pipeline.generate(prompt, images=[tensor], max_new_tokens=512, **streaming)
         text = result.texts[0].strip()
         stats = GenerationStats.from_openvino(result, self.device, cancelled=was_cancelled())
 

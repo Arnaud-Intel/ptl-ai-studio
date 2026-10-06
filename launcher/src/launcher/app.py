@@ -46,7 +46,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pantherlake_ai_core import audio, video
+from pantherlake_ai_core import audio, npu, video
 from pantherlake_ai_core.engine import (
     Engine,
     default_device,
@@ -145,6 +145,12 @@ def resolve(
 
     available = list_openvino_devices()
     asked = (device or "AUTO").upper()
+    if npu.is_npu(asked) and npu.lost():
+        # Windows reset the NPU earlier in this session and it is out of use
+        # until the app restarts (pantherlake_ai_core.npu). A brick still set
+        # to it runs where its models would have moved to; the hardware
+        # panel says so under the NPU.
+        return resolved, npu.fallback_device()
     if asked != "AUTO":
         if not available:
             raise ValueError("No OpenVINO devices are available; choose the portable engine")
@@ -349,6 +355,9 @@ def telemetry_snapshot() -> JSONResponse:
     # For the side panel: each brick's own number, and the bricks that are
     # idle but still holding a model on a chip.
     payload["metrics"] = metrics.snapshot()
+    # Set once Windows has reset the NPU under this process: it stays out of
+    # use until the app restarts, and the panel says where its work went.
+    payload["npu_lost"] = {"at": npu.lost_at(), "moved_to": npu.fallback_device()} if npu.lost() else None
     payload["loaded"] = [
         {"demo_id": demo_id, **held} for demo_id, runner in _UNLOADABLE.items() if (held := loaded.info(runner))
     ]
