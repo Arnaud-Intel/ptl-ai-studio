@@ -83,7 +83,9 @@ class MeetingNotesRunner:
                 asyncio.run_coroutine_threadsafe(queue.put({"type": "line", **asdict(line)}), loop)
 
             def on_ready() -> None:
-                events.set_phase(_DEMO_ID, "running", "Transcribing...")
+                # In English whatever is spoken, as live translation does: saying
+                # "transcribing" read as if the translation had been switched off.
+                events.set_phase(_DEMO_ID, "running", "Listening and writing it down in English...")
 
             def on_downloading() -> None:
                 events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine.value})...")

@@ -62,8 +62,11 @@ def _fetch_silero_vad() -> None:
 
 
 MODELS: tuple[ModelSpec, ...] = (
-    ModelSpec("whisper-base-ov", "Whisper base (speech)", _SPEECH, OPENVINO, "OpenVINO/whisper-base-fp16-ov",
-              note="The launcher's default size on the OpenVINO engine; tiny, medium and large-v3 download on demand."),
+    ModelSpec("whisper-medium-ov", "Whisper medium (speech translation)", ("live-translation", "meeting-notes"), OPENVINO,
+              "OpenVINO/whisper-medium-fp16-ov",
+              note="The default size for translating speech on the OpenVINO engine; the other sizes download on demand."),
+    ModelSpec("whisper-base-ov", "Whisper base (speech)", ("voice-assistant",), OPENVINO, "OpenVINO/whisper-base-fp16-ov",
+              note="What the voice assistant listens with."),
     ModelSpec("whisper-small-portable", "faster-whisper small (speech)", _SPEECH, PORTABLE, "Systran/faster-whisper-small"),
     # Meeting notes are written by a larger model on this engine (below).
     ModelSpec("llm-1.5b-ov", "Qwen2.5 1.5B (text)", tuple(demo for demo in _TEXT if demo != "meeting-notes"), OPENVINO,

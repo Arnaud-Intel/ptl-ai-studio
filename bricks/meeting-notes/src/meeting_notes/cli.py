@@ -9,7 +9,7 @@ from pantherlake_ai_core import engine as engine_mod
 from .session import MeetingSession, default_notes_device
 
 # Whisper size per engine -- see live-translation's CLI for why.
-_WHISPER_SIZE_DEFAULTS = {engine_mod.Engine.PORTABLE: "small", engine_mod.Engine.OPENVINO: "base"}
+_WHISPER_SIZE_DEFAULTS = {engine_mod.Engine.PORTABLE: "small", engine_mod.Engine.OPENVINO: "medium"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,7 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--compute-device", default=None,
-        help="openvino engine only: AUTO, CPU, GPU, or NPU. Default: AUTO (cpu for portable).",
+        help="openvino engine only: AUTO, CPU, GPU, or NPU -- the chip that transcribes. Default: the NPU if "
+             "the machine has one, otherwise the integrated GPU (cpu for portable).",
     )
     p.add_argument(
         "--notes-device", default=None,
@@ -57,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     engine = engine_mod.resolve_engine(args.engine)
-    compute_device = args.compute_device or engine_mod.default_device(engine)
+    compute_device = args.compute_device or engine_mod.default_speech_device(engine)
     whisper_model = args.whisper_model or _WHISPER_SIZE_DEFAULTS[engine]
     notes_device = args.notes_device or default_notes_device(engine, compute_device)
 

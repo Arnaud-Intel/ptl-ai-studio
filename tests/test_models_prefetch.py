@@ -46,6 +46,11 @@ def test_the_openvino_models_the_bricks_name_are_all_listed():
         repo = meeting_notes.notes_model_repo(Engine.OPENVINO, device)
         assert "meeting-notes" in _spec(repo).demos, f"{repo} writes the notes on {device} but isn't listed for the demo"
     assert transcriber_openvino._DEFAULT_REPO_TEMPLATE.format(size="base") in listed
+    # Live translation and meeting notes translate with a larger size by default.
+    from launcher import app as launcher_app
+
+    translation = transcriber_openvino._DEFAULT_REPO_TEMPLATE.format(size=launcher_app._TRANSLATION_SIZE_DEFAULTS[Engine.OPENVINO])
+    assert {"live-translation", "meeting-notes"} <= set(_spec(translation).demos)
     assert llm_openvino._DEFAULT_REPO in listed
     assert embedder_openvino._DEFAULT_REPO in listed
     assert extractor_openvino._DEFAULT_REPO in listed

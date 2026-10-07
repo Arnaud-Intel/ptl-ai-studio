@@ -123,8 +123,10 @@ def studio(quiet_events, monkeypatch):
     _session(live, monkeypatch, _HEARD)
     monkeypatch.setattr(launcher_app, "live_translation_runner", live)
     monkeypatch.setattr(launcher_app, "meeting_notes_runner", meeting)
-    monkeypatch.setattr(launcher_app, "resolve", lambda engine, device, **kwargs: (Engine.OPENVINO, device or "GPU.0"))
+    # The launcher's own choice of chip is under test, on a machine like the XPS 14.
+    monkeypatch.setattr(launcher_app, "resolve_engine", lambda engine: Engine.OPENVINO)
     monkeypatch.setattr(launcher_app, "list_openvino_devices", lambda: ["CPU", "GPU.0", "NPU"])
+    monkeypatch.setattr(launcher_app, "preferred_device", lambda: "GPU.0")
     monkeypatch.setattr(launcher_app.npu, "lost", lambda: None)
     monkeypatch.setattr("meeting_notes.session.create_llm", create_llm)
     return TestClient(launcher_app.app), live, meeting, llm
@@ -202,7 +204,11 @@ def test_a_meeting_of_its_own_transcribes_on_one_chip_and_writes_on_another(stud
 
     assert client.post("/api/meeting-notes/start", json={"compute_device": "GPU.0"}).status_code == 200
     assert client.post("/api/meeting-notes/start", json={"compute_device": "GPU.0", "notes_device": "CPU"}).status_code == 200
-    assert [(call["compute_device"], call["notes_device"]) for call in started] == [("GPU.0", "NPU"), ("GPU.0", "CPU")]
+    assert client.post("/api/meeting-notes/start", json={}).status_code == 200  # nothing chosen: both on the NPU
+    assert [(call["compute_device"], call["notes_device"]) for call in started] == [
+        ("GPU.0", "NPU"), ("GPU.0", "CPU"), ("NPU", "NPU"),
+    ]
+    assert started[-1]["whisper_model_size"] == "medium"  # the size that translates, not the one that gets the gist
 
 
 def test_nothing_heard_is_nothing_to_summarise(studio):

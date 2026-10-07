@@ -198,6 +198,37 @@ def preferred_device() -> str:
     return "CPU"
 
 
+def preferred_npu_device(devices: list[str] | None = None) -> str:
+    """The chip for the work this app keeps on the NPU when nobody chose
+    one -- speech (Whisper) and the meeting-notes model: the NPU if the
+    machine has one in working order, otherwise what preferred_device()
+    gives any brick. `devices` is the machine's OpenVINO devices, when the
+    caller already has the list.
+
+    The one exception to "the NPU is never picked automatically", for models
+    measured there. On the XPS 14's NPU (2026-10-07) Whisper medium
+    translates French 17 times faster than real time, against 22 on the
+    integrated GPU, with the same words coming out; speech is a few tenths
+    of a second of work per utterance, which is what the NPU is for, and it
+    leaves the GPU to whatever else is on screen. An NPU that Windows reset
+    earlier in the session is out of use until the app restarts (see the
+    `npu` module) and is not picked.
+    """
+    from . import npu
+
+    available = list_openvino_devices() if devices is None else devices
+    if not npu.lost() and any(npu.is_npu(device) for device in available):
+        return "NPU"
+    return preferred_device()
+
+
+def default_speech_device(engine: Engine | str) -> str:
+    """Where a speech model goes when the user doesn't say: on OpenVINO the
+    NPU if there is one (preferred_npu_device()), on the portable engine
+    "cpu"."""
+    return preferred_npu_device() if Engine(engine) == Engine.OPENVINO else "cpu"
+
+
 def preferred_realtime_vision_device() -> str:
     """The OpenVINO device to default a *live video* model to: the
     integrated GPU if there is one, otherwise "AUTO".

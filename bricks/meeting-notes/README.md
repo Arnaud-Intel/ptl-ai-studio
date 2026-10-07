@@ -39,9 +39,10 @@ Transcribe the call/video playing on this device, then generate notes on Ctrl+C:
 uv run meeting-notes --source system
 ```
 
-On the OpenVINO engine the notes are written on the NPU when the machine has
-one (see **Which chip writes the notes**). To have a GPU write them instead,
-which gives more complete notes:
+On the OpenVINO engine both the transcription (Whisper medium) and the notes
+go to the NPU when the machine has one (see **Which chip writes the notes**,
+and live-translation's README for the speech measurements). To have a GPU
+write the notes instead, which gives more complete ones:
 
 ```bash
 uv run meeting-notes --source system --engine openvino --notes-device GPU
@@ -56,9 +57,17 @@ demand at any point, not just at the end.
 
 A meeting that [live-translation](../live-translation/README.md) is already
 transcribing in the launcher needs no second transcription. **Summarise in
-Meeting Notes**, in that panel, hands its whole transcript over and the notes
-are written from it here, on the engine and device this panel is set to. It is
-refused while this brick is transcribing a meeting of its own.
+Meeting Notes**, in that panel, opens this one *following* it: the live
+transcript is shown here as it grows, and "Generate notes" summarises all of
+it up to that moment, on the engine and chip this panel is set to.
+
+While following, this panel's own Start, Stop and audio settings are put
+away. They start a second, separate transcription, and next to a copy of the
+live transcript they were taken for a way to restart the live one (they
+listen to system audio by default, so nothing came). "Open Live Speech
+Translation" goes back to where that session is started and stopped; "Stop
+following" brings this brick's own controls back. A summary is refused while
+this brick is transcribing a meeting of its own.
 
 ## Options
 
@@ -67,7 +76,7 @@ refused while this brick is transcribing a meeting of its own.
 | `--source {mic,system}` | Audio source. Default: `system` (the call/video itself, not just your mic). |
 | `--audio-device NAME` | Substring to match a specific microphone/output device name. |
 | `--engine {portable,openvino}` | Backend for *both* transcription and notes generation. Default: `portable`. |
-| `--compute-device NAME` | `openvino` engine only: `AUTO`, `CPU`, `GPU`, `NPU`. The chip that transcribes. |
+| `--compute-device NAME` | `openvino` engine only: `AUTO`, `CPU`, `GPU`, `NPU`. The chip that transcribes. Default: the NPU if the machine has one, otherwise the integrated GPU. |
 | `--notes-device NAME` | `openvino` engine only: the chip that writes the notes. Default: the NPU if the machine has one, otherwise the same as `--compute-device`. |
 | `--whisper-model NAME` | Whisper model size override. |
 | `--list-devices` | List microphones, output devices, and inference devices, then exit. |
@@ -124,9 +133,12 @@ first time ever (it compiles the model for the chip, then keeps the result).
 
 The notes are written on a chip of their own, and left to the app that is
 **the NPU**: writing notes is a few seconds of work now and then, which is
-what the NPU is for, and it leaves the GPU to the transcription. It also
-keeps the speech model and the notes model off the same NPU: two models there
-is the situation in which the NPU driver fault was seen (see BACKLOG).
+what the NPU is for, and it leaves the GPUs to whatever else is on screen.
+The transcription goes to the NPU by default as well, so the two share it,
+taking turns with speech first (measured in live-translation's README). Two
+models on the NPU is also the situation in which the NPU driver fault was
+seen (see BACKLOG): if Windows resets the NPU, both carry on on the
+integrated GPU until the app restarts.
 "Notes written on" in the launcher, `--notes-device` here,
 choose another chip, and in the launcher the choice can change between two
 summaries of the same meeting.

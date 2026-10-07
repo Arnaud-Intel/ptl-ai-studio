@@ -68,10 +68,9 @@ def default_notes_device(engine: Engine, compute_device: str, devices: list[str]
     is the machine's OpenVINO devices, when the caller already has the list.
 
     Writing notes is the kind of work the NPU is there for -- a few seconds
-    now and then, at a fraction of a GPU's power -- and it leaves the GPU to
-    the transcription and to whatever else is on screen. The notes it writes
-    are weaker than a GPU's (see above), which is why the choice stays
-    visible and can be changed."""
+    now and then -- and it leaves the GPUs to whatever else is on screen.
+    The notes it writes are weaker than a GPU's (see above), which is why
+    the choice stays visible and can be changed."""
     if engine != Engine.OPENVINO or npu.lost():
         return compute_device
     available = list_openvino_devices() if devices is None else devices

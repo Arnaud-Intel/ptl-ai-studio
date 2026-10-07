@@ -47,7 +47,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from live_translation.languages import SPOKEN_LANGUAGES, spoken_language
-from meeting_notes.session import default_notes_device
 from pantherlake_ai_core import audio, npu, video
 from pantherlake_ai_core.engine import (
     Engine,
@@ -87,11 +86,19 @@ from .webcam_effects_runner import WebcamEffectsRunner
 STATIC_DIR = Path(__file__).parent / "static"
 VERSION_FILE = Path(__file__).resolve().parents[3] / "VERSION"
 
-# Whisper size defaults for the three speech bricks that expose one: the
-# portable engine (faster-whisper) is comfortable with "small" on CPU;
-# "base" is the largest multilingual size Intel pre-converts for OpenVINO
-# short of large-v3.
+# Whisper size defaults. The portable engine (faster-whisper) is comfortable
+# with "small" on CPU. On OpenVINO the voice assistant, which hears a short
+# question in one language, keeps "base"; translating speech is another job.
 _WHISPER_SIZE_DEFAULTS = {Engine.PORTABLE: "small", Engine.OPENVINO: "base"}
+# Live translation and meeting notes turn any language into English, and
+# there "base" is not enough: on 14 French sentences (FLEURS, 149 s,
+# 2026-10-07, XPS 14) its English scored 45 chrF against the sentences'
+# English originals, "medium" 66 -- the difference between a gist and a
+# translation -- while still running 17 times faster than real time on the
+# NPU and 22 on the integrated GPU ("base": 100). "large-v3" adds nothing
+# measurable (66) at 10 times real time, and on the NPU it names the wrong
+# language for what it hears.
+_TRANSLATION_SIZE_DEFAULTS = {Engine.PORTABLE: "small", Engine.OPENVINO: "medium"}
 
 
 def read_version_file() -> str:
@@ -124,6 +131,7 @@ def resolve(
     *,
     large_model: bool = False,
     realtime_vision: bool = False,
+    prefer_npu: bool = False,
 ) -> tuple[Engine, str]:
     """Engine + device for a request: `engine` if given (an unknown name is a
     ValueError, i.e. a 400), else the best available; `device` if given and
@@ -133,7 +141,9 @@ def resolve(
     to a real chip, never passed on as OpenVINO's "AUTO": the integrated GPU
     by default; for a brick with a large model (`large_model`) the fastest
     GPU, discrete if there is one; for a small model on live video
-    (`realtime_vision`) the integrated GPU. A brick that ran on "AUTO"
+    (`realtime_vision`) the integrated GPU; for the work this app keeps on
+    the NPU (`prefer_npu`: speech and meeting notes) the NPU, when the
+    machine has one in working order. A brick that ran on "AUTO"
     reported "AUTO" as its device and so showed up under no chip at all,
     which is the one thing this app exists to show (see
     pantherlake_ai_core.engine.preferred_device)."""
@@ -159,6 +169,8 @@ def resolve(
         if asked not in available and not (asked == "GPU" and any(d.startswith("GPU.") for d in available)):
             raise ValueError(f"OpenVINO device {device!r} is unavailable; choose from {', '.join(available)}")
         return resolved, asked
+    if prefer_npu and not npu.lost() and any(npu.is_npu(d) for d in available):
+        return resolved, "NPU"
     if large_model:
         picked = preferred_large_model_device()
     elif realtime_vision:
@@ -482,6 +494,9 @@ def demo_devices(demo_id: str) -> JSONResponse:
     if demo_id in ("live-translation", "meeting-notes"):
         # What the "Spoken language" menu offers after "Detect automatically".
         payload["spoken_languages"] = [{"code": code, "name": name} for code, name in SPOKEN_LANGUAGES.items()]
+        if payload["openvino_devices"]:
+            # What "Auto" means for these two, so the menu can say it: the NPU when there is one.
+            payload["auto_device"] = resolve(Engine.OPENVINO.value, None, prefer_npu=True)[1]
     for kind in demo.devices:
         payload[kind] = _DEVICE_SOURCES[kind]()
     if demo.samples:
@@ -504,14 +519,14 @@ class LiveTranslationStartRequest(BaseModel):
 @app.post("/api/live-translation/start")
 async def start_live_translation(req: LiveTranslationStartRequest) -> JSONResponse:
     try:
-        engine, device = resolve(req.engine, req.compute_device)
+        engine, device = resolve(req.engine, req.compute_device, prefer_npu=True)
         live_translation_runner.start(
             loop=asyncio.get_running_loop(),
             queue=app.state.live_translation_queue,
             source=req.source,
             audio_device=req.audio_device,
             engine=engine,
-            model_size=req.model_size or _WHISPER_SIZE_DEFAULTS[engine],
+            model_size=req.model_size or _TRANSLATION_SIZE_DEFAULTS[engine],
             compute_device=device,
             language=spoken_language(req.language),
         )
@@ -844,13 +859,9 @@ async def screen_ocr_extract_upload(
 
 def resolve_notes_device(engine: Engine, device: str | None) -> str:
     """The chip meeting notes are written on. Left to the app ("Auto"), that
-    is the NPU when the machine has one in working order -- the one case
-    where the app picks the NPU itself, for a model known to run there --
-    and otherwise what resolve() picks for any brick."""
-    _, picked = resolve(engine.value, device)
-    if engine == Engine.OPENVINO and (device or "AUTO").upper() == "AUTO":
-        return default_notes_device(engine, picked, list_openvino_devices())
-    return picked
+    is the NPU when the machine has one in working order, as for speech, and
+    otherwise what resolve() picks for any brick."""
+    return resolve(engine.value, device, prefer_npu=True)[1]
 
 
 class MeetingNotesStartRequest(BaseModel):
@@ -866,7 +877,7 @@ class MeetingNotesStartRequest(BaseModel):
 @app.post("/api/meeting-notes/start")
 async def start_meeting_notes(req: MeetingNotesStartRequest) -> JSONResponse:
     try:
-        engine, device = resolve(req.engine, req.compute_device)
+        engine, device = resolve(req.engine, req.compute_device, prefer_npu=True)
         meeting_notes_runner.start(
             loop=asyncio.get_running_loop(),
             queue=app.state.meeting_notes_queue,
@@ -874,7 +885,7 @@ async def start_meeting_notes(req: MeetingNotesStartRequest) -> JSONResponse:
             audio_device=req.audio_device,
             engine=engine,
             compute_device=device,
-            whisper_model_size=req.whisper_model or _WHISPER_SIZE_DEFAULTS[engine],
+            whisper_model_size=req.whisper_model or _TRANSLATION_SIZE_DEFAULTS[engine],
             spoken_language=spoken_language(req.language),
             notes_device=resolve_notes_device(engine, req.notes_device),
         )
@@ -900,7 +911,7 @@ async def meeting_notes_from_live_translation(req: MeetingNotesHandoverRequest) 
             live_translation_runner.transcript()["lines"],
             engine=engine,
             notes_device=resolve_notes_device(engine, req.notes_device),
-            whisper_model_size=_WHISPER_SIZE_DEFAULTS[engine],
+            whisper_model_size=_TRANSLATION_SIZE_DEFAULTS[engine],
         )
     except Exception as exc:
         return error_response(exc)

@@ -14,6 +14,8 @@ Intel hasn't pre-published.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -24,7 +26,7 @@ from pantherlake_ai_core.types import TranslationResult
 
 # Multilingual (not "*.en") variants only -- translation needs to recognize
 # non-English source speech, which the English-only models can't do.
-_AVAILABLE_SIZES = ("tiny", "base", "medium", "large-v3")
+_AVAILABLE_SIZES = ("tiny", "base", "small", "medium", "large-v3")
 _DEFAULT_REPO_TEMPLATE = "OpenVINO/whisper-{size}-fp16-ov"
 
 
@@ -41,6 +43,23 @@ def _resolve_model_dir(
             "openvino` and pass --model-path."
         )
     return resolve_snapshot(_DEFAULT_REPO_TEMPLATE.format(size=model_size), on_downloading=on_downloading)
+
+
+def _names_the_wrong_language(model_dir: str, device: str) -> bool:
+    """True for large-v3 on the NPU, which translates what it hears correctly
+    and says it was another language: 14 French sentences came back as good
+    English labelled vi, de, tr, ro, no... with one "fr" (2026-10-07, XPS
+    14; the same model on a GPU says "fr" fourteen times, and "medium" does
+    on both). A label that is wrong is worse than none, so it is not shown
+    unless the language was fixed. large-v3 is told apart by its 128 mel
+    bins; every smaller size has 80."""
+    if not npu.is_npu(device):
+        return False
+    try:
+        config = json.loads((Path(model_dir) / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return config.get("num_mel_bins") == 128
 
 
 def _load_pipeline_class():
@@ -87,6 +106,7 @@ class OpenVINOTranslator:
         # The chip this model is on now, which is not always the one asked
         # for: a caller reporting where the work happens reads it from here.
         self.device = device
+        self._wrong_language_labels = _names_the_wrong_language(self._model_dir, device)
 
     def translate(self, audio: np.ndarray) -> TranslationResult | None:
         samples = audio.tolist()
@@ -112,6 +132,8 @@ class OpenVINOTranslator:
         # ["fr"], same 2-letter format as faster-whisper's `info.language`);
         # a short single-utterance chunk normally yields exactly one.
         detected_language = result.languages[0] if result.languages else "auto"
+        if self._wrong_language_labels and not self.language:
+            detected_language = "auto"
         return TranslationResult(
             text=text,
             detected_language=detected_language,

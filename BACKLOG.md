@@ -196,6 +196,14 @@ a new one or the deferred list, and moves its original wording to
   indication, not proof; the detector, segmenter, embedder and voice models
   stop with a clear message on a loss rather than move; retest on the next
   NPU driver.
+  **2026-10-07:** by request, speech (Whisper medium) and the meeting-notes
+  model (Qwen3-8B, 4.5 GB) now both default to the NPU, so two models there
+  is the ordinary case. It held in every run made that evening: four sets
+  of notes with an utterance every few seconds, three more with 850
+  utterances back to back, and the launcher's own flow twice. None of those
+  had the integrated GPU busy loading a large model, which is what was going
+  on both times the NPU was lost -- that combination is still untested with
+  the new defaults.
 - [ ] **Day-first dates on receipts are read month-first, whichever model
   structures them.** In the model trial, the two French scanned receipts
   dated `12/09/2026` came back as 2026-12-09 from every model that
@@ -220,6 +228,19 @@ a new one or the deferred list, and moves its original wording to
   (3) checked only on synthesised English speech: no recorded speech in
   another language is on this machine.
   (filed 2026-10-06, user report)
+  **2026-10-07:** (3) is done with 14 French sentences from FLEURS, which is
+  what showed "base" giving the gist and "medium" a translation (table in
+  `bricks/live-translation/README.md`); "medium" on the NPU is now the
+  default. Seen in a real French conversation transcribed with "base" that
+  evening and not addressed: short noises come back as stock phrases
+  ("Thank you.", "you", "Mm-hmm.") and short utterances get a wrong
+  language label; a clip cut at the 14 s limit leaves a tail that becomes a
+  phrase of its own ("Bye!"). Whether "medium" reduces these on real
+  speech has not been measured. Also fixed that evening: after "Summarise
+  in Meeting Notes" the Meeting Notes panel showed a frozen copy of the
+  transcript beside its own Start, which started a second, separate
+  transcription of system audio -- it now follows the live transcript and
+  its own Start steps aside.
 
 ## What we are showing
 

@@ -11,9 +11,10 @@ from . import pipeline
 from .languages import spoken_language
 
 # Whisper size per engine: faster-whisper is comfortable with "small" on
-# CPU; "base" is the largest multilingual size Intel pre-converts for
-# OpenVINO short of large-v3.
-_MODEL_SIZE_DEFAULTS = {engine_mod.Engine.PORTABLE: "small", engine_mod.Engine.OPENVINO: "base"}
+# CPU. On OpenVINO "medium" is where the English becomes a translation
+# rather than a gist (45 -> 66 chrF on French test sentences against
+# "base"), and it still runs 17 times faster than real time on the NPU.
+_MODEL_SIZE_DEFAULTS = {engine_mod.Engine.PORTABLE: "small", engine_mod.Engine.OPENVINO: "medium"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -44,14 +45,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--model", default=None,
         help="Model size (tiny, base, small, medium, large-v3). Default depends on "
-             "--engine: 'small' for portable, 'base' for openvino (the largest size "
-             "Intel doesn't pre-convert as multilingual is large-v3).",
+             "--engine: 'small' for portable, 'medium' for openvino.",
     )
     p.add_argument(
         "--compute-device", default=None,
         help="Which device the engine should run on. For --engine portable: "
              "cpu, cuda, or auto. For --engine openvino: AUTO, CPU, GPU, or NPU. "
-             "Default: cpu for portable, AUTO for openvino.",
+             "Default: cpu for portable; for openvino the NPU if the machine has one, "
+             "otherwise the integrated GPU.",
     )
     p.add_argument(
         "--compute-type", default="auto",
@@ -85,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
 
     engine = engine_mod.resolve_engine(args.engine)
     model_size = args.model or _MODEL_SIZE_DEFAULTS[engine]
-    compute_device = args.compute_device or engine_mod.default_device(engine)
+    compute_device = args.compute_device or engine_mod.default_speech_device(engine)
 
     print(
         f"Loading '{model_size}' Whisper model on engine={engine.value}, device={compute_device}... "

@@ -99,16 +99,50 @@ Stop and Start: stopping to change the spoken language half-way through is
 still the same meeting. A reloaded page gets its lines back. **Clear
 transcript** starts a new one, and so does restarting the launcher.
 
-**Summarise in Meeting Notes** hands the whole transcript to
-[meeting-notes](../meeting-notes/README.md), which writes a summary and the
-action items from it, on the chip chosen in its own panel. Nothing is
-transcribed a second time, live translation keeps running, and pressing the
-button again later summarises everything heard up to then. The transcript is
-the English translation, so the notes are in English whatever was spoken.
+**Summarise in Meeting Notes** opens
+[meeting-notes](../meeting-notes/README.md) *following* this session: its
+panel shows this transcript as it grows and writes a summary and the action
+items from all of it, on the chip chosen there, whenever "Generate notes" is
+pressed. Nothing is transcribed a second time and live translation keeps
+running; to start or stop it, come back here ("Open Live Speech Translation"
+on that panel). The transcript is the English translation, so the notes are
+in English whatever was spoken.
 
 Over the API: `GET /api/live-translation/transcript` reads it, `DELETE` on the
 same address clears it, and `POST /api/meeting-notes/from-live-translation`
 hands it over (then `POST /api/meeting-notes/generate` as usual).
+
+## On the NPU, and which model size
+
+On the OpenVINO engine speech goes to **the NPU** when nobody chooses a chip
+(the launcher's "Auto (the NPU)"), with the **medium** model. Measured on the
+XPS 14 on 2026-10-07 with 14 French sentences read aloud (FLEURS, 149 s),
+each handed over whole as the app hands over an utterance. "Speed" is seconds
+of speech per second of work; "chrF" (0-100) is how close the English is to
+the English sentence the French was a translation of.
+
+| Size | NPU: speed | NPU: chrF | Integrated GPU: speed | Notes |
+| --- | --- | --- | --- | --- |
+| base (the default until then) | 100x | 45 | 93-107x | the gist: "The expert also expected to finish. A dream could be touched by climate warming" |
+| small | 50x | 60 | | |
+| **medium** | **17x** | **66** | 22x | "The UN also hopes to finalise a fund to help countries affected by global warming" |
+| large-v3 | 10x | 66 | 14x | no better than medium here; on the NPU it names the wrong language (below) |
+
+- **medium** is where the English becomes a translation, and an utterance
+  still comes back in 0.4 to 0.8 s. On the CPU it manages 2.2x, which is real
+  time with nothing to spare: choose `base` there.
+- **large-v3 on the NPU** translates correctly and says it heard another
+  language: the 14 French sentences were labelled vi, de, tr, ro, no... and
+  `fr` once. The same model on a GPU says `fr` every time. The app shows no
+  language for it on the NPU unless the spoken language was fixed.
+- **Speech and meeting notes share the NPU** when both are left on it. One
+  thread translating a French utterance every few seconds while the notes
+  model wrote four sets of notes: notes in 19 to 25 s (13 to 17 s alone), the
+  median utterance back in 0.7 s as when alone, the longest 3.7 s (it arrived
+  while the notes model was reading the transcript), NPU not lost. With
+  utterances back to back -- no pause at all, 850 of them -- the notes
+  crawled at 1.6 tokens/s and speech was still served in 0.6 s: speech goes
+  first, by design.
 
 ## Options
 
@@ -117,8 +151,8 @@ hands it over (then `POST /api/meeting-notes/generate` as usual).
 | `--source {mic,system}` | Capture from a microphone or system audio loopback. Default: `mic`. |
 | `--audio-device NAME` | Substring to match a specific microphone/output device name. Default: system default. |
 | `--engine {portable,openvino}` | Inference backend. Default: `portable`. |
-| `--model NAME` | Model size: `tiny`, `base`, `small`, `medium`, `large-v3`. Default depends on `--engine` (`small` for portable, `base` for openvino). |
-| `--compute-device NAME` | Device to run on. For `portable`: `cpu`, `cuda`, `auto`. For `openvino`: `AUTO`, `CPU`, `GPU`, `NPU`. Default: `cpu` for portable, `AUTO` for openvino. |
+| `--model NAME` | Model size: `tiny`, `base`, `small`, `medium`, `large-v3`. Default depends on `--engine` (`small` for portable, `medium` for openvino). |
+| `--compute-device NAME` | Device to run on. For `portable`: `cpu`, `cuda`, `auto`. For `openvino`: `AUTO`, `CPU`, `GPU`, `NPU`. Default: `cpu` for portable; for openvino the NPU if the machine has one, otherwise the integrated GPU. |
 | `--compute-type NAME` | `portable` engine only — faster-whisper compute type (`int8`, `float16`, `float32`, ...). Default: `auto`. |
 | `--language CODE` | The language being spoken (`fr`, `de`, `es`, ... -- see `languages.py`). Default: detected for each utterance. |
 | `--model-path PATH` | `openvino` engine only — use a model you converted yourself instead of Intel's default pre-converted one (the older `--ov-model-dir` spelling still works). |

@@ -318,6 +318,16 @@ function deviceLabel(id) {
   return id;
 }
 
+// How "Auto" names the chip it stands for: "the NPU", "the integrated GPU".
+function autoDeviceName(id) {
+  const upper = String(id).toUpperCase();
+  if (upper.startsWith("NPU")) return "the NPU";
+  if (upper === "CPU") return "the CPU";
+  const gpu = GPU_DEVICES.find((g) => g.id === id);
+  if (gpu) return (gpu.full_name || "").includes("dGPU") ? "the discrete GPU" : "the integrated GPU";
+  return deviceLabel(id);
+}
+
 // The OpenVINO device to default a *large* model to (a 30B coding LLM, a 7B
 // vision model): the discrete GPU if the machine has one among the brick's
 // offered devices, since it's faster; otherwise the integrated GPU, which
@@ -405,7 +415,13 @@ function wireEngineAndDevice(engineSelect, deviceSelect, data, options = {}) {
   const fill = () => {
     const isOpenvino = engineSelect.value === "openvino";
     const values = isOpenvino ? ["AUTO", ...openvinoDevices] : portableDevices;
-    fillSelect(deviceSelect, values.map((value) => ({ value, label: deviceLabel(value) })));
+    // A brick whose "Auto" is a known chip (data.auto_device: speech goes to
+    // the NPU) says which, rather than "the app picks".
+    const autoLabel = data.auto_device ? `Auto (${autoDeviceName(data.auto_device)})` : deviceLabel("AUTO");
+    fillSelect(
+      deviceSelect,
+      values.map((value) => ({ value, label: value === "AUTO" ? autoLabel : deviceLabel(value) })),
+    );
     // A device this brick's model provably can't use is shown but disabled,
     // with the reason in the label -- offering it silently is how someone
     // ends up staring at a compiler error from deep inside OpenVINO.
@@ -1176,16 +1192,13 @@ const PANELS = {
       wireAudioSource(el("lt-source"), el("lt-audio-device"), data);
       fillSpokenLanguages(el("lt-language"), data);
       el("lt-summarise").hidden = (demoById("meeting-notes") || {}).status !== "available";
-      const modelSelect = el("lt-model");
-      const small = modelSelect.querySelector('option[value="small"]');
       wireEngineAndDevice(el("lt-engine"), el("lt-compute-device"), data, {
         portableDevices: ["cpu", "cuda"],
         onChange: (isOpenvino) => {
-          // Intel publishes pre-converted OpenVINO Whisper for
-          // tiny/base/medium/large-v3 only -- there is no "small".
-          small.disabled = isOpenvino;
-          small.textContent = isOpenvino ? "small (portable engine only)" : "small";
-          modelSelect.value = isOpenvino ? "base" : "small";
+          // "medium" is where the English becomes a translation rather than
+          // a gist, and it still runs many times faster than real time on
+          // the NPU (see _TRANSLATION_SIZE_DEFAULTS in app.py).
+          el("lt-model").value = isOpenvino ? "medium" : "small";
         },
       });
     },
@@ -1285,10 +1298,9 @@ const PANELS = {
       fillSpokenLanguages(el("mtg-language"), data);
       wireEngineAndDevice(el("mtg-engine"), el("mtg-compute-device"), data, { portableDevices: ["cpu", "cuda"] });
       // The notes have a chip of their own. Left to the app it is the NPU,
-      // the one brick where "Auto" means that: the notes model is known to
-      // run there, and the GPU is left to the transcription.
+      // like the transcription: both models are known to run there.
       const devices = data.openvino_devices || [];
-      const auto = devices.some((d) => d.toUpperCase().startsWith("NPU")) ? "Auto (the NPU)" : deviceLabel("AUTO");
+      const auto = data.auto_device ? `Auto (${autoDeviceName(data.auto_device)})` : deviceLabel("AUTO");
       const fillNotesDevice = () => {
         const select = el("mtg-notes-device");
         const chosen = select.value;
@@ -1317,39 +1329,85 @@ const PANELS = {
         appendTimedLine(el("mtg-transcript"), message.timestamp, message.detected_language, message.text);
       }
     },
-    onStarted() {
-      // A meeting of its own replaces a transcript handed over earlier.
-      if (!this.handedOver) return;
-      this.handedOver = false;
-      showPlaceholder(el("mtg-transcript"), "The live transcript will appear here once you press Start.");
+    // Following live translation: asked for a summary from that panel, this
+    // one shows its transcript as it grows and summarises all of it on
+    // demand. Its own Start and Stop step aside meanwhile -- they start a
+    // second, separate transcription, which next to a copy of the live
+    // transcript read as "restart the live one" and did something else
+    // (2026-10-07: a frozen copy, then "Transcribing..." and no lines).
+    following: null, // { id, seq }: how far into which live transcript this panel has drawn
+    followTimer: null,
+    setFollowing(on) {
+      el("mtg-panel").classList.toggle("following", on);
+      el("mtg-following").hidden = !on;
+      clearInterval(this.followTimer);
+      this.followTimer = null;
+      if (on) {
+        this.following = { id: 0, seq: 0 };
+        showPlaceholder(el("mtg-transcript"), "Nothing has been said yet.");
+        this.followTimer = setInterval(() => this.syncFollowed(), 1500);
+      } else {
+        this.following = null;
+        showPlaceholder(el("mtg-transcript"), "The live transcript will appear here once you press Start.");
+      }
+    },
+    async syncFollowed() {
+      if (!this.following || !this.isOpen) return;
+      let data;
+      try {
+        data = await fetchJSON("/api/live-translation/transcript");
+      } catch {
+        return; // the next tick asks again
+      }
+      if (!this.following) return;
+      if (data.id !== this.following.id) {
+        this.following = { id: data.id, seq: 0 }; // cleared over there: start again here too
+        showPlaceholder(el("mtg-transcript"), "Nothing has been said yet.");
+      }
+      for (const line of data.lines) {
+        if (line.seq <= this.following.seq) continue;
+        this.following.seq = line.seq;
+        appendTimedLine(el("mtg-transcript"), line.timestamp, line.detected_language, line.text);
+      }
+      const live = STATUS.snapshot["live-translation"];
+      const name = (demoById("live-translation") || {}).name || "live translation";
+      const state = live ? live.message || live.phase : "stopped";
+      paintStatus(
+        el("mtg-following-status"),
+        `Following ${name} (${state}) -- ${data.lines.length} line(s) so far`,
+        live ? PHASE_KIND[live.phase] || "loading" : null,
+      );
+    },
+    leave() {
+      StreamPanel.prototype.leave.call(this);
+      clearInterval(this.followTimer);
+      this.followTimer = null;
     },
     async rehydrate() {
       await StreamPanel.prototype.rehydrate.call(this);
       if (this.summariseOnOpen) {
         this.summariseOnOpen = false;
         this.summariseLiveTranslation(); // not awaited: opening the panel doesn't wait for the notes
+      } else if (this.following) {
+        // Back on a panel that was following: pick the transcript up again.
+        this.followTimer = setInterval(() => this.syncFollowed(), 1500);
+        this.syncFollowed();
       }
     },
-    // Asked for from the live translation panel: take over its transcript, show
-    // it here, and write the notes from it.
+    // Asked for from the live translation panel: follow its transcript and
+    // write the notes from what has been said so far.
     async summariseLiveTranslation() {
       if (el("mtg-generate").disabled) return; // notes are being written already
-      let data;
-      try {
-        data = await postJSON("/api/meeting-notes/from-live-translation", {
-          engine: el("mtg-engine").value,
-          notes_device: el("mtg-notes-device").value,
-        });
-      } catch (err) {
-        paintStatus(el("mtg-notes-status"), `Error: ${err.message}`, "error");
+      if (this.running) {
+        paintStatus(
+          el("mtg-notes-status"),
+          "Meeting Notes is transcribing a meeting of its own: stop it before summarising live translation.",
+          "error",
+        );
         return;
       }
-      const box = el("mtg-transcript");
-      box.innerHTML = "";
-      const from = (demoById("live-translation") || {}).name || "live translation";
-      appendLine(box, "line-note", `Handed over from ${from}: ${data.lines.length} line(s), ${data.words} words.`);
-      for (const line of data.lines) appendTimedLine(box, line.timestamp, line.detected_language, line.text);
-      this.handedOver = true;
+      if (!this.following) this.setFollowing(true);
+      await this.syncFollowed();
       await this.generateNotes();
     },
     generateNotes() {
@@ -1360,6 +1418,14 @@ const PANELS = {
         partial: { target: el("mtg-notes"), stage: "notes" },
         busy: "Generating notes…",
         work: async () => {
+          if (this.following) {
+            // Everything live translation has heard up to now, not what it
+            // had heard at the last summary.
+            await postJSON("/api/meeting-notes/from-live-translation", {
+              engine: el("mtg-engine").value,
+              notes_device: el("mtg-notes-device").value,
+            });
+          }
           // The chip chosen now, which may not be the one the last notes were written on.
           const data = await postJSON("/api/meeting-notes/generate", { notes_device: el("mtg-notes-device").value });
           renderTextBlock(el("mtg-notes"), data.text);
@@ -1374,6 +1440,8 @@ const PANELS = {
     },
     wireExtra() {
       el("mtg-generate").addEventListener("click", () => this.generateNotes());
+      el("mtg-following-open").addEventListener("click", () => (location.hash = "#/brick/live-translation"));
+      el("mtg-following-stop").addEventListener("click", () => this.setFollowing(false));
     },
   }),
 

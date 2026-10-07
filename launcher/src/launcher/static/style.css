@@ -892,6 +892,9 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
   line-height: 1.7;
 }
 
+/* Meeting Notes following live translation: its own capture controls step aside. */
+.brick-panel.following .own-capture { display: none; }
+
 .output + .run-row,
 .output + .output,
 .output + .ask-row,

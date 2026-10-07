@@ -300,14 +300,14 @@
       <!-- meeting-notes -->
       <section id="mtg-panel" class="brick-panel" hidden>
         <div class="controls">
-          <label class="field">
+          <label class="field own-capture">
             <span>Audio source</span>
             <select id="mtg-source">
               <option value="system">System audio (the call or video)</option>
               <option value="mic">Microphone</option>
             </select>
           </label>
-          <label class="field">
+          <label class="field own-capture">
             <span>Audio device</span>
             <select id="mtg-audio-device"></select>
           </label>
@@ -318,25 +318,33 @@
               <option value="openvino">OpenVINO (Whisper + LLM)</option>
             </select>
           </label>
-          <label class="field">
+          <label class="field own-capture">
             <span>Transcription on</span>
             <select id="mtg-compute-device"></select>
           </label>
           <label class="field">
             <span>Notes written on</span>
-            <select id="mtg-notes-device" title="The chip that writes the summary and the action items. Left to the app, that is the NPU: it leaves the GPU to the transcription. A GPU writes more complete notes -- the build of the model the NPU can run is less accurate. Can be changed while a meeting runs."></select>
+            <select id="mtg-notes-device" title="The chip that writes the summary and the action items. Left to the app, that is the NPU. A GPU writes more complete notes -- the build of the model the NPU can run is less accurate. Can be changed while a meeting runs."></select>
           </label>
-          <label class="field">
+          <label class="field own-capture">
             <span>Spoken language</span>
             <select id="mtg-language" title="Tell the model which language is being spoken, or let it work that out for each sentence. Detection can slip on short phrases; a fixed language cannot.">
               <option value="auto">Detect automatically</option>
             </select>
           </label>
         </div>
-        <div class="run-row">
+        <div class="run-row own-capture">
           <button id="mtg-start" class="btn btn-primary" type="button">Start</button>
           <button id="mtg-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
           <span id="mtg-status" class="run-status" role="status" aria-live="polite">Idle</span>
+        </div>
+        <!-- Shown instead of the row above while this panel follows live translation's transcript. -->
+        <div id="mtg-following" class="run-row" hidden>
+          <span id="mtg-following-status" class="run-status" role="status" aria-live="polite"></span>
+          <button id="mtg-following-open" class="btn btn-secondary" type="button"
+            title="Start, stop and settings of the session this transcript comes from.">Open Live Speech Translation</button>
+          <button id="mtg-following-stop" class="btn btn-secondary" type="button"
+            title="Go back to Meeting Notes transcribing a meeting of its own. Live translation is not affected.">Stop following</button>
         </div>
         <div id="mtg-transcript" class="output">
           <p class="placeholder">The live transcript will appear here once you press Start.</p>
