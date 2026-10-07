@@ -111,13 +111,22 @@ _HEARD = [
 @pytest.fixture
 def studio(quiet_events, monkeypatch):
     """The launcher with fresh runners, a live translation transcript of
-    `_HEARD`, and a notes model that records what it was given to read."""
+    `_HEARD`, and a notes model that records what it was given to read and
+    which chips it was loaded on (`llm.loaded`)."""
     live, meeting, llm = LiveTranslationRunner(), MeetingNotesRunner(), _NotesLLM()
+    llm.loaded = []
+
+    def create_llm(engine, **kwargs):
+        llm.loaded.append(kwargs["device"])
+        return llm
+
     _session(live, monkeypatch, _HEARD)
     monkeypatch.setattr(launcher_app, "live_translation_runner", live)
     monkeypatch.setattr(launcher_app, "meeting_notes_runner", meeting)
     monkeypatch.setattr(launcher_app, "resolve", lambda engine, device, **kwargs: (Engine.OPENVINO, device or "GPU.0"))
-    monkeypatch.setattr("meeting_notes.session.create_llm", lambda engine, **kwargs: llm)
+    monkeypatch.setattr(launcher_app, "list_openvino_devices", lambda: ["CPU", "GPU.0", "NPU"])
+    monkeypatch.setattr(launcher_app.npu, "lost", lambda: None)
+    monkeypatch.setattr("meeting_notes.session.create_llm", create_llm)
     return TestClient(launcher_app.app), live, meeting, llm
 
 
@@ -133,11 +142,11 @@ def test_the_page_can_read_the_transcript_back_and_clear_it(studio):
 
 def test_meeting_notes_summarises_what_live_translation_heard(studio):
     client, live, meeting, llm = studio
-    handed = client.post("/api/meeting-notes/from-live-translation", json={"engine": "openvino", "compute_device": "NPU"})
+    handed = client.post("/api/meeting-notes/from-live-translation", json={"engine": "openvino", "notes_device": "GPU.0"})
     assert handed.status_code == 200
     assert [line["text"] for line in handed.json()["lines"]] == _HEARD
     assert handed.json()["words"] == sum(len(text.split()) for text in _HEARD)
-    assert meeting._session.compute_device == "NPU"  # the notes are written where Meeting Notes was set to
+    assert meeting._session.notes_device == "GPU.0"  # the notes are written where Meeting Notes was set to
 
     notes = client.post("/api/meeting-notes/generate").json()
     assert notes["transcript_line_count"] == 3 and "Maria: send the plan" in notes["text"]
@@ -148,9 +157,52 @@ def test_meeting_notes_summarises_what_live_translation_heard(studio):
     session = meeting._session
     with live._transcript_lock:
         live._transcript.append({"seq": 4, "timestamp": "10:05:00", "text": "and thank you all", "detected_language": "en"})
-    again = client.post("/api/meeting-notes/from-live-translation", json={"engine": "openvino", "compute_device": "NPU"})
+    again = client.post("/api/meeting-notes/from-live-translation", json={"engine": "openvino", "notes_device": "GPU.0"})
     assert len(again.json()["lines"]) == 4 and meeting._session is session
-    assert client.post("/api/meeting-notes/generate").json()["transcript_line_count"] == 4
+    assert client.post("/api/meeting-notes/generate", json={"notes_device": "GPU.0"}).json()["transcript_line_count"] == 4
+    assert llm.loaded == ["GPU.0"]
+
+
+def test_left_to_the_app_the_notes_are_written_on_the_npu(studio, monkeypatch):
+    client, _, meeting, llm = studio
+    for body in ({}, {"notes_device": "AUTO"}, {"engine": "openvino", "notes_device": "auto"}):
+        assert client.post("/api/meeting-notes/from-live-translation", json=body).status_code == 200
+        assert meeting._session.notes_device == "NPU"
+    assert client.post("/api/meeting-notes/generate", json={"notes_device": "AUTO"}).status_code == 200
+    assert llm.loaded == ["NPU"]
+
+    # A machine without one, or one that lost it this session, gets the chip any brick would.
+    monkeypatch.setattr(launcher_app, "list_openvino_devices", lambda: ["CPU", "GPU.0"])
+    client.post("/api/meeting-notes/from-live-translation", json={})
+    assert meeting._session.notes_device == "GPU.0"
+    monkeypatch.setattr(launcher_app, "list_openvino_devices", lambda: ["CPU", "GPU.0", "NPU"])
+    monkeypatch.setattr("meeting_notes.session.npu.lost", lambda: "the device was removed")
+    client.post("/api/meeting-notes/from-live-translation", json={})
+    assert meeting._session.notes_device == "GPU.0"
+
+
+def test_the_chip_for_the_notes_can_change_between_two_summaries(studio):
+    client, _, meeting, llm = studio
+    client.post("/api/meeting-notes/from-live-translation", json={})
+    assert client.post("/api/meeting-notes/generate", json={"notes_device": "AUTO"}).status_code == 200
+    assert client.post("/api/meeting-notes/generate", json={"notes_device": "NPU"}).status_code == 200
+    assert llm.loaded == ["NPU"]  # the same chip twice: the model stayed loaded
+
+    assert client.post("/api/meeting-notes/generate", json={"notes_device": "GPU.0"}).status_code == 200
+    assert llm.loaded == ["NPU", "GPU.0"] and meeting._session.notes_device == "GPU.0"
+    assert client.post("/api/meeting-notes/generate").status_code == 200  # nothing said: no change
+    assert llm.loaded == ["NPU", "GPU.0"]
+
+
+def test_a_meeting_of_its_own_transcribes_on_one_chip_and_writes_on_another(studio, monkeypatch):
+    client, _, _, _ = studio
+    started: list[dict] = []
+    monkeypatch.setattr(launcher_app.meeting_notes_runner, "start", lambda **kwargs: started.append(kwargs))
+    monkeypatch.setattr(launcher_app.app.state, "meeting_notes_queue", None, raising=False)
+
+    assert client.post("/api/meeting-notes/start", json={"compute_device": "GPU.0"}).status_code == 200
+    assert client.post("/api/meeting-notes/start", json={"compute_device": "GPU.0", "notes_device": "CPU"}).status_code == 200
+    assert [(call["compute_device"], call["notes_device"]) for call in started] == [("GPU.0", "NPU"), ("GPU.0", "CPU")]
 
 
 def test_nothing_heard_is_nothing_to_summarise(studio):
@@ -167,4 +219,4 @@ def test_a_meeting_being_transcribed_is_not_replaced(studio, monkeypatch):
     refused = client.post("/api/meeting-notes/from-live-translation", json={})
     assert refused.status_code == 409 and "transcribing a meeting of its own" in refused.json()["error"]
     with pytest.raises(Conflict):
-        meeting.adopt([{"text": "hello"}], engine=Engine.OPENVINO, compute_device="GPU.0", whisper_model_size="base")
+        meeting.adopt([{"text": "hello"}], engine=Engine.OPENVINO, notes_device="GPU.0", whisper_model_size="base")

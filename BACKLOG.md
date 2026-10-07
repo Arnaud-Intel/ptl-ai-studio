@@ -158,6 +158,22 @@ a new one or the deferred list, and moves its original wording to
   on the NPU; the other bricks on the 1.5B (documents, voice assistant,
   expenses) are unchanged. `Qwen3-4B-int4-ov` in the cache is no longer a
   candidate for anything.
+  *2026-10-07, evening:* asked to keep the notes on the NPU as much as
+  possible. They now go there by default, on a chip of their own
+  ("Notes written on"), with the transcription left on the GPU. Every
+  published NPU candidate was tried and none beats the channel-wise
+  Qwen3-8B (11 of 20): the int8 builds of Qwen3-4B and -8B compile and
+  then never answer, Phi-3.5-mini invents owners and dates, Mistral-7B
+  v0.3 finds 13 but sets deadlines nobody gave. The channel-wise 8B was
+  quantised without calibration data. **Open, and the one thing that would
+  make the NPU's notes good:** export Qwen3-8B channel-wise with
+  calibration (AWQ, scale estimation, wikitext2), measure it on the same
+  four meetings, and host it where the app can download it -- needs the
+  16 GB original weights, an hour or more of CPU, and someone's Hub
+  account. Five models from this search (about 20 GB) are in the Hugging
+  Face cache and used by nothing: `Qwen3-4B-int8-ov`, `Qwen3-8B-int8-ov`,
+  `Phi-3.5-mini-instruct-int4-cw-ov`, `Mistral-7B-Instruct-v0.3-int4-cw-ov`
+  and `Qwen3-4B-int4-ov`.
 - [ ] **Live translation lost the NPU when the expense extractor started
   beside it.** `logs/events.log`, 2026-10-05 at 10:41-10:44: live
   translation was running on the NPU; the expense extractor started

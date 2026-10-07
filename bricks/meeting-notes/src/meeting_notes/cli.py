@@ -6,7 +6,7 @@ import sys
 
 from pantherlake_ai_core import engine as engine_mod
 
-from .session import MeetingSession
+from .session import MeetingSession, default_notes_device
 
 # Whisper size per engine -- see live-translation's CLI for why.
 _WHISPER_SIZE_DEFAULTS = {engine_mod.Engine.PORTABLE: "small", engine_mod.Engine.OPENVINO: "base"}
@@ -36,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--compute-device", default=None,
         help="openvino engine only: AUTO, CPU, GPU, or NPU. Default: AUTO (cpu for portable).",
     )
+    p.add_argument(
+        "--notes-device", default=None,
+        help="openvino engine only: the chip the notes are written on. Default: the NPU if the machine has one, "
+             "otherwise the same as --compute-device. A GPU writes better notes (see the README).",
+    )
     p.add_argument("--whisper-model", default=None, help="Whisper model size override (tiny/base/small/medium/large-v3).")
     p.add_argument(
         "--list-devices", action="store_true",
@@ -54,12 +59,15 @@ def main(argv: list[str] | None = None) -> int:
     engine = engine_mod.resolve_engine(args.engine)
     compute_device = args.compute_device or engine_mod.default_device(engine)
     whisper_model = args.whisper_model or _WHISPER_SIZE_DEFAULTS[engine]
+    notes_device = args.notes_device or default_notes_device(engine, compute_device)
 
     print(
-        f"Loading transcription engine (engine={engine.value}, device={compute_device})... "
+        f"Loading transcription engine (engine={engine.value}, device={compute_device}; notes on {notes_device})... "
         "this may download models on first use."
     )
-    session = MeetingSession(engine, compute_device=compute_device, whisper_model_size=whisper_model)
+    session = MeetingSession(
+        engine, compute_device=compute_device, whisper_model_size=whisper_model, notes_device=notes_device
+    )
 
     label = "microphone" if args.source == "mic" else "system audio (loopback)"
     print(f"Listening on {label}. Press Ctrl+C to stop and generate notes.\n")

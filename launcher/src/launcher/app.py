@@ -47,6 +47,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from live_translation.languages import SPOKEN_LANGUAGES, spoken_language
+from meeting_notes.session import default_notes_device
 from pantherlake_ai_core import audio, npu, video
 from pantherlake_ai_core.engine import (
     Engine,
@@ -841,11 +842,23 @@ async def screen_ocr_extract_upload(
 # --- meeting-notes ----------------------------------------------------------------
 
 
+def resolve_notes_device(engine: Engine, device: str | None) -> str:
+    """The chip meeting notes are written on. Left to the app ("Auto"), that
+    is the NPU when the machine has one in working order -- the one case
+    where the app picks the NPU itself, for a model known to run there --
+    and otherwise what resolve() picks for any brick."""
+    _, picked = resolve(engine.value, device)
+    if engine == Engine.OPENVINO and (device or "AUTO").upper() == "AUTO":
+        return default_notes_device(engine, picked, list_openvino_devices())
+    return picked
+
+
 class MeetingNotesStartRequest(BaseModel):
     source: str = "system"
     audio_device: str | None = None
     engine: str | None = None
     compute_device: str | None = None
+    notes_device: str | None = None  # where the notes are written; nothing or "AUTO" = the NPU if there is one
     whisper_model: str | None = None
     language: str | None = None  # the language being spoken; nothing or "auto" = detect it
 
@@ -863,6 +876,7 @@ async def start_meeting_notes(req: MeetingNotesStartRequest) -> JSONResponse:
             compute_device=device,
             whisper_model_size=req.whisper_model or _WHISPER_SIZE_DEFAULTS[engine],
             spoken_language=spoken_language(req.language),
+            notes_device=resolve_notes_device(engine, req.notes_device),
         )
     except Exception as exc:
         return error_response(exc)
@@ -871,21 +885,21 @@ async def start_meeting_notes(req: MeetingNotesStartRequest) -> JSONResponse:
 
 class MeetingNotesHandoverRequest(BaseModel):
     engine: str | None = None
-    compute_device: str | None = None
+    notes_device: str | None = None
 
 
 @app.post("/api/meeting-notes/from-live-translation")
 async def meeting_notes_from_live_translation(req: MeetingNotesHandoverRequest) -> JSONResponse:
     """Hand live translation's whole transcript to Meeting Notes, which then
     writes notes from it as from a meeting of its own (POST
-    /api/meeting-notes/generate). `engine`/`compute_device` are where the
+    /api/meeting-notes/generate). `engine`/`notes_device` are where the
     notes will be written. Live translation is left running."""
     try:
-        engine, device = resolve(req.engine, req.compute_device)
+        engine, _ = resolve(req.engine, None)
         taken = meeting_notes_runner.adopt(
             live_translation_runner.transcript()["lines"],
             engine=engine,
-            compute_device=device,
+            notes_device=resolve_notes_device(engine, req.notes_device),
             whisper_model_size=_WHISPER_SIZE_DEFAULTS[engine],
         )
     except Exception as exc:
@@ -906,13 +920,30 @@ async def ws_meeting_notes(websocket: WebSocket) -> None:
     await ws_drain(websocket, app.state.meeting_notes_queue)
 
 
+class MeetingNotesGenerateRequest(BaseModel):
+    notes_device: str | None = None  # the chip to write them on from now on; nothing = no change
+
+
 @app.post("/api/meeting-notes/generate")
-async def generate_meeting_notes() -> JSONResponse:
+async def generate_meeting_notes(req: MeetingNotesGenerateRequest | None = None) -> JSONResponse:
     try:
-        notes = await run_in_threadpool(meeting_notes_runner.generate_notes)
+        device = None
+        engine = meeting_notes_runner.engine  # the meeting's own: None when there is none, and the runner says so
+        if req is not None and req.notes_device and engine is not None:
+            device = resolve_notes_device(engine, req.notes_device)
+        notes = await run_in_threadpool(meeting_notes_runner.generate_notes, device)
     except Exception as exc:
         return error_response(exc)
-    return JSONResponse({"text": notes.text, "transcript_line_count": notes.transcript_line_count, "parts": notes.parts, "cancelled": _was_stopped(notes)})
+    return JSONResponse(
+        {
+            "text": notes.text,
+            "transcript_line_count": notes.transcript_line_count,
+            "parts": notes.parts,
+            "cancelled": _was_stopped(notes),
+            # The chip that wrote them, which is not the one asked for when the NPU was lost on the way.
+            "device": notes.stats.device if notes.stats else None,
+        }
+    )
 
 
 # --- webcam-effects ---------------------------------------------------------------

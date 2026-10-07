@@ -17,7 +17,7 @@ from typing import Callable
 from doc_qa.engine_factory import TEMPLATE_TOKENS, create_llm
 from live_translation import pipeline as live_translation_pipeline
 from pantherlake_ai_core import npu
-from pantherlake_ai_core.engine import Engine
+from pantherlake_ai_core.engine import Engine, list_openvino_devices
 from pantherlake_ai_core.types import GenerationControl, TranslationResult, combine_stats, say, stopped
 
 from .types import MeetingNotes, TranscriptLine
@@ -38,6 +38,17 @@ _MIN_WORDS_FOR_NOTES = 25
 # there ("Can't convert 44 Bit to Byte") and the 4B answers garbage. The
 # channel-wise build runs at 19 tokens/s and is weaker -- 11 of 20 -- but
 # still ahead of the 1.5B on the same chip (8, with invented owners).
+# Nothing else published does better there (tried the same evening): the
+# int8 builds of Qwen3-4B and -8B compile in 66 and 93 s and then wrote no
+# answer in 13 and 8 minutes; Phi-3.5-mini channel-wise writes 31 tokens/s
+# and invents owners and dates ("John", "Friday, October 26th");
+# Mistral-7B-v0.3 channel-wise lists 13 at 20 tokens/s and gives tasks
+# deadlines nobody set ("by the end of the current week"). Asking for
+# the two sections in two calls found 14 but listed decisions as tasks and
+# none of the three tasks of the one real transcript. The channel-wise 8B
+# was quantised with no calibration data (its openvino_config.json says
+# `"dataset": null`, the standard build's says wikitext2): a calibrated
+# channel-wise build is what would close the gap, and nobody publishes one.
 # The portable engine keeps doc-qa's small default.
 _OPENVINO_NOTES_REPO = "OpenVINO/Qwen3-8B-int4-ov"
 _OPENVINO_NOTES_REPO_NPU = "OpenVINO/Qwen3-8B-int4-cw-ov"
@@ -49,6 +60,22 @@ def notes_model_repo(engine: Engine, device: str) -> str | None:
     if engine != Engine.OPENVINO:
         return None
     return _OPENVINO_NOTES_REPO_NPU if npu.is_npu(device) else _OPENVINO_NOTES_REPO
+
+
+def default_notes_device(engine: Engine, compute_device: str, devices: list[str] | None = None) -> str:
+    """The chip the notes are written on when nobody chose one: the NPU if
+    the machine has one in working order, else `compute_device`. `devices`
+    is the machine's OpenVINO devices, when the caller already has the list.
+
+    Writing notes is the kind of work the NPU is there for -- a few seconds
+    now and then, at a fraction of a GPU's power -- and it leaves the GPU to
+    the transcription and to whatever else is on screen. The notes it writes
+    are weaker than a GPU's (see above), which is why the choice stays
+    visible and can be changed."""
+    if engine != Engine.OPENVINO or npu.lost():
+        return compute_device
+    available = list_openvino_devices() if devices is None else devices
+    return "NPU" if any(npu.is_npu(device) for device in available) else compute_device
 
 
 # What the instructions are for, each line of them earned on the test
@@ -146,6 +173,21 @@ def without_contradicting_none(text: str) -> str:
     return "\n".join(lines[: heading + 1] + [line for line in after if not _NONE_LINE.match(line)]).rstrip()
 
 
+_SECTION_HEADING = re.compile(r"^\s*(?:[-*•#]+\s*)?(?:\d+\.\s*)?\**(summary|action items)\**\s*:?\s*\**\s*$", re.IGNORECASE)
+
+
+def with_plain_headings(text: str) -> str:
+    """The two section headings as plain lines of their own. The
+    instructions ask for exactly that, and the NPU's model still writes
+    "- Summary" and "- Action items" as if they were items of a list -- on a
+    page that shows the notes as written."""
+    lines = []
+    for line in text.splitlines():
+        heading = _SECTION_HEADING.match(line)
+        lines.append(heading.group(1).capitalize() if heading else line)
+    return "\n".join(lines)
+
+
 def _halve_until_fits(text: str, count_tokens: Callable[[str], int], budget: int) -> list[str]:
     if count_tokens(text) <= budget:
         return [text]
@@ -193,12 +235,17 @@ class MeetingSession:
         whisper_model_size: str,
         spoken_language: str | None = None,
         transcript: list[TranscriptLine] | None = None,
+        notes_device: str | None = None,
     ):
         """`transcript`, if given, is a meeting already transcribed somewhere
         else (a live translation session, say): notes can be generated from
-        it straight away, with nothing captured here."""
+        it straight away, with nothing captured here.
+
+        `notes_device` is the chip the notes are written on, when it is not
+        the one that transcribes (`compute_device`): see default_notes_device()."""
         self.engine = engine
         self.compute_device = compute_device
+        self.notes_device = notes_device or compute_device
         self.whisper_model_size = whisper_model_size
         self.spoken_language = spoken_language  # None: detected for each utterance
         self._transcript: list[TranscriptLine] = list(transcript or [])
@@ -259,6 +306,15 @@ class MeetingSession:
         with self._lock:
             self._transcript = list(transcript)
 
+    def write_notes_on(self, device: str) -> None:
+        """Write the notes on `device` from now on. The notes model is loaded
+        for one chip, so a different one means loading it again on the next
+        generate_notes(); the same one keeps what is loaded."""
+        if device == self.notes_device:
+            return
+        self.notes_device = device
+        self._llm = None
+
     def transcript_text(self) -> str:
         return "\n".join(self._transcript_lines())
 
@@ -314,8 +370,8 @@ class MeetingSession:
         if self._llm is None:
             self._llm = create_llm(
                 self.engine,
-                device=self.compute_device,
-                model_repo=notes_model_repo(self.engine, self.compute_device),
+                device=self.notes_device,
+                model_repo=notes_model_repo(self.engine, self.notes_device),
                 on_downloading=on_downloading,
             )
         if on_ready is not None:
@@ -326,7 +382,7 @@ class MeetingSession:
         if llm.count_tokens(transcript_text) <= budget:
             notes_text = llm.answer(_NOTES_SYSTEM_PROMPT, transcript_text, max_tokens=max_tokens, control=control)
             return MeetingNotes(
-                text=without_contradicting_none(notes_text),
+                text=without_contradicting_none(with_plain_headings(notes_text)),
                 transcript_line_count=line_count,
                 stats=getattr(llm, "last_stats", None),
                 cancelled=stopped(control),
@@ -393,7 +449,7 @@ class MeetingSession:
         if stopped(control):
             return stopped_notes()
         return MeetingNotes(
-            text=without_contradicting_none(notes_text),
+            text=without_contradicting_none(with_plain_headings(notes_text)),
             transcript_line_count=line_count,
             parts=len(parts),
             stats=combine_stats([s for s in stats if s is not None]),

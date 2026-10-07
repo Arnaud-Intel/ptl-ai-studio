@@ -39,10 +39,12 @@ Transcribe the call/video playing on this device, then generate notes on Ctrl+C:
 uv run meeting-notes --source system
 ```
 
-Same, but transcription and notes generation both run on the NPU:
+On the OpenVINO engine the notes are written on the NPU when the machine has
+one (see **Which chip writes the notes**). To have a GPU write them instead,
+which gives more complete notes:
 
 ```bash
-uv run meeting-notes --source system --engine openvino --compute-device NPU
+uv run meeting-notes --source system --engine openvino --notes-device GPU
 ```
 
 The CLI transcribes until you press Ctrl+C, then generates and prints
@@ -65,7 +67,8 @@ refused while this brick is transcribing a meeting of its own.
 | `--source {mic,system}` | Audio source. Default: `system` (the call/video itself, not just your mic). |
 | `--audio-device NAME` | Substring to match a specific microphone/output device name. |
 | `--engine {portable,openvino}` | Backend for *both* transcription and notes generation. Default: `portable`. |
-| `--compute-device NAME` | `openvino` engine only: `AUTO`, `CPU`, `GPU`, `NPU`. |
+| `--compute-device NAME` | `openvino` engine only: `AUTO`, `CPU`, `GPU`, `NPU`. The chip that transcribes. |
+| `--notes-device NAME` | `openvino` engine only: the chip that writes the notes. Default: the NPU if the machine has one, otherwise the same as `--compute-device`. |
 | `--whisper-model NAME` | Whisper model size override. |
 | `--list-devices` | List microphones, output devices, and inference devices, then exit. |
 
@@ -108,11 +111,37 @@ strict pattern check, and every set of notes was read as well.
 | Qwen3-8B, CPU | (one meeting) | 14 tok/s, 25 s | |
 | Qwen3-4B, integrated GPU | 16, 16 | 39 tok/s | two tasks given to the wrong person in every run |
 | Qwen3-Coder-30B, integrated GPU | 14-17 | 43 tok/s | no better than the 8B, for 17 GB |
-| **Qwen3-8B channel-wise, NPU** | 11 | 19 tok/s, 7-17 s | lists fewer tasks; one garbled name |
+| **Qwen3-8B channel-wise, NPU** | 11, 10 | 19 tok/s, 7-17 s | lists fewer tasks; one garbled name |
 | Qwen2.5-1.5B, NPU | 8 | 57 tok/s | wrong owners, placeholder deadlines |
+| Mistral-7B-v0.3 channel-wise, NPU | 13 | 20 tok/s | deadlines nobody set ("by the end of the current week"), months added to dates |
+| Phi-3.5-mini channel-wise, NPU | (two meetings) | 31 tok/s | invents owners and dates ("John", "Mary", "Friday, October 26th") |
+| Qwen3-4B int8, Qwen3-8B int8, NPU | none | | compile in 66 s and 93 s, then no answer in 13 and 8 minutes |
 
 The first load takes about 10 s on a GPU, and about a minute on the NPU the
 first time ever (it compiles the model for the chip, then keeps the result).
+
+### Which chip writes the notes
+
+The notes are written on a chip of their own, and left to the app that is
+**the NPU**: writing notes is a few seconds of work now and then, which is
+what the NPU is for, and it leaves the GPU to the transcription. It also
+keeps the speech model and the notes model off the same NPU: two models there
+is the situation in which the NPU driver fault was seen (see BACKLOG).
+"Notes written on" in the launcher, `--notes-device` here,
+choose another chip, and in the launcher the choice can change between two
+summaries of the same meeting.
+
+The price is in the table: the NPU's build of the model finds about 11 of the
+20 tasks where a GPU finds 17. That build was quantised without calibration
+data (its `openvino_config.json` says `"dataset": null`; the standard build's
+says `wikitext2`), which is the likely cause, and nothing else published runs
+better there -- the rows above are every candidate tried. Asking the NPU's
+model for the summary and the action items in two separate calls found 14,
+but listed decisions as tasks and none of the three tasks of the one real
+transcript, so it was not kept. A channel-wise build quantised *with*
+calibration data is what would close the gap; it would have to be made
+(`optimum-cli export openvino ... --sym --group-size -1 --awq
+--scale-estimation --dataset wikitext2`) and hosted.
 
 ## Prompting notes (bugs found while building this)
 
@@ -160,8 +189,10 @@ prompt failed in two different ways before landing on a prompt + guard:
 - A transcript does not say who is speaking. The notes name a task's owner
   only when the words make it clear, and still get it wrong sometimes: check
   the names before forwarding them.
-- On the NPU the notes are noticeably weaker than on a GPU (see the table
-  above): the only build of the model that runs there loses accuracy.
+- On the NPU, which is where the notes go by default, they are noticeably
+  weaker than on a GPU (see the table above): the only build of the model
+  that runs there loses accuracy. When the notes matter more than the chip,
+  set "Notes written on" to a GPU.
 - The thin-transcript guard is a word-count heuristic, not a semantic
   check -- it prevents the worst, most obvious hallucination case (near-empty
   input) but doesn't guarantee a longer transcript can't still produce an

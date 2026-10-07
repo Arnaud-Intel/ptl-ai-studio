@@ -20,6 +20,18 @@ def test_the_notes_model_depends_on_the_chip():
     assert notes.notes_model_repo(Engine.PORTABLE, "cpu") is None  # the backend's own default
 
 
+def test_nobody_choosing_the_notes_go_to_the_npu_when_there_is_one(monkeypatch):
+    monkeypatch.setattr(notes.npu, "lost", lambda: None)
+    assert notes.default_notes_device(Engine.OPENVINO, "GPU.0", ["CPU", "GPU.0", "NPU"]) == "NPU"
+    assert notes.default_notes_device(Engine.OPENVINO, "GPU.0", ["CPU", "GPU.0"]) == "GPU.0"  # no NPU: where it transcribes
+    assert notes.default_notes_device(Engine.PORTABLE, "cpu", ["CPU", "GPU.0", "NPU"]) == "cpu"
+
+    monkeypatch.setattr(notes, "list_openvino_devices", lambda: ["CPU", "NPU"])  # asked without a list: it looks
+    assert notes.default_notes_device(Engine.OPENVINO, "CPU") == "NPU"
+    monkeypatch.setattr(notes.npu, "lost", lambda: "the device was removed")  # reset by Windows earlier this session
+    assert notes.default_notes_device(Engine.OPENVINO, "CPU") == "CPU"
+
+
 class _Notes:
     last_stats = None
 
@@ -68,6 +80,24 @@ def test_the_session_loads_that_model_and_gives_it_the_words_only(monkeypatch, d
     assert session.transcript_text().startswith("[10:41:56] we will need")  # a person reading it still gets the times
 
 
+def test_the_notes_can_be_written_on_another_chip_than_the_one_that_transcribes(monkeypatch):
+    asked: list[dict] = []
+    monkeypatch.setattr(notes, "create_llm", lambda engine, **kwargs: asked.append(kwargs) or _Notes())
+    lines = [TranscriptLine("10:00:00", " ".join(["we will need to estimate the transport costs"] * 5), "en")]
+    session = MeetingSession(
+        Engine.OPENVINO, compute_device="GPU.0", whisper_model_size="base", transcript=lines, notes_device="NPU"
+    )
+    session.generate_notes()
+    session.write_notes_on("NPU")  # the same chip: nothing to load again
+    session.generate_notes()
+    assert [(call["device"], call["model_repo"]) for call in asked] == [("NPU", notes.notes_model_repo(Engine.OPENVINO, "NPU"))]
+
+    session.write_notes_on("GPU.0")  # another chip is another build of the model
+    session.generate_notes()
+    assert (asked[-1]["device"], asked[-1]["model_repo"]) == ("GPU.0", notes.notes_model_repo(Engine.OPENVINO, "GPU.0"))
+    assert len(asked) == 2 and session.compute_device == "GPU.0"
+
+
 def test_too_few_words_is_counted_in_words_not_in_timestamps():
     # Twelve short lines used to pass as 25 "words" on their timestamps alone.
     session = MeetingSession(
@@ -76,6 +106,14 @@ def test_too_few_words_is_counted_in_words_not_in_timestamps():
     )
     with pytest.raises(RuntimeError, match="20 words so far"):
         session.generate_notes()
+
+
+def test_headings_written_as_list_items_or_markdown_come_out_plain():
+    written = "- Summary\n- We talked about costs.\n\n**Action items:**\n- Unassigned: estimate the costs\n- Summary of costs to Dana"
+    assert notes.with_plain_headings(written) == (
+        "Summary\n- We talked about costs.\n\nAction items\n- Unassigned: estimate the costs\n- Summary of costs to Dana"
+    )
+    assert notes.with_plain_headings("### 2. Action Items\n- None identified") == "Action items\n- None identified"
 
 
 def test_the_instructions_say_what_a_transcript_cannot_tell():

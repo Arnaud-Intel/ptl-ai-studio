@@ -40,6 +40,11 @@ class MeetingNotesRunner:
     def running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
+    @property
+    def engine(self) -> Engine | None:
+        """The engine of the meeting in hand, None before the first one."""
+        return self._engine
+
     def start(
         self,
         *,
@@ -51,7 +56,10 @@ class MeetingNotesRunner:
         compute_device: str,
         whisper_model_size: str,
         spoken_language: str | None = None,
+        notes_device: str | None = None,
     ) -> None:
+        """`compute_device` transcribes; `notes_device` (the same one if
+        not given) writes the notes."""
         with self._state_lock:
             worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
@@ -59,7 +67,11 @@ class MeetingNotesRunner:
             self._engine = engine
             self._compute_device = compute_device
             self._session = MeetingSession(
-                engine, compute_device=compute_device, whisper_model_size=whisper_model_size, spoken_language=spoken_language
+                engine,
+                compute_device=compute_device,
+                whisper_model_size=whisper_model_size,
+                spoken_language=spoken_language,
+                notes_device=notes_device,
             )
             self._stop_event = threading.Event()
             stop_event = self._stop_event
@@ -102,11 +114,11 @@ class MeetingNotesRunner:
             self._thread.start()
 
     def adopt(
-        self, lines: list[dict], *, engine: Engine, compute_device: str, whisper_model_size: str
+        self, lines: list[dict], *, engine: Engine, notes_device: str, whisper_model_size: str
     ) -> list[TranscriptLine]:
         """Take a transcript captured elsewhere (live translation's: dicts
         with `timestamp`, `text`, `detected_language`) as this brick's
-        meeting, ready for generate_notes() on `engine`/`compute_device`.
+        meeting, ready for generate_notes() on `engine`/`notes_device`.
         Returns the lines taken.
 
         One recording, two uses: without this, a summary of what live
@@ -132,14 +144,16 @@ class MeetingNotesRunner:
                 raise Conflict("Nothing has been transcribed yet, so there is nothing to summarise.")
             self.error = None
             session = self._session
-            if session is not None and (session.engine, session.compute_device) == (engine, compute_device):
-                session.replace_transcript(transcript)  # same notes model as before: keep it loaded
+            if session is not None and session.engine == engine:
+                session.replace_transcript(transcript)
+                session.write_notes_on(notes_device)  # the same chip as before keeps the model loaded
             else:
+                # Nothing is transcribed here, so the session's own device is only a name.
                 self._session = MeetingSession(
-                    engine, compute_device=compute_device, whisper_model_size=whisper_model_size, transcript=transcript
+                    engine, compute_device=notes_device, whisper_model_size=whisper_model_size, transcript=transcript
                 )
             self._engine = engine
-            self._compute_device = compute_device
+            self._compute_device = notes_device
             return transcript
 
     def stop(self) -> None:
@@ -148,14 +162,15 @@ class MeetingNotesRunner:
                 return
             self._thread = None
 
-    def generate_notes(self) -> MeetingNotes:
+    def generate_notes(self, notes_device: str | None = None) -> MeetingNotes:
         """Blocking -- call via run_in_threadpool. Works while still
         transcribing (notes reflect everything captured so far) or after
-        stopping (the session and its transcript outlive the thread)."""
+        stopping (the session and its transcript outlive the thread).
+        `notes_device`, if given, is the chip to write them on from now on:
+        the one thing about a meeting that can change while it runs."""
         with self._state_lock:
             session = self._session
             engine = self._engine
-            device = self._compute_device
         if session is None or engine is None:
             raise Conflict("Start capturing audio first.")
 
@@ -172,10 +187,13 @@ class MeetingNotesRunner:
 
         # The notes stage gets its own activity entry, so it never clears
         # the transcription thread's while that is still running.
-        activity.set_active(_DEMO_ID, engine=engine.value, device=device, stage="notes", stage_label="notes")
-        events.set_phase(_DEMO_ID, "loading", "Preparing notes model...", stage="notes")
         live = generation.get(_DEMO_ID, "notes")  # its own stage: stopping it leaves the transcription running
         with self._notes_lock:
+            if notes_device:
+                session.write_notes_on(notes_device)
+            device = session.notes_device
+            activity.set_active(_DEMO_ID, engine=engine.value, device=device, stage="notes", stage_label="notes")
+            events.set_phase(_DEMO_ID, "loading", f"Preparing notes model on {device}...", stage="notes")
             try:
                 notes = session.generate_notes(
                     on_ready=on_ready, on_downloading=on_downloading, on_progress=on_progress, control=live.begin()

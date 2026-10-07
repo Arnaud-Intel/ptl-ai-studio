@@ -319,8 +319,12 @@
             </select>
           </label>
           <label class="field">
-            <span>Compute device</span>
+            <span>Transcription on</span>
             <select id="mtg-compute-device"></select>
+          </label>
+          <label class="field">
+            <span>Notes written on</span>
+            <select id="mtg-notes-device" title="The chip that writes the summary and the action items. Left to the app, that is the NPU: it leaves the GPU to the transcription. A GPU writes more complete notes -- the build of the model the NPU can run is less accurate. Can be changed while a meeting runs."></select>
           </label>
           <label class="field">
             <span>Spoken language</span>

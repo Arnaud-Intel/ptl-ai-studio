@@ -1284,6 +1284,23 @@ const PANELS = {
       wireAudioSource(el("mtg-source"), el("mtg-audio-device"), data);
       fillSpokenLanguages(el("mtg-language"), data);
       wireEngineAndDevice(el("mtg-engine"), el("mtg-compute-device"), data, { portableDevices: ["cpu", "cuda"] });
+      // The notes have a chip of their own. Left to the app it is the NPU,
+      // the one brick where "Auto" means that: the notes model is known to
+      // run there, and the GPU is left to the transcription.
+      const devices = data.openvino_devices || [];
+      const auto = devices.some((d) => d.toUpperCase().startsWith("NPU")) ? "Auto (the NPU)" : deviceLabel("AUTO");
+      const fillNotesDevice = () => {
+        const select = el("mtg-notes-device");
+        const chosen = select.value;
+        const items =
+          el("mtg-engine").value === "openvino"
+            ? [{ value: "AUTO", label: auto }, ...devices.map((d) => ({ value: d, label: deviceLabel(d) }))]
+            : [{ value: "cpu", label: deviceLabel("cpu") }];
+        fillSelect(select, items);
+        if (items.some((item) => item.value === chosen)) select.value = chosen;
+      };
+      el("mtg-engine").addEventListener("change", fillNotesDevice);
+      fillNotesDevice();
     },
     body() {
       return {
@@ -1291,6 +1308,7 @@ const PANELS = {
         audio_device: el("mtg-audio-device").value || null,
         engine: el("mtg-engine").value,
         compute_device: el("mtg-compute-device").value,
+        notes_device: el("mtg-notes-device").value,
         language: el("mtg-language").value,
       };
     },
@@ -1320,7 +1338,7 @@ const PANELS = {
       try {
         data = await postJSON("/api/meeting-notes/from-live-translation", {
           engine: el("mtg-engine").value,
-          compute_device: el("mtg-compute-device").value,
+          notes_device: el("mtg-notes-device").value,
         });
       } catch (err) {
         paintStatus(el("mtg-notes-status"), `Error: ${err.message}`, "error");
@@ -1342,13 +1360,15 @@ const PANELS = {
         partial: { target: el("mtg-notes"), stage: "notes" },
         busy: "Generating notes…",
         work: async () => {
-          const data = await postJSON("/api/meeting-notes/generate");
+          // The chip chosen now, which may not be the one the last notes were written on.
+          const data = await postJSON("/api/meeting-notes/generate", { notes_device: el("mtg-notes-device").value });
           renderTextBlock(el("mtg-notes"), data.text);
           el("mtg-notes").insertAdjacentHTML("afterbegin", stoppedNoteHtml(data));
           return data;
         },
         done: (data) =>
           `Based on ${data.transcript_line_count} transcript line(s)` +
+          (data.device ? `, written on ${deviceLabel(data.device)}` : "") +
           (data.parts > 1 ? ` -- a long meeting, summarised in ${data.parts} parts and merged` : ""),
       });
     },
