@@ -16,6 +16,7 @@ from typing import Callable
 
 from doc_qa.engine_factory import TEMPLATE_TOKENS, create_llm
 from live_translation import pipeline as live_translation_pipeline
+from pantherlake_ai_core import npu
 from pantherlake_ai_core.engine import Engine
 from pantherlake_ai_core.types import GenerationControl, TranslationResult, combine_stats, say, stopped
 
@@ -23,21 +24,73 @@ from .types import MeetingNotes, TranscriptLine
 
 _MIN_WORDS_FOR_NOTES = 25
 
+# The notes model on the OpenVINO engine: Qwen3-8B. doc-qa's default
+# (Qwen2.5-1.5B) is too small for this job. On four test meetings with 20
+# stated tasks (2026-10-07, XPS 14, integrated GPU, one or two runs a cell,
+# the draw being seeded) it listed 6, answered "None identified" to a
+# meeting with four, and made up deadlines. Qwen3-8B listed 17 and 18 and
+# gave every named task to the right person, at 23 tokens/s -- 6 to 10 s a
+# meeting. Qwen3-4B was faster (39 tokens/s) and listed 16, but gave two
+# tasks to the wrong person in every run. Qwen3-Coder-30B, the model the
+# coding bricks load, was no better at this (14-17) for 17 GB.
+#
+# The NPU needs a build quantised for it: the standard one does not compile
+# there ("Can't convert 44 Bit to Byte") and the 4B answers garbage. The
+# channel-wise build runs at 19 tokens/s and is weaker -- 11 of 20 -- but
+# still ahead of the 1.5B on the same chip (8, with invented owners).
+# The portable engine keeps doc-qa's small default.
+_OPENVINO_NOTES_REPO = "OpenVINO/Qwen3-8B-int4-ov"
+_OPENVINO_NOTES_REPO_NPU = "OpenVINO/Qwen3-8B-int4-cw-ov"
+
+
+def notes_model_repo(engine: Engine, device: str) -> str | None:
+    """The model that writes the notes on `device`; None for the LLM
+    backend's own default."""
+    if engine != Engine.OPENVINO:
+        return None
+    return _OPENVINO_NOTES_REPO_NPU if npu.is_npu(device) else _OPENVINO_NOTES_REPO
+
+
+# What the instructions are for, each line of them earned on the test
+# meetings above:
+# - The transcript has no speaker names, and the models gave a task to
+#   whoever was mentioned last. "Unassigned:" is the honest owner when nobody
+#   was named -- which is every task of a meeting dictated by one person.
+# - No personal name in the examples: one that was there ("Maria, can you
+#   send it?") came back as the owner of every task in a meeting with no
+#   Maria in it.
+# - Plain text, because the page and the terminal show the notes as written:
+#   asterisks and # headings arrived as asterisks and # signs.
+# - The summary first: with the action items first the 8B model copied
+#   transcript lines out instead of writing notes.
 _NOTES_SYSTEM_PROMPT = (
-    "You are an assistant that writes concise meeting notes from a raw "
-    "speech transcript. Given the transcript so far, produce:\n"
-    "1. A short running summary (2-6 bullet points) of what's been discussed.\n"
-    "2. An 'Action items' section: one bullet per concrete commitment, task, "
-    "or deadline anyone in the transcript stated -- including first-person "
-    "commitments like 'I need to write the tests by Friday' or 'I'll fix "
-    "that by Wednesday', and follow-ups like 'let's meet again Monday'. "
-    "Treat any sentence naming a task plus a timeframe, or promising to do "
-    "something, as an action item -- don't restrict this to items explicitly "
-    "labeled as tasks. If you list at least one real action item, do not "
-    "also write 'None identified' -- only write that line if the list would "
-    "otherwise be completely empty.\n"
-    "Only use what's actually in the transcript. Don't invent details, "
-    "attendees, or decisions that weren't said."
+    "You write meeting notes from a raw speech transcript. The transcript is "
+    "what a speech recogniser heard: one line per utterance, and no speaker "
+    "names. A line was said by whoever was talking at that moment, which is "
+    "often not the last person mentioned.\n\n"
+    "Write two sections in plain text. No Markdown: no asterisks and no # "
+    'headings; start each list line with "- ".\n\n'
+    "Summary\n"
+    "2 to 6 lines on what was discussed and decided.\n\n"
+    "Action items\n"
+    "One line per task, commitment or follow-up stated in the meeting, with "
+    "its deadline if one was said. This covers first-person commitments "
+    '("I\'ll fix that by Wednesday", "I need to write the tests by Friday"), '
+    "a request that the person accepted, a task stated for the group "
+    '("we will need to estimate the costs"), and the next meeting if one was '
+    "agreed. List a commitment here even when the summary mentions it too.\n"
+    "Rules for this section:\n"
+    "- Start a line with a person's name only when the transcript makes "
+    "clear that this person will do it: they were asked by name just before, "
+    "they said their own name, or someone named them as the one doing it. "
+    'Otherwise start the line with "Unassigned:". Never guess who.\n'
+    "- Give days, dates and times exactly as they were said. Never add a "
+    "deadline, a date or a month that was not said.\n"
+    "- Something explicitly not promised, put off without a date, or needing "
+    "nothing done is not an action item.\n"
+    '- Write "None identified" only if there is no action item at all.\n\n'
+    "Use only what is in the transcript. Do not invent details, attendees or "
+    "decisions."
 )
 
 # A meeting longer than the model's window is summarised part by part, then
@@ -51,17 +104,20 @@ _NOTES_SYSTEM_PROMPT = (
 _PART_SYSTEM_PROMPT = (
     "The transcript below is ONE PART of a longer meeting; write notes on this part only. "
     + _NOTES_SYSTEM_PROMPT
-    + " Write each action item as 'Name: task (deadline)', with the name the transcript gives."
+    + " Write each action item as 'Name: task (deadline)', or 'Unassigned: task (deadline)' when the"
+    " transcript does not make clear who."
 )
 _MERGE_SYSTEM_PROMPT = (
     "You are combining notes written separately on consecutive parts of ONE "
-    "meeting into a single set of meeting notes. Produce:\n"
-    "1. A short running summary (2-6 bullet points) of the whole meeting.\n"
-    "2. An 'Action items' section with every action item from the parts, "
-    "merging duplicates. Keep each item's owner name and deadline exactly as "
-    "the parts give them -- an action item without its owner is useless. "
-    "Only write 'None identified' if no part had any.\n"
-    "Only use what the part notes say. Don't invent details."
+    "meeting into a single set of meeting notes. Write two sections in plain "
+    'text. No Markdown: no asterisks and no # headings; start each list line with "- ".\n\n'
+    "Summary\n"
+    "2 to 6 lines on the whole meeting.\n\n"
+    "Action items\n"
+    "Every action item from the parts, merging duplicates. Keep each item's "
+    "owner (a name, or 'Unassigned') and its deadline exactly as the parts "
+    "give them. Only write 'None identified' if no part had any.\n\n"
+    "Use only what the part notes say. Do not invent details."
 )
 _PART_MAX_TOKENS = 350
 # Per-item token counts add up to slightly less than the joined text's
@@ -210,6 +266,14 @@ class MeetingSession:
         with self._lock:
             return [f"[{line.timestamp}] {line.text}" for line in self._transcript]
 
+    def _spoken_lines(self) -> list[str]:
+        """What the notes model reads: the words, without each line's time.
+        The notes never quote a time of day; given them, the models turned
+        them into dates nobody said ("by today (10/07/2024)"), and on the
+        NPU's fixed window they are tokens taken from the meeting itself."""
+        with self._lock:
+            return [line.text for line in self._transcript]
+
     def generate_notes(
         self,
         max_tokens: int = 600,
@@ -225,7 +289,7 @@ class MeetingSession:
         "actually generating notes" needs the same seam here.
         `on_progress(step, steps)`, if given, fires before each model call
         when a long meeting has to be summarised in parts."""
-        lines = self._transcript_lines()
+        lines = self._spoken_lines()
         line_count = len(lines)
         transcript_text = "\n".join(lines)
         if not transcript_text.strip():
@@ -248,7 +312,12 @@ class MeetingSession:
             )
 
         if self._llm is None:
-            self._llm = create_llm(self.engine, device=self.compute_device, on_downloading=on_downloading)
+            self._llm = create_llm(
+                self.engine,
+                device=self.compute_device,
+                model_repo=notes_model_repo(self.engine, self.compute_device),
+                on_downloading=on_downloading,
+            )
         if on_ready is not None:
             on_ready()
 

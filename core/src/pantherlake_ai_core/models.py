@@ -65,7 +65,12 @@ MODELS: tuple[ModelSpec, ...] = (
     ModelSpec("whisper-base-ov", "Whisper base (speech)", _SPEECH, OPENVINO, "OpenVINO/whisper-base-fp16-ov",
               note="The launcher's default size on the OpenVINO engine; tiny, medium and large-v3 download on demand."),
     ModelSpec("whisper-small-portable", "faster-whisper small (speech)", _SPEECH, PORTABLE, "Systran/faster-whisper-small"),
-    ModelSpec("llm-1.5b-ov", "Qwen2.5 1.5B (text)", _TEXT, OPENVINO, "OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov"),
+    # Meeting notes are written by a larger model on this engine (below).
+    ModelSpec("llm-1.5b-ov", "Qwen2.5 1.5B (text)", tuple(demo for demo in _TEXT if demo != "meeting-notes"), OPENVINO,
+              "OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov"),
+    ModelSpec("notes-8b-ov", "Qwen3 8B (meeting notes)", ("meeting-notes",), OPENVINO, "OpenVINO/Qwen3-8B-int4-ov"),
+    ModelSpec("notes-8b-npu-ov", "Qwen3 8B, NPU build (meeting notes)", ("meeting-notes",), OPENVINO,
+              "OpenVINO/Qwen3-8B-int4-cw-ov", note="Only loaded when the notes are written on the NPU."),
     ModelSpec("llm-1.5b-portable", "Qwen2.5 1.5B GGUF (text)", _TEXT, PORTABLE, "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
               ("*q4_k_m.gguf",)),
     ModelSpec("embed-ov", "Qwen3 embeddings", ("doc-qa", "smart-recall"), OPENVINO, "OpenVINO/Qwen3-Embedding-0.6B-int8-ov"),

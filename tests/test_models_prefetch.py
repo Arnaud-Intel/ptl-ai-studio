@@ -36,10 +36,15 @@ def test_the_openvino_models_the_bricks_name_are_all_listed():
     from code_review_assist import session as code_review
     from doc_qa import embedder_openvino, llm_openvino
     from live_translation import transcriber_openvino
+    from meeting_notes import session as meeting_notes
     from object_detection import detector_openvino
+    from pantherlake_ai_core.engine import Engine
     from screen_ocr import extractor_openvino
 
     listed = {spec.repo_id for spec in models.MODELS}
+    for device in ("GPU.0", "NPU", "CPU"):  # the notes model depends on the chip
+        repo = meeting_notes.notes_model_repo(Engine.OPENVINO, device)
+        assert "meeting-notes" in _spec(repo).demos, f"{repo} writes the notes on {device} but isn't listed for the demo"
     assert transcriber_openvino._DEFAULT_REPO_TEMPLATE.format(size="base") in listed
     assert llm_openvino._DEFAULT_REPO in listed
     assert embedder_openvino._DEFAULT_REPO in listed

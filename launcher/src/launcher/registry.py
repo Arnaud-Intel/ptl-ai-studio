@@ -94,9 +94,9 @@ REGISTRY: list[Demo] = [
         tagline="Transcribe and summarize a call as it happens.",
         description=(
             "Live transcription (via the live-translation brick) feeding a "
-            "local LLM (via the doc-qa brick) that generates a running "
-            "summary and action items on demand -- nothing here is a new "
-            "model, it's two bricks composed together."
+            "local LLM (via the doc-qa brick) that writes a summary and the "
+            "action items on demand -- two bricks composed together, with a "
+            "language model sized for note-taking."
         ),
         engines=["portable", "openvino"],
         status="available",

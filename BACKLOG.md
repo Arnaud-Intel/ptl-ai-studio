@@ -147,6 +147,17 @@ a new one or the deferred list, and moves its original wording to
   its summary was sound but it wrote "Action items: None identified" and
   gave one speaker's task to someone else -- the 0 of 7 above, seen on the
   page.
+  *2026-10-07, later:* Meeting Notes now writes with Qwen3-8B on the
+  OpenVINO engine (standard int4 build on a GPU or the CPU, channel-wise on
+  the NPU) -- it needs no OpenVINO upgrade. Four test meetings, 20 stated
+  tasks: 17-18 found on the integrated GPU at 23 tok/s against 6 for the
+  1.5B; 11 on the NPU at 19 tok/s. The table and what the instructions had
+  to learn are in `bricks/meeting-notes/README.md`. Still open from this
+  item: Qwen3.5-4B found 7 of 7 on the first of those meetings at 38 tok/s
+  but needs OpenVINO 2026.4; nothing better than the channel-wise 8B runs
+  on the NPU; the other bricks on the 1.5B (documents, voice assistant,
+  expenses) are unchanged. `Qwen3-4B-int4-ov` in the cache is no longer a
+  candidate for anything.
 - [ ] **Live translation lost the NPU when the expense extractor started
   beside it.** `logs/events.log`, 2026-10-05 at 10:41-10:44: live
   translation was running on the NPU; the expense extractor started

@@ -117,7 +117,7 @@ def studio(quiet_events, monkeypatch):
     monkeypatch.setattr(launcher_app, "live_translation_runner", live)
     monkeypatch.setattr(launcher_app, "meeting_notes_runner", meeting)
     monkeypatch.setattr(launcher_app, "resolve", lambda engine, device, **kwargs: (Engine.OPENVINO, device or "GPU.0"))
-    monkeypatch.setattr("meeting_notes.session.create_llm", lambda engine, device, on_downloading=None: llm)
+    monkeypatch.setattr("meeting_notes.session.create_llm", lambda engine, **kwargs: llm)
     return TestClient(launcher_app.app), live, meeting, llm
 
 

@@ -22,9 +22,10 @@ uv sync                    # portable engine only
 uv sync --extra openvino   # also installs the OpenVINO engine
 ```
 
-No new heavy dependencies -- if you've already used `live-translation` and
-`doc-qa`, their models are already cached and this brick has nothing left
-to download.
+No new code dependencies. On the OpenVINO engine the notes are written by a
+model of their own, downloaded the first time notes are asked for (about
+5 GB; `uv run panther-lake-prefetch`, or "Models" in the launcher's footer,
+fetches it ahead of a show). See **The notes model** below.
 
 ## Usage
 
@@ -86,11 +87,53 @@ whole brick:
    after the session has stopped -- the transcript and the LLM both outlive
    the capture thread.
 
-## Prompting notes (a real bug found while building this)
+## The notes model
 
-The first version of the action-items prompt was reasonable-sounding but
-under-specified, and the small default LLM (1.5B/int4-scale) failed in two
-different ways before landing on the current prompt + guard:
+On the OpenVINO engine the notes are written by **Qwen3-8B**: the standard
+int4 build on a GPU or the CPU, and the channel-wise build on the NPU, where
+the standard one does not compile. The portable engine keeps `doc-qa`'s small
+default (Qwen2.5-1.5B).
+
+Measured on the XPS 14 on 2026-10-07, on four test meetings holding 20 stated
+tasks between them -- three written for the purpose, one dictated in French
+into the laptop's microphone and transcribed by live translation. One or two
+runs per cell; "found" is tasks listed with the right owner and deadline by a
+strict pattern check, and every set of notes was read as well.
+
+| Model, chip | Tasks found | Speed | What went wrong |
+| --- | --- | --- | --- |
+| Qwen2.5-1.5B, integrated GPU (before) | 6 | 84 tok/s | "None identified" on a meeting with four tasks; invented deadlines |
+| **Qwen3-8B, integrated GPU** | 17, 18 | 23 tok/s, 6-10 s a meeting | misses "we meet again on..."; one unnamed speaker's task given to the last person mentioned |
+| Qwen3-8B, Arc Pro B60 | 17 | 60 tok/s, 2-4 s | the same |
+| Qwen3-8B, CPU | (one meeting) | 14 tok/s, 25 s | |
+| Qwen3-4B, integrated GPU | 16, 16 | 39 tok/s | two tasks given to the wrong person in every run |
+| Qwen3-Coder-30B, integrated GPU | 14-17 | 43 tok/s | no better than the 8B, for 17 GB |
+| **Qwen3-8B channel-wise, NPU** | 11 | 19 tok/s, 7-17 s | lists fewer tasks; one garbled name |
+| Qwen2.5-1.5B, NPU | 8 | 57 tok/s | wrong owners, placeholder deadlines |
+
+The first load takes about 10 s on a GPU, and about a minute on the NPU the
+first time ever (it compiles the model for the chip, then keeps the result).
+
+## Prompting notes (bugs found while building this)
+
+The instructions ([`session.py`](src/meeting_notes/session.py)) say what a
+speech transcript is: one line per utterance and **no speaker names**. The
+models gave a task to whoever was mentioned last, so a task is given to a
+person only when the transcript makes clear who, and to `Unassigned:`
+otherwise -- which is every task of a meeting one person dictated. Three more
+things the test meetings taught:
+
+- **A name in an example comes back.** "Maria, can you send it?" as an
+  example of a request made every task of a meeting with no Maria in it
+  Maria's. The examples name nobody.
+- **The model is not shown the time of each line.** With `[10:41:56]` in
+  front of every line it wrote dates nobody said ("by today (10/07/2024)"),
+  and the times cost tokens the NPU's fixed window needs for the meeting.
+- **Plain text.** The page and the terminal show the notes as written, so
+  Markdown arrived as asterisks and `#` signs.
+
+Earlier, with the small default LLM (1.5B/int4-scale), the action-items
+prompt failed in two different ways before landing on a prompt + guard:
 
 - **Under-detection**: a plain "list any action items" instruction missed
   first-person commitments like "I still need to write the tests by
@@ -114,6 +157,11 @@ different ways before landing on the current prompt + guard:
 
 - One engine choice drives both transcription and notes generation. You
   can't currently mix e.g. OpenVINO Whisper with the portable LLM.
+- A transcript does not say who is speaking. The notes name a task's owner
+  only when the words make it clear, and still get it wrong sometimes: check
+  the names before forwarding them.
+- On the NPU the notes are noticeably weaker than on a GPU (see the table
+  above): the only build of the model that runs there loses accuracy.
 - The thin-transcript guard is a word-count heuristic, not a semantic
   check -- it prevents the worst, most obvious hallucination case (near-empty
   input) but doesn't guarantee a longer transcript can't still produce an

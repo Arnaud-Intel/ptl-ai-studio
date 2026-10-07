@@ -58,6 +58,8 @@ def _context_length(model_dir: str) -> int:
 
 
 class OpenVINOLLM:
+    _thinks_aloud = False  # set per model when it is loaded
+
     def __init__(
         self,
         device: str = "AUTO",
@@ -79,6 +81,11 @@ class OpenVINOLLM:
         with npu.guard(device):
             self.pipeline = self._ov_genai.LLMPipeline(self._model_dir, device, **pipeline_config(device))
         self._tokenizer = self.pipeline.get_tokenizer()
+        # Qwen3 and later reason aloud before they answer unless the chat
+        # template is told not to; every brick here shows the answer as it is
+        # written and wants only that. A model with no such switch (Qwen2.5,
+        # Qwen3-Coder) is sent exactly what it was sent before.
+        self._thinks_aloud = "enable_thinking" in (getattr(self._tokenizer, "chat_template", "") or "")
         self._on_npu = npu.is_npu(device)
         # The chip this model is on now, which is not always the one asked
         # for: a caller reporting where the work happens reads it from here.
@@ -122,6 +129,8 @@ class OpenVINOLLM:
                 {"role": "user", "content": user_prompt},
             ]
         )
+        if self._thinks_aloud:
+            history.set_extra_context({"enable_thinking": False})
         # The model's own settings draw each token at random among the likely
         # ones; 0.2 keeps that draw close to the first choice.
         choice = {"temperature": 0.2} if sample else {"do_sample": False}
