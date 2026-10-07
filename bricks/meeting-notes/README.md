@@ -49,6 +49,14 @@ final notes automatically. The launcher's web UI (`uv run panther-lake-launcher`
 is the better way to watch the transcript grow live and generate notes on
 demand at any point, not just at the end.
 
+### From a live translation session
+
+A meeting that [live-translation](../live-translation/README.md) is already
+transcribing in the launcher needs no second transcription. **Summarise in
+Meeting Notes**, in that panel, hands its whole transcript over and the notes
+are written from it here, on the engine and device this panel is set to. It is
+refused while this brick is transcribing a meeting of its own.
+
 ## Options
 
 | Flag | Description |

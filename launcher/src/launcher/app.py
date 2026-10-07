@@ -525,6 +525,20 @@ async def stop_live_translation() -> JSONResponse:
     return JSONResponse({"status": "stopped"})
 
 
+@app.get("/api/live-translation/transcript")
+def live_translation_transcript() -> JSONResponse:
+    """Everything live translation has heard since its transcript was last
+    cleared, across Stop and Start. The launcher keeps it, so a reloaded
+    page gets its lines back and Meeting Notes can be handed the lot."""
+    return JSONResponse(live_translation_runner.transcript())
+
+
+@app.delete("/api/live-translation/transcript")
+def clear_live_translation_transcript() -> JSONResponse:
+    """Start a new transcript (the next meeting). Returns its `id`."""
+    return JSONResponse({"id": live_translation_runner.clear_transcript()})
+
+
 @app.websocket("/ws/live-translation")
 async def ws_live_translation(websocket: WebSocket) -> None:
     await ws_drain(websocket, app.state.live_translation_queue)
@@ -853,6 +867,32 @@ async def start_meeting_notes(req: MeetingNotesStartRequest) -> JSONResponse:
     except Exception as exc:
         return error_response(exc)
     return JSONResponse({"status": "started"})
+
+
+class MeetingNotesHandoverRequest(BaseModel):
+    engine: str | None = None
+    compute_device: str | None = None
+
+
+@app.post("/api/meeting-notes/from-live-translation")
+async def meeting_notes_from_live_translation(req: MeetingNotesHandoverRequest) -> JSONResponse:
+    """Hand live translation's whole transcript to Meeting Notes, which then
+    writes notes from it as from a meeting of its own (POST
+    /api/meeting-notes/generate). `engine`/`compute_device` are where the
+    notes will be written. Live translation is left running."""
+    try:
+        engine, device = resolve(req.engine, req.compute_device)
+        taken = meeting_notes_runner.adopt(
+            live_translation_runner.transcript()["lines"],
+            engine=engine,
+            compute_device=device,
+            whisper_model_size=_WHISPER_SIZE_DEFAULTS[engine],
+        )
+    except Exception as exc:
+        return error_response(exc)
+    return JSONResponse(
+        {"lines": [asdict(line) for line in taken], "words": sum(len(line.text.split()) for line in taken)}
+    )
 
 
 @app.post("/api/meeting-notes/stop")

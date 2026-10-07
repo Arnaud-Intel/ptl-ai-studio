@@ -117,6 +117,13 @@
         <div id="lt-transcript" class="output">
           <p class="placeholder">Translated speech will appear here once you press Start.</p>
         </div>
+        <div class="run-row">
+          <button id="lt-summarise" class="btn btn-secondary" type="button"
+            title="Hands this whole transcript to Live Meeting Notes, which writes a summary and the action items from it. Live translation keeps running.">Summarise in Meeting Notes</button>
+          <button id="lt-clear" class="btn btn-secondary" type="button"
+            title="Starts a new transcript. Stop and Start do not: the transcript carries on across them, so that a summary covers the whole meeting.">Clear transcript</button>
+          <span id="lt-summarise-status" class="run-status" role="status" aria-live="polite"></span>
+        </div>
       </section>
 
       <!-- doc-qa -->

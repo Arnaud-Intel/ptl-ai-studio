@@ -130,13 +130,22 @@ class MeetingSession:
     can generate notes from everything accumulated so far, any time."""
 
     def __init__(
-        self, engine: Engine, *, compute_device: str, whisper_model_size: str, spoken_language: str | None = None
+        self,
+        engine: Engine,
+        *,
+        compute_device: str,
+        whisper_model_size: str,
+        spoken_language: str | None = None,
+        transcript: list[TranscriptLine] | None = None,
     ):
+        """`transcript`, if given, is a meeting already transcribed somewhere
+        else (a live translation session, say): notes can be generated from
+        it straight away, with nothing captured here."""
         self.engine = engine
         self.compute_device = compute_device
         self.whisper_model_size = whisper_model_size
         self.spoken_language = spoken_language  # None: detected for each utterance
-        self._transcript: list[TranscriptLine] = []
+        self._transcript: list[TranscriptLine] = list(transcript or [])
         self._lock = threading.Lock()
         self._llm = None  # built lazily -- no reason to load it if notes are never requested
 
@@ -186,6 +195,13 @@ class MeetingSession:
             on_downloading=on_downloading,
             stop_event=stop_event,
         )
+
+    def replace_transcript(self, transcript: list[TranscriptLine]) -> None:
+        """Swap in another meeting's transcript, keeping the notes model this
+        session has loaded -- loading it again for every summary would be
+        the slow part, and on the NPU a load is the risky one."""
+        with self._lock:
+            self._transcript = list(transcript)
 
     def transcript_text(self) -> str:
         return "\n".join(self._transcript_lines())

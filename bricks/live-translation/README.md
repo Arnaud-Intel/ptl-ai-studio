@@ -92,6 +92,24 @@ Chrome and Edge), for subtitles over slides or another program. Closing that
 window brings them back to the bar. A browser that cannot do it says so and
 keeps the bar.
 
+## The transcript, and a summary of it
+
+The launcher keeps everything live translation has heard, and keeps it across
+Stop and Start: stopping to change the spoken language half-way through is
+still the same meeting. A reloaded page gets its lines back. **Clear
+transcript** starts a new one, and so does restarting the launcher.
+
+**Summarise in Meeting Notes** hands the whole transcript to
+[meeting-notes](../meeting-notes/README.md), which writes a summary and the
+action items from it, on the chip chosen in its own panel. Nothing is
+transcribed a second time, live translation keeps running, and pressing the
+button again later summarises everything heard up to then. The transcript is
+the English translation, so the notes are in English whatever was spoken.
+
+Over the API: `GET /api/live-translation/transcript` reads it, `DELETE` on the
+same address clears it, and `POST /api/meeting-notes/from-live-translation`
+hands it over (then `POST /api/meeting-notes/generate` as usual).
+
 ## Options
 
 | Flag | Description |

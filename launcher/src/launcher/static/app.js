@@ -1175,6 +1175,7 @@ const PANELS = {
     populate(data) {
       wireAudioSource(el("lt-source"), el("lt-audio-device"), data);
       fillSpokenLanguages(el("lt-language"), data);
+      el("lt-summarise").hidden = (demoById("meeting-notes") || {}).status !== "available";
       const modelSelect = el("lt-model");
       const small = modelSelect.querySelector('option[value="small"]');
       wireEngineAndDevice(el("lt-engine"), el("lt-compute-device"), data, {
@@ -1200,11 +1201,71 @@ const PANELS = {
     },
     onMessage(message) {
       if (message.type === "result") {
-        appendTimedLine(el("lt-transcript"), new Date().toLocaleTimeString(), message.detected_language, message.text, message.energy);
-        showSubtitle(message.text);
+        // The socket replays what was queued while nobody was connected, which
+        // may be lines this page has since drawn from the launcher's transcript.
+        if (this.draw(message.transcript, message, message.energy)) showSubtitle(message.text);
+      }
+    },
+    // The launcher keeps the transcript -- across Stop and Start, until it is
+    // cleared -- and `drawn` is how far into which transcript this page has
+    // got. Ids only grow, so an older one is a line from before a clear.
+    drawn: { id: 0, seq: 0 },
+    draw(id, line, energy = null) {
+      if (id < this.drawn.id || (id === this.drawn.id && line.seq <= this.drawn.seq)) return false;
+      if (id !== this.drawn.id) this.startTranscript(id);
+      this.drawn.seq = line.seq;
+      appendTimedLine(el("lt-transcript"), line.timestamp, line.detected_language, line.text, energy);
+      return true;
+    },
+    startTranscript(id) {
+      this.drawn = { id, seq: 0 };
+      showPlaceholder(el("lt-transcript"), "Translated speech will appear here once you press Start.");
+    },
+    // Catch up with the launcher's transcript: after a page reload this is
+    // where the lines come back from.
+    async syncTranscript() {
+      let data;
+      try {
+        data = await fetchJSON("/api/live-translation/transcript");
+      } catch {
+        return; // new lines still arrive over the socket
+      }
+      if (data.id > this.drawn.id) this.startTranscript(data.id);
+      for (const line of data.lines) this.draw(data.id, line);
+    },
+    async rehydrate() {
+      await StreamPanel.prototype.rehydrate.call(this);
+      await this.syncTranscript();
+    },
+    // One recording, two uses: Meeting Notes writes its summary from what was
+    // heard here, rather than listening to the same meeting a second time.
+    async summarise() {
+      const status = el("lt-summarise-status");
+      await this.syncTranscript();
+      if (!this.drawn.seq) {
+        paintStatus(status, "Nothing has been transcribed yet: press Start and speak first.", "error");
+        return;
+      }
+      paintStatus(status, "");
+      // The Meeting Notes panel makes the hand-over once it is open: the notes
+      // are written on the chip chosen there.
+      PANELS["meeting-notes"].summariseOnOpen = true;
+      location.hash = "#/brick/meeting-notes";
+    },
+    async clearTranscript() {
+      const status = el("lt-summarise-status");
+      if (this.drawn.seq && !confirm("Clear the transcript and start a new one? This can't be undone.")) return;
+      try {
+        const data = await fetchJSON("/api/live-translation/transcript", { method: "DELETE" });
+        this.startTranscript(data.id);
+        paintStatus(status, "");
+      } catch (err) {
+        paintStatus(status, `Error: ${err.message}`, "error");
       }
     },
     wireExtra() {
+      el("lt-summarise").addEventListener("click", () => this.summarise());
+      el("lt-clear").addEventListener("click", () => this.clearTranscript());
       el("lt-subtitles").addEventListener("click", () => setSubtitles(!SUBTITLES.on, this));
       el("subtitle-close").addEventListener("click", () => setSubtitles(false));
       el("subtitle-popout").addEventListener("click", popOutSubtitles);
@@ -1238,25 +1299,61 @@ const PANELS = {
         appendTimedLine(el("mtg-transcript"), message.timestamp, message.detected_language, message.text);
       }
     },
+    onStarted() {
+      // A meeting of its own replaces a transcript handed over earlier.
+      if (!this.handedOver) return;
+      this.handedOver = false;
+      showPlaceholder(el("mtg-transcript"), "The live transcript will appear here once you press Start.");
+    },
+    async rehydrate() {
+      await StreamPanel.prototype.rehydrate.call(this);
+      if (this.summariseOnOpen) {
+        this.summariseOnOpen = false;
+        this.summariseLiveTranslation(); // not awaited: opening the panel doesn't wait for the notes
+      }
+    },
+    // Asked for from the live translation panel: take over its transcript, show
+    // it here, and write the notes from it.
+    async summariseLiveTranslation() {
+      if (el("mtg-generate").disabled) return; // notes are being written already
+      let data;
+      try {
+        data = await postJSON("/api/meeting-notes/from-live-translation", {
+          engine: el("mtg-engine").value,
+          compute_device: el("mtg-compute-device").value,
+        });
+      } catch (err) {
+        paintStatus(el("mtg-notes-status"), `Error: ${err.message}`, "error");
+        return;
+      }
+      const box = el("mtg-transcript");
+      box.innerHTML = "";
+      const from = (demoById("live-translation") || {}).name || "live translation";
+      appendLine(box, "line-note", `Handed over from ${from}: ${data.lines.length} line(s), ${data.words} words.`);
+      for (const line of data.lines) appendTimedLine(box, line.timestamp, line.detected_language, line.text);
+      this.handedOver = true;
+      await this.generateNotes();
+    },
+    generateNotes() {
+      return this.run({
+        button: el("mtg-generate"),
+        statusEl: el("mtg-notes-status"),
+        key: "meeting-notes:notes",
+        partial: { target: el("mtg-notes"), stage: "notes" },
+        busy: "Generating notes…",
+        work: async () => {
+          const data = await postJSON("/api/meeting-notes/generate");
+          renderTextBlock(el("mtg-notes"), data.text);
+          el("mtg-notes").insertAdjacentHTML("afterbegin", stoppedNoteHtml(data));
+          return data;
+        },
+        done: (data) =>
+          `Based on ${data.transcript_line_count} transcript line(s)` +
+          (data.parts > 1 ? ` -- a long meeting, summarised in ${data.parts} parts and merged` : ""),
+      });
+    },
     wireExtra() {
-      el("mtg-generate").addEventListener("click", () =>
-        this.run({
-          button: el("mtg-generate"),
-          statusEl: el("mtg-notes-status"),
-          key: "meeting-notes:notes",
-          partial: { target: el("mtg-notes"), stage: "notes" },
-          busy: "Generating notes…",
-          work: async () => {
-            const data = await postJSON("/api/meeting-notes/generate");
-            renderTextBlock(el("mtg-notes"), data.text);
-            el("mtg-notes").insertAdjacentHTML("afterbegin", stoppedNoteHtml(data));
-            return data;
-          },
-          done: (data) =>
-            `Based on ${data.transcript_line_count} transcript line(s)` +
-            (data.parts > 1 ? ` -- a long meeting, summarised in ${data.parts} parts and merged` : ""),
-        }),
-      );
+      el("mtg-generate").addEventListener("click", () => this.generateNotes());
     },
   }),
 

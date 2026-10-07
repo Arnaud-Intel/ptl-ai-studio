@@ -141,6 +141,12 @@ a new one or the deferred list, and moves its original wording to
   code-review choice. All nine are Apache-2.0 on their cards (R17). The
   models (91 GB) are in the Hugging Face cache; nothing in the app uses
   them. (filed 2026-10-05, user request)
+  *2026-10-07:* live translation can now hand its transcript to Meeting
+  Notes, which puts today's 1.5B notes model in front of more people. On a
+  scripted 12-line meeting with three stated tasks (one run, AUTO device)
+  its summary was sound but it wrote "Action items: None identified" and
+  gave one speaker's task to someone else -- the 0 of 7 above, seen on the
+  page.
 - [ ] **Live translation lost the NPU when the expense extractor started
   beside it.** `logs/events.log`, 2026-10-05 at 10:41-10:44: live
   translation was running on the NPU; the expense extractor started

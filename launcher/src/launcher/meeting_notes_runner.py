@@ -101,6 +101,47 @@ class MeetingNotesRunner:
             self._thread = threading.Thread(target=target, daemon=True)
             self._thread.start()
 
+    def adopt(
+        self, lines: list[dict], *, engine: Engine, compute_device: str, whisper_model_size: str
+    ) -> list[TranscriptLine]:
+        """Take a transcript captured elsewhere (live translation's: dicts
+        with `timestamp`, `text`, `detected_language`) as this brick's
+        meeting, ready for generate_notes() on `engine`/`compute_device`.
+        Returns the lines taken.
+
+        One recording, two uses: without this, a summary of what live
+        translation heard meant running this brick beside it -- a second
+        speech model listening to the same microphone for the same words.
+        Refused while this brick is transcribing a meeting of its own,
+        which the new transcript would replace."""
+        with self._state_lock:
+            if self.running:
+                raise Conflict(
+                    "Meeting Notes is transcribing a meeting of its own: stop it before summarising another transcript."
+                )
+            transcript = [
+                TranscriptLine(
+                    timestamp=str(line.get("timestamp") or ""),
+                    text=str(line["text"]).strip(),
+                    detected_language=str(line.get("detected_language") or "auto"),
+                )
+                for line in lines
+                if str(line.get("text") or "").strip()
+            ]
+            if not transcript:
+                raise Conflict("Nothing has been transcribed yet, so there is nothing to summarise.")
+            self.error = None
+            session = self._session
+            if session is not None and (session.engine, session.compute_device) == (engine, compute_device):
+                session.replace_transcript(transcript)  # same notes model as before: keep it loaded
+            else:
+                self._session = MeetingSession(
+                    engine, compute_device=compute_device, whisper_model_size=whisper_model_size, transcript=transcript
+                )
+            self._engine = engine
+            self._compute_device = compute_device
+            return transcript
+
     def stop(self) -> None:
         with self._state_lock:
             if not worker.request_stop(_DEMO_ID, self._thread, self._stop_event):
