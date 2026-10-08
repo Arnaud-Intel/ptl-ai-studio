@@ -96,6 +96,12 @@ a new one or the deferred list, and moves its original wording to
   left loaded. Needs first: R21, a keep-awake request (the app has none), a
   way to delete one expense report. Five decisions wait in the note.
   (filed 2026-10-04, user request)
+  *2026-10-08:* the five decisions are taken and the foundation is built --
+  scenes as data, the director, its routes, keep-awake, tests against
+  stand-ins. The note's "Where it stands" lists what is there and what is
+  not: the page's side, a long run on the real machine, the proofing pass
+  on Object Detection and Document Q&A that the fourth scene waits for,
+  and deleting the loop's own expense reports.
 - [ ] **A model picker for each brick: nine candidate models tried, and what
   each would take.** Asked for with Qwen3.8 27B for coding, an NPU
   alternative for summarising and Gemma 4 as examples. Tried on the XPS 14,

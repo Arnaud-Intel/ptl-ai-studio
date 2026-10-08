@@ -1,7 +1,64 @@
 # Auto Demo: groundwork
 
-Status: design, not built. Written 2026-10-04. It builds on backlog ticket
-**R21** (one-click stage scenarios), which it needs first.
+Status: **the foundation is built** (2026-10-08); the rest of this note is
+the design it was built from, written 2026-10-04. See "Where it stands"
+just below.
+
+## Where it stands (2026-10-08)
+
+Decided with the user that day:
+
+| Question | Answer |
+| --- | --- |
+| Captions or a voice? | Captions only. A stand at a large event is too loud for sound |
+| One demo on screen, or a tiled stage? | One at a time, **with a real explanation**: what is happening, which chip and which engine, why that one, what to look at in the result |
+| A camera on the stand? | Almost always; the screen is the fallback |
+| The discrete GPU? | Not always there: looked for when the loop starts, and the person starting it can leave it out |
+| A large display? | Sometimes: a setting of the loop, not a different build |
+| Does a visitor get to take over? | Yes: the loop steps aside at the first touch and comes back after two idle minutes |
+| Which scenes? | Page Agent, Expense extraction, Smart City when the internet is reachable, and Detection with Q&A once those two bricks have had a proofing pass |
+
+Built, and tested without a browser or a model (`tests/test_autodemo.py`):
+
+- **Scenes as data** (`launcher/autodemo.py`): the routes a scene calls,
+  what it waits for, and what it says -- `happening`, one `Chip` line per
+  chip (what runs there, on which engine, and why there), `look_at`.
+- **The director** (same file): a thread in the launcher that plays the
+  playlist in a loop through the launcher's own routes, the way a person
+  would. A scene that fails is noted and skipped; three in a row stop the
+  loop with a notice. A touch ends the scene in hand, and the loop takes up
+  again at the next one after two idle minutes. Whatever a scene started is
+  stopped when it ends, however it ends. A request that answers once (a
+  page) runs on its own thread, so the director can still be interrupted,
+  and its answer is kept for the page to draw.
+- **The playlist** (`launcher/autodemo_scenes.py`): each scene is built for
+  the stand it plays on -- with the discrete GPU or without, NPU or not,
+  camera or screen -- and takes another sample each turn of the loop.
+  "Seeing and answering" is written and held back (`HELD_BACK`).
+- **The routes**: `GET /api/autodemo` (state, scene, what plays and what is
+  skipped and why), `GET /api/autodemo/check` (the same before starting),
+  `GET /api/autodemo/result`, and `POST .../start`, `stop`, `touch`,
+  `resume`, `skip`.
+- **Keep-awake** while the loop runs (`launcher/keep_awake.py`), and no
+  upgrade while it is on.
+
+Not built yet:
+
+- **The page's side**: following `/api/autodemo`, opening the scene's panel,
+  the explanation beside it with live figures, the pre-start check as a
+  dialog, the touch that pauses.
+- A run of several hours on the real machine. The director has only met
+  stand-ins: no scene has yet been played through it with real models.
+- The proofing pass on Object Detection and Document Q&A that lets the
+  fourth scene through.
+- Deleting the loop's own expense reports (they pile up: one per turn), and
+  unloading the large models between scenes on a machine short of memory.
+- Step C of the plan below (camera scenes beyond the fallback, start and
+  stop by the clock).
+
+It was built on backlog ticket **R21** (one-click stage scenarios): a scene
+here is what R21 calls a scenario, and a row of scenario buttons on the home
+page is now a small step.
 
 An Auto Demo is the app running itself on a stand with nobody at the
 keyboard: it goes through a playlist of scenes, starts the demos each scene

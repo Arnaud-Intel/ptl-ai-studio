@@ -64,7 +64,7 @@ from smart_city_monitor import sources as smart_city_sources
 from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
 from voice_clone_studio import engine_factory as voice_clone_models
 
-from . import activity, events, generation, loaded, metrics, registry, updates
+from . import activity, autodemo, autodemo_scenes, events, generation, loaded, metrics, registry, updates
 from . import demo_assets
 from pantherlake_ai_core.demo_samples import SAMPLE_ROOT
 from .code_review_assist_runner import CodeReviewAssistRunner
@@ -1613,6 +1613,112 @@ def page_agent_picture(name: str) -> Response:
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 
+# --- auto demo ---------------------------------------------------------------------
+# The app running itself on a stand (autodemo.py; docs/AUTO_DEMO.md). The
+# director acts through the routes above, on this machine, the way a person
+# at the page would.
+
+
+def _own_route(method: str, path: str, body: dict | None, timeout: float):
+    """Call one of this launcher's own routes and return its JSON answer.
+    An error answer is raised with the message the route gave."""
+    import json
+    import urllib.error
+    import urllib.request
+
+    host, port = getattr(app.state, "bind", ("127.0.0.1", 8765))
+    host = "127.0.0.1" if host in ("0.0.0.0", "::", "localhost") else host
+    data = None if method == "GET" else json.dumps(body or {}).encode("utf-8")
+    request = urllib.request.Request(
+        f"http://{host}:{port}{path}", data=data, method=method, headers={"Content-Type": "application/json"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read() or b"null")
+    except urllib.error.HTTPError as exc:
+        try:
+            message = json.loads(exc.read()).get("error") or str(exc)
+        except Exception:
+            message = str(exc)
+        raise RuntimeError(message) from None
+
+
+def _street_cameras_reachable() -> bool:
+    """Whether the one scene that needs the internet can have it: its
+    traffic-camera clips are fetched from this host."""
+    try:
+        with socket.create_connection(("s3-eu-west-1.amazonaws.com", 443), timeout=3):
+            return True
+    except OSError:
+        return False
+
+
+autodemo_director = autodemo.Director(_own_route, autodemo_scenes.PLAYLIST, online=_street_cameras_reachable)
+
+
+class AutoDemoRequest(BaseModel):
+    # "auto": use the discrete GPU if it is plugged in. "off": play as if it
+    # were not there -- for a stand that will lose it, or to rehearse one.
+    dgpu: str = "auto"
+    big_screen: bool = False
+
+
+@app.get("/api/autodemo")
+def autodemo_state() -> JSONResponse:
+    """Where the loop is: its state, the scene in hand with what it says
+    about itself, what this turn of the loop plays and skips, and why."""
+    return JSONResponse(autodemo_director.snapshot())
+
+
+@app.get("/api/autodemo/check")
+def autodemo_check(dgpu: str = "auto", big_screen: bool = False) -> JSONResponse:
+    """What the loop would play on this stand, before starting it."""
+    try:
+        return JSONResponse(autodemo_director.check(dgpu=dgpu, big_screen=big_screen))
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/api/autodemo/result")
+def autodemo_result() -> JSONResponse:
+    """What the scene in hand was answered, for the page to draw with the
+    panel's own drawing code."""
+    result = autodemo_director.result()
+    if result is None:
+        return JSONResponse({"error": "The scene in hand has no result yet."}, status_code=404)
+    return JSONResponse(result)
+
+
+@app.post("/api/autodemo/start")
+def autodemo_start(req: AutoDemoRequest) -> JSONResponse:
+    try:
+        return JSONResponse(autodemo_director.start(dgpu=req.dgpu, big_screen=req.big_screen))
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.post("/api/autodemo/stop")
+def autodemo_stop() -> JSONResponse:
+    return JSONResponse(autodemo_director.stop())
+
+
+@app.post("/api/autodemo/touch")
+def autodemo_touch() -> JSONResponse:
+    """Somebody is at the machine: the loop steps aside, and comes back
+    once nobody has touched anything for two minutes."""
+    return JSONResponse(autodemo_director.touch())
+
+
+@app.post("/api/autodemo/resume")
+def autodemo_resume() -> JSONResponse:
+    return JSONResponse(autodemo_director.resume())
+
+
+@app.post("/api/autodemo/skip")
+def autodemo_skip() -> JSONResponse:
+    return JSONResponse(autodemo_director.skip())
+
+
 # --- updates ----------------------------------------------------------------------
 
 # What the launcher exits with when it stops to be upgraded, so
@@ -1631,7 +1737,10 @@ def _busy_demos() -> list[str]:
         for key, state in events.status_snapshot().items()
         if state.get("phase") in ("loading", "running")
     }
-    return sorted(names.get(demo_id, demo_id) for demo_id in ids)
+    busy = sorted(names.get(demo_id, demo_id) for demo_id in ids)
+    # Between two scenes nothing is running, and the loop is still on: an
+    # upgrade must not slip into that gap on a stand nobody is watching.
+    return [*busy, "Auto Demo"] if autodemo_director.running else busy
 
 
 @app.get("/api/update")
