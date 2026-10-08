@@ -768,6 +768,43 @@
           <p class="placeholder">The generated page will appear here.</p>
         </div>
       </section>
+
+      <!-- page-agent (experimental) -->
+      <section id="agent-panel" class="brick-panel" hidden>
+        <div class="controls">
+          <label class="field field-wide">
+            <span>What is the page for?</span>
+            <select id="agent-sample" class="sample-picker">
+              <option value="">Try a sample request...</option>
+            </select>
+            <textarea id="agent-request" rows="2" placeholder="e.g. a landing page for a neighbourhood bakery that bakes everything on site"></textarea>
+          </label>
+          <label class="field">
+            <span>Plan on</span>
+            <select id="agent-planner-device" title="The small model that turns the request into a brief and describes the pictures."></select>
+          </label>
+          <label class="field">
+            <span>Pictures on</span>
+            <select id="agent-image-device" title="The image model. It does not run on the NPU."></select>
+          </label>
+          <label class="field">
+            <span>Page on</span>
+            <select id="agent-page-device" title="The coding model that writes the HTML. On the same chip as the pictures, the two take turns: each is unloaded before the other is loaded."></select>
+          </label>
+        </div>
+        <div class="run-row">
+          <button id="agent-build" class="btn btn-primary" type="button">Build the page</button>
+          <button id="agent-fullscreen" class="btn btn-secondary" type="button" hidden>Full screen</button>
+          <button id="agent-exit-fullscreen" class="btn btn-secondary htmlc-exit" type="button" hidden>Exit full screen</button>
+          <button id="agent-download" class="btn btn-secondary" type="button" hidden>Download .html</button>
+          <span id="agent-status" class="run-status" role="status" aria-live="polite">Idle</span>
+        </div>
+        <ol id="agent-steps" class="agent-steps" aria-label="The steps of a build" hidden></ol>
+        <div id="agent-plan" class="output agent-plan" hidden></div>
+        <div id="agent-result" class="output">
+          <p class="placeholder">The page will appear here. A build plans the page on one chip, draws its pictures on another and writes the HTML on a third; the first one also loads three models.</p>
+        </div>
+      </section>
     </section>
   </main>
 

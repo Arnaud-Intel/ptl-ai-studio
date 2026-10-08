@@ -18,6 +18,7 @@ dependencies = [
     "code-review-assist",
     "html-creator",
     "smart-city-monitor",
+    "page-agent",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
@@ -47,6 +48,7 @@ openvino = [
     "code-review-assist[openvino]",
     "html-creator[openvino]",
     "smart-city-monitor[openvino]",
+    "page-agent[openvino]",
 ]
 
 [project.scripts]
@@ -74,3 +76,4 @@ smart-recall = { workspace = true }
 code-review-assist = { workspace = true }
 html-creator = { workspace = true }
 smart-city-monitor = { workspace = true }
+page-agent = { workspace = true }

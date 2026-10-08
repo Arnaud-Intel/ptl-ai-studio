@@ -241,6 +241,49 @@ a new one or the deferred list, and moves its original wording to
   transcript beside its own Start, which started a second, separate
   transcription of system audio -- it now follows the live transcript and
   its own Start steps aside.
+- [ ] **Page Agent (experimental brick): what is not done.** Built on
+  request as a first multi-model brick: a planner on the NPU, FLUX.1-schnell
+  for the pictures, the 30B coder for the page, code on the CPU conducting
+  (`bricks/page-agent/README.md` has the design, the timings and what was
+  learned). Open: (1) the page's length is unbounded -- 30 s to over a
+  minute of writing -- and nothing lets a presenter ask for a short one;
+  (2) the planner describes pictures in the request's language, where the
+  image model wants English; (3) pictures are never checked against what
+  was asked for, and lettering in them is gibberish; (4) on one GPU the
+  extra pictures cost an unload and reload of the coder; (5) the planner
+  shares the NPU with speech and meeting notes when those run -- not tried
+  together; (6) three models stay loaded after a build (about 13 GB on the
+  integrated GPU for FLUX alone) until the brick is closed in the hardware
+  panel, which on a 32 GB machine leaves little for the other large-model
+  bricks; (7) it could draw from a brand's own pictures or a logo as well
+  as generate; (8) a licence check of FLUX.1-schnell's OpenVINO build
+  (Apache-2.0 on the card) belongs with R17. (filed 2026-10-08, user
+  request)
+- [ ] **The 30B coder can answer a page request with an opening code fence
+  and nothing else.** Seen while building the Page Agent: for a request
+  made of a description, a title, a list of sections and a PICTURES list,
+  `html-creator`'s landing-page instructions got "```" and the end -- on a
+  freshly loaded model, with sampling or without, twice out of two; the
+  same request ending in "Start your reply with <!DOCTYPE html>." got the
+  page four times out of four. HTML Creator's own requests have not been
+  seen to do it, but nothing in it would notice: it would show an empty
+  page. Worth a guard there (an answer with no `<html` is not a page) or
+  the same closing line. (filed 2026-10-08, page-agent build)
+- [ ] **A process can spin forever at exit after image and language models
+  have shared the integrated GPU.** Found with the Page Agent's
+  command-line tool on the XPS 14: after one build (image model, 30B coder,
+  image model again, all on GPU.0, the bike sample) the process never
+  exited, five times out of five -- one thread at 100% after Python had
+  finished tearing down (`PYTHONVERBOSE` ends on "clear sys.audit hooks"),
+  so inside OpenVINO's or a driver's own teardown. Releasing every model
+  first changes nothing; `os._exit` hangs too; eight shorter sequences with
+  the same models exit normally. Worked around, not understood: the tool,
+  and the launcher once a page has been built, end with `TerminateProcess`
+  (`page_agent/leaving.py`). Open: which sequence sets it off, whether
+  other bricks can reach it (HTML Creator then an image model, say), and a
+  report upstream once it is small enough to hand over. It matters beyond
+  this brick because an in-app upgrade waits for the old process to end.
+  (filed 2026-10-08, page-agent build)
 
 ## What we are showing
 

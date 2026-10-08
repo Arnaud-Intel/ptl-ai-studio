@@ -57,6 +57,9 @@ class Demo:
     # Dotted path of a module exposing a SAMPLES list of dataclasses (e.g.
     # "doc_qa.samples"), included as "samples" in that same response.
     samples: str | None = None
+    # Works, and is shown with a badge saying it may not: a brick still
+    # finding its shape, whose results and controls can change.
+    experimental: bool = False
 
 
 REGISTRY: list[Demo] = [
@@ -261,6 +264,25 @@ REGISTRY: list[Demo] = [
         status="available",
         large_model=_CODER_30B,
         samples="html_creator.samples",
+    ),
+    Demo(
+        id="page-agent",
+        name="Page Agent",
+        category="Productivity",
+        tagline="One request, three chips: a planner, an image model and a coding model build an illustrated page.",
+        description=(
+            "Experimental. A one-line request becomes an illustrated, self-contained web page, with "
+            "three models doing one job each: a small model on the NPU writes the brief and describes "
+            "the pictures, an image model draws them on the integrated GPU, and the coding model "
+            "writes the page around them -- at the same time on a discrete GPU when there is one, in "
+            "turn on the integrated GPU when there is not. Plain code on the CPU conducts: it decides "
+            "who works where, checks the finished page, and asks for it once more if it falls short."
+        ),
+        engines=["openvino"],
+        status="available",
+        large_model=_CODER_30B,
+        samples="page_agent.samples",
+        experimental=True,
     ),
     Demo(
         id="smart-recall",

@@ -2520,6 +2520,208 @@ const PANELS = {
       el("htmlc-fullscreen").hidden = false;
     },
   }),
+
+  "page-agent": new Panel({
+    id: "page-agent",
+    prefix: "agent",
+    currentHtml: null,
+    poll: null,
+    populate(data) {
+      const devices = data.openvino_devices || [];
+      const auto = data.auto_assignment || {};
+      // Each chip is the conductor's to choose unless one is named here, and
+      // "Auto" says which it would be on this machine.
+      const fill = (id, key, allowed) => {
+        const label = auto[key] ? `Auto (${autoDeviceName(auto[key])})` : deviceLabel("AUTO");
+        fillSelect(el(id), [
+          { value: "AUTO", label },
+          ...devices.filter(allowed).map((d) => ({ value: d, label: deviceLabel(d) })),
+        ]);
+      };
+      const notNpu = (d) => !d.toUpperCase().startsWith("NPU");
+      fill("agent-planner-device", "planner", () => true);
+      fill("agent-image-device", "images", notNpu);
+      fill("agent-page-device", "page", notNpu);
+      wireSamplePicker("agent-sample", data.samples, { "agent-request": "prompt" });
+      if (!devices.length) {
+        el("agent-build").disabled = true;
+        this.setStatus("The page agent needs the OpenVINO engine, which is not installed here.", "error");
+      }
+    },
+    async rehydrate() {
+      // A build started before this visit (or before a reload) is still
+      // going, or left its plan and pictures behind: show where it is.
+      try {
+        const state = await fetchJSON("/api/page-agent/progress");
+        if (state.run) this.renderProgress(state);
+        if (state.running) this.follow();
+      } catch {
+        // Nothing to show is not an error worth a message.
+      }
+    },
+    leave() {
+      this.expand(false);
+      clearInterval(this.poll);
+      this.poll = null;
+      Panel.prototype.leave.call(this);
+    },
+    follow() {
+      clearInterval(this.poll);
+      this.poll = setInterval(async () => {
+        try {
+          const state = await fetchJSON("/api/page-agent/progress");
+          this.renderProgress(state);
+          if (!state.running) {
+            clearInterval(this.poll);
+            this.poll = null;
+          }
+        } catch {
+          // A missed ask: the next one has it all.
+        }
+      }, 700);
+    },
+    renderProgress(state) {
+      const steps = el("agent-steps");
+      steps.hidden = !state.steps.length;
+      steps.innerHTML = state.steps
+        .map((step, index) => {
+          const seconds = step.seconds !== null && step.seconds !== undefined ? ` · ${step.seconds.toFixed(0)} s` : "";
+          const what =
+            { pending: "waiting", loading: "loading the model", running: step.detail || "working", done: step.detail || "done", failed: "failed" }[
+              step.state
+            ] || step.state;
+          return (
+            `<li class="agent-step ${escapeHtml(step.state)}"><div class="step-head">` +
+            `<span class="step-name">${index + 1}. ${escapeHtml(step.label)}</span>` +
+            `<span class="step-chip" title="${escapeHtml(deviceLabel(step.device))}">${escapeHtml(shortGpuName(deviceLabel(step.device)))}</span></div>` +
+            `<div class="step-state">${escapeHtml(what)}${seconds}</div></li>`
+          );
+        })
+        .join("");
+      const box = el("agent-plan");
+      box.hidden = !state.plan;
+      if (!state.plan) return;
+      const plan = state.plan;
+      const pictures = plan.pictures
+        .map((picture) => {
+          const inside = picture.ready
+            ? `<img src="/api/page-agent/picture/${encodeURIComponent(picture.name)}?run=${state.run}" alt="${escapeHtml(picture.prompt)}" />`
+            : "to be drawn";
+          // An extra one: not in the plan, drawn because the page showed a
+          // planned picture twice and said in its alt text what belonged there.
+          const took = (picture.seconds ? ` · ${picture.seconds.toFixed(1)} s` : "") + (picture.extra ? " · asked for by the page" : "");
+          return (
+            `<figure class="agent-picture"><div class="frame">${inside}</div>` +
+            `<figcaption><strong>${escapeHtml(picture.name)}</strong> ${picture.width}×${picture.height}${took}<br />${escapeHtml(picture.prompt)}</figcaption></figure>`
+          );
+        })
+        .join("");
+      box.innerHTML =
+        (plan.title ? `<p class="plan-title">${escapeHtml(plan.title)}</p>` : "") +
+        (plan.style ? `<p class="plan-line">${escapeHtml(plan.style)}</p>` : "") +
+        (plan.sections.length ? `<p class="plan-line">${plan.sections.map(escapeHtml).join(" · ")}</p>` : "") +
+        plan.notes.map((note) => `<p class="plan-note">${escapeHtml(note)}</p>`).join("") +
+        `<div class="agent-pictures">${pictures}</div>`;
+    },
+    wire() {
+      el("agent-build").addEventListener("click", () => {
+        if (!el("agent-request").value.trim()) {
+          this.setStatus("Say what the page is for first.", "error");
+          return;
+        }
+        el("agent-download").hidden = true;
+        el("agent-fullscreen").hidden = true;
+        el("agent-plan").hidden = true;
+        this.follow();
+        this.run({
+          button: el("agent-build"),
+          key: "page-agent",
+          partial: { target: el("agent-result") },
+          busy: "Starting…",
+          work: async () => {
+            try {
+              const data = await postJSON("/api/page-agent/build", {
+                request: el("agent-request").value,
+                planner_device: el("agent-planner-device").value,
+                image_device: el("agent-image-device").value,
+                page_device: el("agent-page-device").value,
+              });
+              this.renderResult(data);
+              return data;
+            } finally {
+              // One last look: the steps' final states and times.
+              fetchJSON("/api/page-agent/progress").then((state) => this.renderProgress(state)).catch(() => {});
+            }
+          },
+          done: (data) =>
+            `Built in ${data.seconds.total.toFixed(0)} s` +
+            (data.attempts > 1 ? " -- the page was written twice: the first one failed a check" : ""),
+        });
+      });
+      el("agent-download").addEventListener("click", () => {
+        if (!this.currentHtml) return;
+        const url = URL.createObjectURL(new Blob([this.currentHtml], { type: "text/html" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "page.html";
+        link.click();
+        URL.revokeObjectURL(url);
+      });
+      el("agent-fullscreen").addEventListener("click", () => this.expand(true));
+      el("agent-exit-fullscreen").addEventListener("click", () => this.expand(false));
+      document.addEventListener("fullscreenchange", () => {
+        if (!document.fullscreenElement) this.expand(false);
+      });
+    },
+    // As HTML Creator's: the page at the size it was designed for, still in
+    // its sandboxed frame.
+    expand(on) {
+      const frame = el("agent-result").querySelector(".htmlc-preview-frame");
+      if (!frame) on = false;
+      if (frame) frame.classList.toggle("expanded", on);
+      document.body.classList.toggle("htmlc-expanded", on);
+      el("agent-exit-fullscreen").hidden = !on;
+      if (on) document.documentElement.requestFullscreen?.().catch(() => {});
+      else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    },
+    renderResult(data) {
+      this.currentHtml = data.html;
+      const container = el("agent-result");
+      const checks = data.checks
+        .map(
+          (check) =>
+            `<li class="${check.passed ? "passed" : "failed"}">${check.passed ? "✓" : "✗"} ${escapeHtml(check.name)}` +
+            `${check.detail && !check.passed ? ` -- ${escapeHtml(check.detail)}` : ""}</li>`,
+        )
+        .join("");
+      const how = data.assignment.together
+        ? "the pictures were drawn while the page was written"
+        : "the pictures were drawn first, then the page written";
+      const times = ["plan", "images", "page"].map((step) => `${step} ${data.seconds[step].toFixed(0)} s`).join(", ");
+      container.innerHTML =
+        stoppedNoteHtml(data) +
+        `<ul class="agent-checks">${checks}</ul>` +
+        `<p class="section-label">${escapeHtml(times)} -- ${escapeHtml(how)}.</p>` +
+        generationStatsHtml(data.stats);
+      const iframe = document.createElement("iframe");
+      iframe.className = "htmlc-preview-frame";
+      iframe.setAttribute("sandbox", "allow-scripts");
+      iframe.title = "Built page preview";
+      iframe.srcdoc = data.html;
+      container.appendChild(iframe);
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "View raw HTML";
+      details.appendChild(summary);
+      const pre = document.createElement("pre");
+      pre.className = "text-block";
+      pre.textContent = data.html_source || data.html; // as written: the embedded pictures are megabytes of base64
+      details.appendChild(pre);
+      container.appendChild(details);
+      el("agent-download").hidden = false;
+      el("agent-fullscreen").hidden = false;
+    },
+  }),
 };
 
 // --- Home grid ----------------------------------------------------------------------
@@ -2536,6 +2738,13 @@ function renderBadges(container, demo) {
       "which an integrated GPU draws from shared system memory -- no discrete GPU needed. " +
       (model.discrete_gpu ? `${model.discrete_gpu} ` : "") +
       `Measured on ${model.measured_on}.`;
+    container.appendChild(badge);
+  }
+  if (demo.experimental) {
+    const badge = document.createElement("span");
+    badge.className = "badge badge-experimental";
+    badge.textContent = "Experimental";
+    badge.title = "It works, and it is still finding its shape: results vary from one build to the next, and its controls may change.";
     container.appendChild(badge);
   }
   if (demo.status !== "available") {
@@ -2859,8 +3068,16 @@ function panelRows() {
     canStop: entry.can_stop !== false,
   }));
   for (const held of STATUS.loaded || []) {
-    if (rows.some((row) => row.demoId === held.demo_id)) continue;
-    rows.push({ demoId: held.demo_id, stage: "default", stageLabel: null, device: held.device, kind: "loaded", canStop: true });
+    if (rows.some((row) => row.kind === "active" && row.demoId === held.demo_id)) continue;
+    // A brick holding several models (the page agent: one per chip) has a row for each.
+    rows.push({
+      demoId: held.demo_id,
+      stage: held.stage || "default",
+      stageLabel: held.stage_label || null,
+      device: held.device,
+      kind: "loaded",
+      canStop: true,
+    });
   }
   return rows;
 }

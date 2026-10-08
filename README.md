@@ -204,6 +204,7 @@ which chip is working: such a demo showed up under no chip at all.)
 | **Local Screen Memory** | Continuously indexes your own screen so you can semantically search it later -- OCR and embedding run *concurrently*, the same way | two chips, at once |
 | **Commit & Code Review Assistant** | Turn a git diff into a commit message and review notes, entirely locally | CPU / GPU ‡ |
 | **HTML Creator** | Describe a page, or point at a folder of documents, and get one self-contained HTML file back | CPU / GPU ‡ |
+| **Page Agent** *(experimental)* | One request becomes an illustrated page: a small model plans it, an image model draws its pictures, the coding model writes the HTML, and plain code conducts and checks | NPU + GPU + GPU ‡, the two GPUs at once when there are two |
 
 Every "Runs on" cell is tested hardware routing, not a spec-sheet claim.
 

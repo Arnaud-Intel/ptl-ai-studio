@@ -38,5 +38,10 @@
   "smart-recall": [
     {"name": "Find the release blockers", "description": "First open the fictional briefing page linked below while recording; then search what was actually captured.", "question": "the Lyon pilot release gates with Sofia's map fix and Priya's September 17 decision", "assets": ["recall-demo.html"], "next_step": "Open the demo briefing page, start recording with consent, and keep it visible until indexed. Stop recording, then Search. This does not preload a search result."},
     {"name": "Recover the payment condition", "description": "Recall the fictional EUR 36,000 acceptance-dependent balance from a page you displayed.", "question": "the customer pilot payment with a 12000 euro deposit and 36000 remaining after acceptance", "assets": ["recall-demo.html"], "next_step": "Display the briefing page while recording, wait for an indexed capture, stop, then search."}
+  ],
+  "page-agent": [
+    {"name": "Neighbourhood bakery", "description": "A warm one-page site for a fictional bakery: the agent plans it, draws its pictures and writes the page around them.", "prompt": "A landing page for a neighbourhood bakery called Fournil Lumiere that opens at 6 am and bakes everything on site: opening hours, three signature breads, a short story of the baker, where to find it."},
+    {"name": "Mountain bike rental", "description": "An outdoor shop's page: a hero picture, what is on offer, prices, how to book.", "prompt": "A one-page site for a mountain bike rental shop in an alpine valley: the bikes on offer, day and week prices, three trail suggestions by difficulty, how to book."},
+    {"name": "Solar installer", "description": "A small company's landing page: what they do, how it goes, what it saves, a contact section.", "prompt": "Landing page for a small company that installs solar panels on houses: what they do, how an installation goes in four steps, what it saves, a contact section."}
   ]
 }

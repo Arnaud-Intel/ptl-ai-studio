@@ -19,6 +19,7 @@ members = [
     "live-translation",
     "meeting-notes",
     "object-detection",
+    "page-agent",
     "panther-lake-launcher",
     "pantherlake-ai-core",
     "screen-ocr",
@@ -1772,6 +1773,34 @@ wheels = [
 ]
 
 [[package]]
+name = "page-agent"
+version = "0.1.0"
+source = { editable = "bricks/page-agent" }
+dependencies = [
+    { name = "doc-qa" },
+    { name = "html-creator" },
+    { name = "pantherlake-ai-core" },
+    { name = "pillow" },
+]
+
+[package.optional-dependencies]
+openvino = [
+    { name = "doc-qa", extra = ["openvino"] },
+    { name = "html-creator", extra = ["openvino"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "doc-qa", editable = "bricks/doc-qa" },
+    { name = "doc-qa", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/doc-qa" },
+    { name = "html-creator", editable = "bricks/html-creator" },
+    { name = "html-creator", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/html-creator" },
+    { name = "pantherlake-ai-core", editable = "core" },
+    { name = "pillow" },
+]
+provides-extras = ["openvino"]
+
+[[package]]
 name = "panther-lake-launcher"
 version = "0.1.0"
 source = { editable = "launcher" }
@@ -1786,6 +1815,7 @@ dependencies = [
     { name = "object-detection" },
     { name = "opencv-python" },
     { name = "openpyxl" },
+    { name = "page-agent" },
     { name = "pantherlake-ai-core" },
     { name = "pillow" },
     { name = "python-multipart" },
@@ -1808,6 +1838,7 @@ openvino = [
     { name = "live-translation", extra = ["openvino"] },
     { name = "meeting-notes", extra = ["openvino"] },
     { name = "object-detection", extra = ["openvino"] },
+    { name = "page-agent", extra = ["openvino"] },
     { name = "screen-ocr", extra = ["openvino"] },
     { name = "smart-city-monitor", extra = ["openvino"] },
     { name = "smart-recall", extra = ["openvino"] },
@@ -1835,6 +1866,8 @@ requires-dist = [
     { name = "object-detection", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/object-detection" },
     { name = "opencv-python", specifier = ">=4.9" },
     { name = "openpyxl", specifier = ">=3.1.5" },
+    { name = "page-agent", editable = "bricks/page-agent" },
+    { name = "page-agent", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/page-agent" },
     { name = "pantherlake-ai-core", editable = "core" },
     { name = "pillow", specifier = ">=10" },
     { name = "python-multipart", specifier = ">=0.0.9" },

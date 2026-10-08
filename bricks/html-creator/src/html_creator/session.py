@@ -90,6 +90,9 @@ class HtmlCreatorSession:
         prompt: str | None = None,
         folder: str | None = None,
         pictures: str | None = None,
+        picture_list: list[picture_kit.Picture] | None = None,
+        before_embed: Callable[[], None] | None = None,
+        closing: str | None = None,
         repeatable: bool = False,
         max_tokens: int | None = None,
         on_ready: Callable[[], None] | None = None,
@@ -104,6 +107,16 @@ class HtmlCreatorSession:
         `pictures`, for a landing page, is a folder of images the page may
         place: the model is told their names and captions, and the ones it
         references are embedded into the page.
+
+        `picture_list` is the same thing for pictures already described --
+        name, size, caption, and the path each will be at. The page is
+        written from the descriptions alone, so the files need not exist
+        until it is; `before_embed`, if given, is called once the page is
+        written and returns when they do. That is what lets another model
+        draw the pictures on another chip while this one writes the page
+        (see the page-agent brick). `closing`, if given, is a last line of
+        the request, placed after the list of pictures: the last thing the
+        model reads before it starts to write.
 
         `repeatable` makes the page a function of its prompt alone, by
         loading the model afresh and taking its most likely next token each
@@ -124,10 +137,15 @@ class HtmlCreatorSession:
             system_prompt = _LANDING_PAGE_SYSTEM_PROMPT
             source_text = prompt.strip()
             truncated = False
-            if pictures and pictures.strip():
+            if picture_list:
+                offered = list(picture_list)
+            elif pictures and pictures.strip():
                 offered, picture_notes = picture_kit.load(pictures.strip())
+            if offered:
                 system_prompt += _PICTURE_RULES
                 source_text += "\n\n" + picture_kit.manifest(offered)
+            if closing and closing.strip():
+                source_text += "\n\n" + closing.strip()
         elif mode == "document":
             if not folder:
                 raise ValueError("Provide a folder of documents to summarize.")
@@ -167,6 +185,8 @@ class HtmlCreatorSession:
         html, fence_stripped = strip_code_fence(raw_output)
         truncated_output = not html.rstrip().lower().endswith("</html>")
         written = html
+        if before_embed is not None:
+            before_embed()
         html, used = picture_kit.embed(html, offered)
 
         return HtmlResult(

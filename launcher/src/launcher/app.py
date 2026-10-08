@@ -47,6 +47,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from live_translation.languages import SPOKEN_LANGUAGES, spoken_language
+from page_agent import conductor as page_agent_conductor
 from pantherlake_ai_core import audio, npu, video
 from pantherlake_ai_core.engine import (
     Engine,
@@ -71,6 +72,7 @@ from .doc_qa_runner import DocQARunner
 from .errors import Conflict
 from .expense_extract_runner import ExpenseExtractRunner
 from .html_creator_runner import HtmlCreatorRunner
+from .page_agent_runner import PageAgentRunner
 from .live_translation_runner import LiveTranslationRunner
 from .model_routes import router as model_router
 from .meeting_notes_runner import MeetingNotesRunner
@@ -293,6 +295,7 @@ expense_extract_runner = ExpenseExtractRunner()
 smart_recall_runner = SmartRecallRunner()
 code_review_assist_runner = CodeReviewAssistRunner()
 html_creator_runner = HtmlCreatorRunner()
+page_agent_runner = PageAgentRunner()
 telemetry_poller = TelemetryPoller(is_idle=lambda: not activity.snapshot())
 
 
@@ -373,7 +376,10 @@ def telemetry_snapshot() -> JSONResponse:
     # use until the app restarts, and the panel says where its work went.
     payload["npu_lost"] = {"at": npu.lost_at(), "moved_to": npu.fallback_device()} if npu.lost() else None
     payload["loaded"] = [
-        {"demo_id": demo_id, **held} for demo_id, runner in _UNLOADABLE.items() if (held := loaded.info(runner))
+        {"demo_id": demo_id, **held}
+        for demo_id, runner in _UNLOADABLE.items()
+        # A runner that holds several models on several chips lists them itself.
+        for held in (runner.held() if hasattr(runner, "held") else filter(None, [loaded.info(runner)]))
     ]
     return JSONResponse(payload)
 
@@ -397,6 +403,7 @@ _UNLOADABLE = {
     "voice-clone-studio": voice_clone_studio_runner,
     "code-review-assist": code_review_assist_runner,
     "html-creator": html_creator_runner,
+    "page-agent": page_agent_runner,
 }
 
 
@@ -497,6 +504,9 @@ def demo_devices(demo_id: str) -> JSONResponse:
         if payload["openvino_devices"]:
             # What "Auto" means for these two, so the menu can say it: the NPU when there is one.
             payload["auto_device"] = resolve(Engine.OPENVINO.value, None, prefer_npu=True)[1]
+    if demo_id == "page-agent" and payload["openvino_devices"]:
+        # Who does what when every chip is left to the conductor, so the menus can say it.
+        payload["auto_assignment"] = asdict(_page_agent_assignment(None, None, None))
     for kind in demo.devices:
         payload[kind] = _DEVICE_SOURCES[kind]()
     if demo.samples:
@@ -1507,6 +1517,96 @@ async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
     )
 
 
+# --- page-agent (experimental) ------------------------------------------------------
+
+
+class PageAgentRequest(BaseModel):
+    request: str = ""
+    # Each of these left out or "AUTO": the conductor decides from the hardware
+    # (page_agent.conductor.assign).
+    planner_device: str | None = None
+    image_device: str | None = None
+    page_device: str | None = None
+
+
+def _page_agent_assignment(planner: str | None, images: str | None, page: str | None):
+    """Which chip does which step: the ones asked for by name, checked
+    against the machine, and the conductor's own choice for the rest."""
+    available = list_openvino_devices()
+    if not available:
+        raise ValueError("The page agent needs the OpenVINO engine, and no OpenVINO device is available.")
+
+    def chosen(step: str, device: str | None) -> str | None:
+        asked = (device or "AUTO").upper()
+        if asked == "AUTO":
+            return None
+        if asked not in available:
+            raise ValueError(f"OpenVINO device {device!r} is unavailable for the {step}; choose from {', '.join(available)}")
+        return asked
+
+    planner, images, page = chosen("planner", planner), chosen("pictures", images), chosen("page", page)
+    if planner and npu.is_npu(planner) and npu.lost():
+        planner = None  # out of use until the app restarts: the conductor picks where its work goes
+    if images and npu.is_npu(images):
+        raise ValueError("The image model does not run on the NPU: choose a GPU, or the CPU.")
+    return page_agent_conductor.assign(
+        available, list_gpu_devices(), planner=planner, images=images, page=page, npu_usable=not npu.lost()
+    )
+
+
+@app.post("/api/page-agent/build")
+async def page_agent_build(req: PageAgentRequest) -> JSONResponse:
+    """Plan, draw, write and check one page. Takes the better part of a
+    minute; GET /api/page-agent/progress says where it is meanwhile, and
+    /api/bricks/page-agent/partial has the page as it is written."""
+    try:
+        if not req.request.strip():
+            raise ValueError("Describe the page to build.")
+        assignment = _page_agent_assignment(req.planner_device, req.image_device, req.page_device)
+        result = await run_in_threadpool(page_agent_runner.build, request=req.request, assignment=assignment)
+    except Exception as exc:
+        return error_response(exc)
+    return JSONResponse(
+        {
+            "html": result.html,
+            "html_source": result.html_source,
+            "assignment": asdict(result.assignment),
+            "plan": {
+                "title": result.plan.title,
+                "style": result.plan.style,
+                "sections": result.plan.sections,
+                "notes": result.plan.notes,
+            },
+            "pictures": [
+                {"name": p.name, "width": p.width, "height": p.height, "prompt": p.prompt, "seconds": p.seconds}
+                for p in result.pictures
+            ],
+            "pictures_used": result.pictures_used,
+            "checks": [asdict(check) for check in result.checks],
+            "attempts": result.attempts,
+            "seconds": result.seconds,
+            "cancelled": result.cancelled,
+            "stats": asdict(result.stats) if result.stats else None,
+            "planner_stats": asdict(result.planner_stats) if result.planner_stats else None,
+        }
+    )
+
+
+@app.get("/api/page-agent/progress")
+def page_agent_progress() -> JSONResponse:
+    """The build in hand, or the last one: each step with its chip and
+    state, the plan once written, each picture once drawn."""
+    return JSONResponse(page_agent_runner.progress())
+
+
+@app.get("/api/page-agent/picture/{name}")
+def page_agent_picture(name: str) -> Response:
+    path = page_agent_runner.picture(name)
+    if path is None:
+        return JSONResponse({"error": "No such picture in the current build."}, status_code=404)
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
 # --- updates ----------------------------------------------------------------------
 
 # What the launcher exits with when it stops to be upgraded, so
@@ -1624,9 +1724,17 @@ def main() -> None:
     app.state.server = server
     app.state.bind = (args.host, args.port)
     server.run()
-    if _upgrade_requested.is_set():
+    code = UPGRADE_EXIT_CODE if _upgrade_requested.is_set() else 0
+    if code:
         print("Upgrading: the new version starts in a new window once it's installed. This one can be closed.")
-        raise SystemExit(UPGRADE_EXIT_CODE)
+    if page_agent_runner.has_built:
+        # A process that has built a page may never finish exiting on its own
+        # (page_agent/leaving.py) -- and an upgrade waits for this one to end.
+        from page_agent.leaving import leave_now
+
+        leave_now(code)
+    if code:
+        raise SystemExit(code)
 
 
 if __name__ == "__main__":

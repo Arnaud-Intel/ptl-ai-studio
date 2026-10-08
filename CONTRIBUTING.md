@@ -78,6 +78,14 @@ local_demo/
         pipeline.py               <- same two-device-at-once shape as expense-extract, driven by a timer instead of a file list
         change_detection.py        <- skip indexing a screen that hasn't visibly changed
         cli.py
+    page-agent/                <- EXPERIMENTAL: request -> illustrated page (several-models-on-several-chips template)
+      pyproject.toml
+      src/page_agent/
+        plan.py                   <- the planner's instructions, and a tolerant reader of its answer
+        images.py                 <- the image model (openvino_genai.Text2ImagePipeline): the one new model
+        conductor.py              <- who works where, at the same time or in turn; composes doc-qa + html-creator
+        checks.py / repeats.py    <- what is verified about the page, and how a repeated picture is mended
+        cli.py
     <next-brick>/
       pyproject.toml
       src/<next_brick>/

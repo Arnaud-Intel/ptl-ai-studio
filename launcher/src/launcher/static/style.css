@@ -605,6 +605,14 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
 
 .badge-planned { color: var(--text-faint); }
 
+/* A brick that works and may change: said on its card and its panel. */
+.badge-experimental {
+  border-color: var(--warning);
+  color: var(--warning);
+  font-weight: 600;
+  cursor: help;
+}
+
 /* How fast a generated answer came, and on which chip (BACKLOG R20). */
 .gen-stats {
   margin: 0 0 10px;
@@ -891,6 +899,67 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
   font-size: 13.5px;
   line-height: 1.7;
 }
+
+/* --- Page agent: the steps of a build, the plan, the pictures --------------- */
+.agent-steps {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.agent-step {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  min-width: 0;
+}
+
+.agent-step .step-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.agent-step .step-name { font-weight: 600; font-size: 13px; }
+.agent-step .step-chip { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-step .step-state { margin-top: 4px; font-size: 12px; color: var(--text-faint); overflow-wrap: anywhere; }
+.agent-step.loading, .agent-step.running { border-color: var(--warning); }
+.agent-step.loading .step-state, .agent-step.running .step-state { color: var(--warning); }
+.agent-step.done { border-color: var(--success); }
+.agent-step.done .step-state { color: var(--success); }
+.agent-step.failed { border-color: var(--danger); }
+.agent-step.failed .step-state { color: var(--danger); }
+
+.agent-plan .plan-title { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.agent-plan .plan-line { margin: 0 0 4px; font-size: 12.5px; color: var(--text-dim); }
+.agent-plan .plan-note { margin: 0 0 4px; font-size: 12.5px; color: var(--warning); }
+
+.agent-pictures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.agent-picture { margin: 0; min-width: 0; }
+.agent-picture .frame {
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.agent-picture .frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.agent-picture figcaption { margin-top: 5px; font-size: 11.5px; line-height: 1.4; color: var(--text-dim); }
+.agent-picture figcaption strong { color: var(--text); font-weight: 600; }
+
+.agent-checks { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; }
+.agent-checks li.passed { color: var(--success); }
+.agent-checks li.failed { color: var(--danger); }
 
 /* Meeting Notes following live translation: its own capture controls step aside. */
 .brick-panel.following .own-capture { display: none; }
