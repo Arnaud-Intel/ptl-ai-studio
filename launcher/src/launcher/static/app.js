@@ -2608,17 +2608,31 @@ const PANELS = {
             ? `<img src="/api/page-agent/picture/${encodeURIComponent(picture.name)}?run=${state.run}" alt="${escapeHtml(picture.prompt)}" />`
             : "to be drawn";
           // An extra one: not in the plan, drawn because the page showed a
-          // planned picture twice and said in its alt text what belonged there.
+          // planned picture twice, or asked for one nobody had drawn, and said
+          // in its alt text what belonged there.
           const took = (picture.seconds ? ` · ${picture.seconds.toFixed(1)} s` : "") + (picture.extra ? " · asked for by the page" : "");
+          // Where the page is asked to put it: the plan gives each picture a place.
+          const place = {
+            hero: "behind the headline",
+            offer: "on a card",
+            story: "beside the story",
+            closing: "behind the last call to action",
+            feature: "beside text",
+          }[picture.role];
           return (
             `<figure class="agent-picture"><div class="frame">${inside}</div>` +
-            `<figcaption><strong>${escapeHtml(picture.name)}</strong> ${picture.width}×${picture.height}${took}<br />${escapeHtml(picture.prompt)}</figcaption></figure>`
+            `<figcaption><strong>${escapeHtml(picture.name)}</strong> ${picture.width}×${picture.height}${took}` +
+            (place ? `<br /><em>${place}</em>` : "") +
+            `<br />${escapeHtml(picture.prompt)}</figcaption></figure>`
           );
         })
         .join("");
+      const offers = plan.offers || [];
       box.innerHTML =
         (plan.title ? `<p class="plan-title">${escapeHtml(plan.title)}</p>` : "") +
+        (plan.headline ? `<p class="plan-headline">${escapeHtml(plan.headline)}</p>` : "") +
         (plan.style ? `<p class="plan-line">${escapeHtml(plan.style)}</p>` : "") +
+        (offers.length ? `<p class="plan-line">On offer: ${offers.map(escapeHtml).join(" · ")}</p>` : "") +
         (plan.sections.length ? `<p class="plan-line">${plan.sections.map(escapeHtml).join(" · ")}</p>` : "") +
         plan.notes.map((note) => `<p class="plan-note">${escapeHtml(note)}</p>`).join("") +
         `<div class="agent-pictures">${pictures}</div>`;

@@ -173,6 +173,11 @@ def _reference(name: str) -> re.Pattern:
     )
 
 
+def referenced(html: str, names: list[str]) -> list[str]:
+    """Those of `names` the page refers to as files, in the order given."""
+    return [name for name in names if _reference(name).search(html)]
+
+
 def embed(html: str, pictures: list[Picture]) -> tuple[str, list[str]]:
     """Put each referenced picture into the page itself. Returns the page
     and the names of the pictures it used."""

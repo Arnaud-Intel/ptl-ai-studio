@@ -15,11 +15,12 @@ from .samples import SAMPLES
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="page-agent",
-        description="EXPERIMENTAL. Build an illustrated, self-contained web page from a one-line request: a small "
-                    "model plans it, an image model draws its pictures, a coding model writes the HTML.",
+        description="EXPERIMENTAL. Build an illustrated, self-contained web page from a request -- one line, or a "
+                    "full brief: a small model plans it, an image model draws its pictures, a coding model writes "
+                    "the HTML.",
     )
     source = p.add_mutually_exclusive_group(required=False)
-    source.add_argument("request", nargs="?", default=None, help="What the page is for, in a sentence.")
+    source.add_argument("request", nargs="?", default=None, help="What the page is for: a sentence, or a brief.")
     source.add_argument("--sample", default=None, help="Use a named example request instead (see --list-samples).")
     p.add_argument("--out", default="page.html", help="Where to write the page. Default: page.html")
     p.add_argument("--keep-pictures", default=None, help="Also keep the drawn pictures in this folder.")
@@ -76,8 +77,12 @@ def main(argv: list[str] | None = None) -> int:
     def on_step(step: str, state: str, device: str, detail: str) -> None:
         print(f"  [{step}] {state} on {device}{' -- ' + detail if detail else ''}", file=sys.stderr)
 
+    def on_plan(plan) -> None:
+        said = " -- ".join(part for part in (plan.title, plan.headline) if part)
+        print(f"  [plan] {said or 'no name given'}; on offer: {', '.join(plan.offers) or 'not said'}", file=sys.stderr)
+
     work_dir = Path(args.keep_pictures) if args.keep_pictures else Path(tempfile.mkdtemp(prefix="page-agent-"))
-    result = PageAgent().build(request, assignment=assignment, work_dir=work_dir, on_step=on_step)
+    result = PageAgent().build(request, assignment=assignment, work_dir=work_dir, on_step=on_step, on_plan=on_plan)
 
     Path(args.out).write_text(result.html, encoding="utf-8")
     for note in result.plan.notes:

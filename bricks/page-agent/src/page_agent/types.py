@@ -39,6 +39,9 @@ class Check:
     name: str
     passed: bool
     detail: str = ""
+    # Failed in a way a second writing of the page could fix and is worth
+    # the minute and a half it takes.
+    retry: bool = False
 
 
 @dataclass

@@ -1,7 +1,8 @@
 """The page agent (experimental): a planner, an image model and a coding
 model on three chips, conducted and checked by plain code. Everything here
-runs without a model: the plan's parser, who-works-where, the checks, the
-repeated-picture repair, the conductor's order of work, and the routes."""
+runs without a model: the plan's parser, the art direction, who-works-where,
+the checks, the repeated-picture repair, the loop watch, the conductor's
+order of work, and the routes."""
 from __future__ import annotations
 
 import threading
@@ -9,12 +10,13 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from page_agent import checks, conductor
+from page_agent import art_direction, checks, conductor, runaway
 from page_agent import plan as planning
 from page_agent.conductor import PageAgent, assign
 from page_agent.repeats import give_repeats_their_own
 from page_agent.types import Assignment
 from pantherlake_ai_core.engine import GpuDevice
+from pantherlake_ai_core.types import GenerationControl
 
 from launcher import app as launcher_app
 
@@ -23,6 +25,22 @@ DGPU = GpuDevice("GPU.1", "Intel(R) Arc(TM) Pro B60 Graphics (dGPU)", None)
 
 # --- the plan ---------------------------------------------------------------------------
 
+# The form the planner is asked for: each thing the page presents, then its photograph.
+_BRIEF = """NAME: Col Bleu Bikes
+HEADLINE: Rent it. Ride it. Repeat.
+STYLE: crisp and outdoorsy, glacier blue, spruce green, a tight modern sans
+SECTIONS: Bikes | Trails | Workshop
+HERO PHOTO: A mountain bike on a wooden rack in an alpine meadow, golden hour
+THING 1: Trail hardtail
+PHOTO 1: A hardtail bike on a rocky trail, spruce trees in the distance, morning mist
+THING 2: Enduro full-suspension
+PHOTO 2: A full-suspension bike with mud on the chain, midday sun
+THING 3: Electric mountain bike
+PHOTO 3: An electric mountain bike among pine trees and wildflowers, late afternoon light
+STORY PHOTO: A mechanic truing a wheel at a workbench, seen from the side
+DETAIL PHOTO: A close-up of a helmet strap being fastened, shallow focus"""
+
+# An older and shorter form, which still has to be read: three pictures, none of them for a card.
 _ANSWER = """TITLE: Baked with Care
 STYLE: warm and cozy | cream, golden, soft beige
 SECTIONS: Welcome | About Us | Our Bakes | Visit
@@ -31,16 +49,70 @@ PICTURE 2: A baker's hands dusting flour from a rolling pin, warm editorial phot
 PICTURE 3: A cozy dining nook with a view of the open kitchen, warm editorial photograph"""
 
 
-def test_a_well_formed_plan_is_read_and_pictures_are_named_by_position():
-    plan = planning.parse("a bakery page", _ANSWER)
-    assert (plan.title, plan.sections) == ("Baked with Care", ["Welcome", "About Us", "Our Bakes", "Visit"])
-    assert [(p.name, p.width, p.height) for p in plan.pictures] == [
-        ("hero.jpg", 1024, 576), ("picture-2.jpg", 768, 512), ("picture-3.jpg", 768, 512),
+def test_a_plan_names_the_page_and_gives_every_picture_a_place():
+    plan = planning.parse("a bike rental page", _BRIEF)
+    assert (plan.title, plan.headline) == ("Col Bleu Bikes", "Rent it. Ride it. Repeat.")
+    assert plan.sections == ["Bikes", "Trails", "Workshop"]
+    assert plan.offers == ["Trail hardtail", "Enduro full-suspension", "Electric mountain bike"]
+    assert [(p.name, p.role, p.width, p.height) for p in plan.pictures] == [
+        ("hero.jpg", "hero", 1024, 576),
+        ("picture-2.jpg", "offer", 768, 512), ("picture-3.jpg", "offer", 768, 512), ("picture-4.jpg", "offer", 768, 512),
+        ("picture-5.jpg", "story", 640, 768), ("picture-6.jpg", "closing", 1024, 576),
     ]
-    assert plan.pictures[1].prompt.startswith("A baker's hands") and plan.notes == []
-    prompt = plan.page_prompt()
-    assert prompt.startswith("a bakery page") and "Page title: Baked with Care" in prompt and "- Our Bakes" in prompt
-    assert plan.closing().endswith("Start your reply with <!DOCTYPE html>.")  # or the coder answers "```" and stops
+    assert plan.pictures[2].prompt.startswith("A full-suspension bike") and plan.notes == [] and plan.copied == 0
+
+
+def test_the_coder_is_told_the_request_first_then_the_plan_then_how_the_studio_builds_a_page():
+    prompt = planning.parse("a bike rental page", _BRIEF).page_prompt()
+    assert prompt.startswith("a bike rental page")
+    for said in ("Name: Col Bleu Bikes", "Headline: Rent it. Ride it. Repeat.", "On offer: Trail hardtail | Enduro"):
+        assert said in prompt
+    assert prompt.index("the request wins") < prompt.index("HOW THE STUDIO BUILDS IT")
+    # Every picture has its place, by file name, and the cards are named in the order of their pictures.
+    assert "Trail hardtail, Enduro full-suspension, Electric mountain bike" in prompt
+    assert "picture-2.jpg, picture-3.jpg and picture-4.jpg on top" in prompt and '<img src="picture-5.jpg">' in prompt
+    # The rows and bands the model got wrong when they were only described are rules now: shown to it, and
+    # said to be in the page already. The two pictures that sit behind text are placed by the rule that names them.
+    assert "these rules are in the page already" in prompt and "Do not write them again" in prompt
+    assert ".figures { display: grid;" in prompt and ".split { display: grid;" in prompt
+    assert 'url("hero.jpg") center / cover; }' in prompt and ".dark *, .hero *, .closing * { color: #fff; }" in prompt
+    assert '.closing { text-align: center; background: linear-gradient(rgba(6,10,18,.72), rgba(6,10,18,.72)), url("picture-6.jpg")' in prompt
+    assert "document.documentElement.classList.add('js')" in prompt  # nothing stays hidden if the script does not run
+    assert planning.parse("x", _BRIEF).closing().endswith("Start your reply with <!DOCTYPE html>.")
+
+
+def test_the_direction_only_asks_for_pictures_the_page_was_given():
+    three = planning.parse("a bakery page", _ANSWER)
+    assert [(p.name, p.role, p.width, p.height) for p in three.pictures] == [
+        ("hero.jpg", "hero", 1024, 576), ("picture-2.jpg", "feature", 768, 512), ("picture-3.jpg", "feature", 768, 512),
+    ]
+    direction = art_direction.for_plan(three.pictures, three.offers)
+    assert "three .card without pictures" in direction and ".closing { text-align: center; background: var(--dark); }" in direction
+    assert '<img src="picture-2.jpg">' in direction and '<img src="picture-3.jpg">' in direction
+    assert "picture-4.jpg" not in direction and "picture-6.jpg" not in direction
+    # With no picture at all there is still a page to describe, and nothing in it names a file.
+    assert "background: var(--dark); }\n.hero h1" in art_direction.for_plan([]) and ".jpg" not in art_direction.for_plan([])
+
+
+def test_the_studios_layout_rules_go_into_every_page_ahead_of_its_own():
+    plan = planning.parse("a bike rental page", _BRIEF)
+    page = (
+        "<!DOCTYPE html><html><head><style>\n:root { --accent: #f60; }\nh2 { color: red; }\n</style></head><body>"
+        '<section class="hero"><h1>Rent it</h1></section><section class="band closing"><h2>Book</h2></section></body></html>'
+    )
+    styled = art_direction.with_stylesheet(page, plan.pictures)
+    ours, theirs = styled.index(".figures { display: grid;"), styled.index("h2 { color: red; }")
+    assert styled.index("<style>") < ours < theirs  # the page's own rules come after, and so may overrule
+    assert styled.index("--accent: #c2410c") < styled.index("--accent: #f60")  # as its colours overrule the defaults
+    assert 'url("hero.jpg") center / cover' in styled and 'url("picture-6.jpg") center / cover' in styled
+    assert art_direction.with_stylesheet(styled, plan.pictures) == styled  # once
+    # A file the stylesheet names is a picture the page shows: with no element for it, the rule names none.
+    plain = art_direction.with_stylesheet(page.replace('class="hero"', 'class="hero-banner"'), plan.pictures)
+    assert "hero.jpg" not in plain and ".hero { min-height: 88vh;" in plain and "picture-6.jpg" in plain
+    # A page that wrote no stylesheet is given one.
+    bare = art_direction.with_stylesheet("<html><head><title>x</title></head><body><p>hello</p></body></html>", [])
+    assert bare.index("<style>") < bare.index("</head>") and ".wrap { max-width: 1120px;" in bare
+    assert art_direction.with_stylesheet("<p>hello</p>", []).startswith("<style>")
 
 
 def test_a_small_models_liberties_with_the_format_are_tolerated():
@@ -52,19 +124,55 @@ def test_a_small_models_liberties_with_the_format_are_tolerated():
         "1. HERO: A trail at sunrise\n"
         "Picture two: A bike in a workshop\n"
         "IMAGE 3 (landscape): A trail at sunrise\n"  # the same sentence again: one picture, not two
-        "PICTURE 4: one sentence describing a third picture\n"  # the instruction copied back: no picture
-        "PICTURE 5: <A map on a wooden table>\n"
+        "PICTURE 4: a photograph of THING 3\n"  # the instruction copied back: no picture
+        "PICTURE \u79d1\u5b66: <A mechanic at a bench>\n"  # a garbled number: the picture after the one before
     )
     plan = planning.parse("bike rental", answer)
     assert plan.title == "Ride the Alps" and plan.style == "alpine blue, white" and plan.sections == ["Bikes", "Prices", "Trails"]
-    assert [p.prompt for p in plan.pictures] == ["A trail at sunrise", "A bike in a workshop", "A map on a wooden table"]
-    assert [p.name for p in plan.pictures] == ["hero.jpg", "picture-2.jpg", "picture-3.jpg"]
+    assert [(p.name, p.prompt) for p in plan.pictures] == [
+        ("hero.jpg", "A trail at sunrise"), ("picture-2.jpg", "A bike in a workshop"), ("picture-5.jpg", "A mechanic at a bench"),
+    ]
+    # Short of three pictures for the cards, the cards go without and the picture there is sits beside text.
+    assert [p.role for p in plan.pictures] == ["hero", "feature", "story"]
+
+
+def test_what_an_image_model_cannot_write_is_taken_out_of_a_picture():
+    clean = planning.without_writing
+    assert clean("A hardtail bike with a rack on a gravel path, morning light") == "A hardtail bike with a rack on a gravel path, morning light"
+    assert clean("A clerk at a desk with a tablet and a map, beside a bike rack") == "A clerk at a desk, beside a bike rack"
+    assert clean("A singer walking past a stage with a banner reading 'Les Heures Bleues'") == "A singer walking past a stage"
+    assert clean("A coffee cup with a steamy top, golden light, a wall lamp glowing at 8:07") == "A coffee cup with a steamy top, golden light"
+    assert clean('A cabin called "Maison des Pins" between tall pines') == "A cabin between tall pines"
+    assert clean("A potter's workshop at dawn, light through the bakers' window") == "A potter's workshop at dawn, light through the bakers' window"
+    # A picture *of* writing leaves nothing to photograph.
+    assert clean("A close-up of a ticket with the festival's dates") == "" and clean("A tablet with a savings estimator") == ""
+
+
+def test_a_card_whose_picture_cannot_be_used_gets_one_from_its_own_name():
+    answer = _BRIEF.replace("PHOTO 2: A full-suspension bike with mud on the chain, midday sun", "PHOTO 2: A price list on a chalkboard")
+    plan = planning.parse("a bike rental page", answer)
+    assert [p.role for p in plan.pictures[1:4]] == ["offer"] * 3  # the three cards stay alike
+    assert plan.pictures[2].prompt == "Enduro full-suspension, editorial photograph, soft natural light"
+    assert "were of writing" in plan.notes[0]
+    # The same sentence for two pictures is one picture: the other keeps its place and the gap is filled the same way.
+    twice = _BRIEF.replace("PHOTO 3: An electric mountain bike among pine trees and wildflowers, late afternoon light",
+                           "PHOTO 3: A full-suspension bike with mud on the chain, midday sun")
+    plan = planning.parse("a bike rental page", twice)
+    assert plan.pictures[3].prompt.startswith("Electric mountain bike, editorial") and plan.pictures[4].role == "story"
+
+
+def test_the_prompts_own_example_sent_back_is_not_a_plan():
+    example = planning.SYSTEM_PROMPT.split("never its content:\n")[1]
+    plan = planning.parse("an architecture studio", example)
+    assert plan.copied == 9 and plan.offers == []  # six photographs and three things, none of them ours
+    assert [p.name for p in plan.pictures] == ["hero.jpg"] and "an architecture studio" in plan.pictures[0].prompt
+    assert any("own example" in note for note in plan.notes)
 
 
 def test_a_plan_that_cannot_be_read_costs_quality_not_the_page():
     plan = planning.parse("a page for a florist", "Sure! Here is a wonderful idea for your page...")
     assert [p.name for p in plan.pictures] == ["hero.jpg"] and "a page for a florist" in plan.pictures[0].prompt
-    assert len(plan.notes) == 2  # no picture, no title: both said
+    assert len(plan.notes) == 2  # no picture, no name: both said
     assert planning.parse("x", "").pictures and planning.fallback("x", "the NPU is busy").notes == ["the NPU is busy"]
     many = "\n".join(f"PICTURE {n}: picture number {n}" for n in range(1, 9))
     assert len(planning.parse("x", many).pictures) == planning.MAX_PICTURES
@@ -113,13 +221,56 @@ def test_the_faults_are_named_and_only_two_are_worth_writing_the_page_again():
         '<meta name="viewport" content="width=device-width">', ""
     )
     verdict = {c.name: c for c in checks.review(broken, plan, ["hero.jpg"], truncated=True)}
-    assert not any(c.passed for c in verdict.values() if c.name != checks.ONCE)
+    assert not any(c.passed for c in verdict.values() if c.name not in (checks.ONCE, checks.FIGURES))
     assert "picture-2.jpg, picture-3.jpg" in verdict[checks.PICTURES].detail
     note = checks.repair_note(list(verdict.values()))
     assert "cut off" in note and "left pictures out" in note
+    # Stopped for repeating itself, the page is told that, which is not the same advice as "make it shorter".
+    assert "round in circles" in checks.repair_note(list(verdict.values()), ran_away=True)
     # A page with a remote font, no viewport and no heading is reported as it is: a second try is not the cure.
     only_cosmetic = checks.review(broken, plan, ["hero.jpg", "picture-2.jpg", "picture-3.jpg"], truncated=False)
     assert checks.repair_note(only_cosmetic) is None
+
+
+def test_a_page_with_a_picture_to_spare_is_shown_not_written_again():
+    plan = planning.parse("a bike rental page", _BRIEF)
+    names = [p.name for p in plan.pictures]
+    five = {c.name: c for c in checks.review(_PAGE, plan, names[:5], truncated=False)}
+    assert five[checks.PICTURES].passed and five[checks.PICTURES].detail == "5 of 6, not placed: picture-6.jpg"
+    four = checks.review(_PAGE, plan, names[:4], truncated=False)
+    assert not {c.name: c for c in four}[checks.PICTURES].passed and checks.repair_note(four) is None  # said, and shown
+    two = checks.review(_PAGE, plan, names[:2], truncated=False)
+    assert "left pictures out" in checks.repair_note(two)  # most of its pictures missing: that is another page
+    headless = checks.review(_PAGE, plan, names[1:], truncated=False)
+    assert "left pictures out" in checks.repair_note(headless)  # and so is a page without the one it opens on
+
+
+def test_a_picture_behind_an_element_is_one_place_however_many_rules_say_so():
+    plan = planning.parse("a bakery page", _ANSWER)
+    names = ["hero.jpg", "picture-2.jpg", "picture-3.jpg"]
+    twice_in_css = _PAGE.replace("</style>", ".hero{background:url(hero.jpg) center/cover}</style>")
+    assert {c.name: c for c in checks.review(twice_in_css, plan, names, truncated=False)}[checks.ONCE].passed
+    and_in_an_img = twice_in_css.replace("</body>", '<img src="hero.jpg" alt="Again"></body>')
+    once = {c.name: c for c in checks.review(and_in_an_img, plan, names, truncated=False)}[checks.ONCE]
+    assert not once.passed and "hero.jpg x2" in once.detail
+
+
+def test_the_page_is_checked_for_the_figures_the_request_gave():
+    request = "Three bikes: hardtail (EUR 39 / 210), enduro (EUR 65 / 350). 140 km of trails, 1,400 m of climb, first lift at 8:00."
+    plan = planning.parse(request, _ANSWER)
+    names = [p.name for p in plan.pictures]
+
+    def kept(body: str):
+        page = _PAGE.replace("<h1>Bakery</h1>", f"<h1>Bikes</h1><p>{body}</p>")
+        return {c.name: c for c in checks.review(page, plan, names, truncated=False)}[checks.FIGURES]
+
+    assert kept("39 a day, 210 a week; 65 and 350; 140 km; 1400 m; from 8:00").detail == "all 7"  # 1,400 written 1400
+    most = kept("From &euro;39 a day or 210 a week, 65 for the enduro. 140 km of trails, up to 1,400 m of climb.")
+    assert most.passed and most.detail == "5 of 7, not found: 350, 8:00"  # two thirds of them is enough to pass
+    few = kept("Bikes from 39 a day.")
+    assert not few.passed and few.retry is False  # said, and shown: it is not a reason to write the page again
+    none = planning.parse("a page for a florist", _ANSWER)
+    assert {c.name: c for c in checks.review(_PAGE, none, names, truncated=False)}[checks.FIGURES].detail == "the request gave none"
 
 
 # --- a picture shown several times is a page asking for more pictures -------------------
@@ -132,18 +283,73 @@ def test_repeated_pictures_get_files_of_their_own_described_by_the_page():
         '<div><img src="picture-2.jpg" alt="A mountain bike"><h3>Alpine Explorer</h3></div>'
         '<div><img alt="A mountain bike" src="./img/picture-2.jpg"><h3>Valley <em>Cruiser</em></h3></div>'
         '<div><img src="picture-2.jpg"><h3>No alt text</h3></div>'  # nothing to draw from: left as it is
-        '<img src="logo.png" alt="Not one of ours">'
     )
     patched, extras = give_repeats_their_own(written, ["hero.jpg", "picture-2.jpg"])
     assert extras == [("extra-1.jpg", "Bikes on a ridge"), ("extra-2.jpg", "Valley Cruiser: A mountain bike")]
     assert 'src="extra-1.jpg" alt="Bikes on a ridge"' in patched and 'src="extra-2.jpg"' in patched
-    assert patched.count("picture-2.jpg") == 2 and "url('hero.jpg')" in patched and 'src="logo.png"' in patched
+    assert patched.count("picture-2.jpg") == 2 and "url('hero.jpg')" in patched
+
+
+def test_a_picture_nobody_drew_is_drawn_from_what_the_page_says_it_shows():
+    written = (
+        '<img src="hero.jpg" alt="A flower shop">'
+        '<div class="card"><img src="https://placehold.co/300x200?text=Sophia+R." alt="Sophia R., owner"><h3>Sophia R.</h3></div>'
+        '<div class="card"><img src="team/james.png" alt="A florist"><h3>James T.</h3></div>'
+        '<img src="https://cdn.example/banner.jpg">'  # points nowhere and says nothing: a page reads better without it
+        '<img src="data:image/svg+xml,%3Csvg/%3E" alt="A drawing of its own">'  # the picture itself: not a file
+    )
+    patched, extras = give_repeats_their_own(written, ["hero.jpg"])
+    assert extras == [("extra-1.jpg", "Sophia R., owner"), ("extra-2.jpg", "James T.: A florist")]
+    assert "placehold.co" not in patched and "james.png" not in patched and "cdn.example" not in patched
+    assert patched.count("<img") == 4 and 'src="hero.jpg"' in patched and "data:image/svg+xml" in patched
+    # Past the limit a picture nobody drew is taken out too: a broken image is worse than none.
+    many = "".join(f'<img src="https://placehold.co/{n}" alt="Portrait number {n}">' for n in range(9))
+    patched, extras = give_repeats_their_own(many, ["hero.jpg"])
+    assert len(extras) == 6 and patched.count("<img") == 6
 
 
 def test_a_page_that_repeats_nothing_is_left_alone_and_a_gallery_is_capped():
     assert give_repeats_their_own(_PAGE, ["hero.jpg", "picture-2.jpg", "picture-3.jpg"]) == (_PAGE, [])
     gallery = "".join(f'<img src="hero.jpg" alt="view {n}">' for n in range(12))
     assert len(give_repeats_their_own(gallery, ["hero.jpg"])[1]) == 6
+
+
+# --- a page that goes round in circles is stopped ---------------------------------------
+
+_LOOP = (
+    "    .section:last-child .btn {\n      color: white;\n    }\n\n"
+    "    .section:last-child .btn:hover {\n      background-color: white;\n      color: var(--very-dark);\n    }\n\n"
+)
+
+
+def _fed(watch, text, piece=40):
+    """Feeds `text` to the watch the way a model would, and says where it asked to stop."""
+    for start in range(0, len(text), piece):
+        watch.control.on_text(text[start:start + piece])
+        if watch.control.should_stop():
+            return start + piece
+    return None
+
+
+def test_a_loop_is_stopped_within_a_few_thousand_characters_and_a_page_is_not():
+    cards = "".join(
+        f'<div class="card reveal"><img src="picture-{n}.jpg" alt="Bread number {n}"><div class="body"><h3>Loaf {n}</h3>'
+        f"<p>Baked at {n + 2} in the morning with flour number {n * 7} and nothing else, sold by {n + 9}.</p></div></div>\n"
+        for n in range(1, 40)
+    )
+    sound = runaway.Watch()
+    assert _fed(sound, cards) is None and sound.ran_away is False  # alike, but each says something
+    seen: list[str] = []
+    looping = runaway.Watch(GenerationControl(on_text=seen.append))
+    stopped_at = _fed(looping, cards[:4000] + _LOOP * 200)
+    assert looping.ran_away and 4000 < stopped_at < 4000 + 2 * runaway.WINDOW
+    assert "".join(seen) == (cards[:4000] + _LOOP * 200)[:stopped_at]  # whoever follows the page saw all of it
+
+
+def test_the_watch_still_stops_when_asked_to():
+    asked = runaway.Watch(GenerationControl(should_stop=lambda: True))
+    asked.control.on_text("<html>")
+    assert asked.control.should_stop() is True and asked.ran_away is False
 
 
 # --- the conductor's order of work ------------------------------------------------------
@@ -153,7 +359,10 @@ class _Planner:
     device = "NPU"
     last_stats = None
 
-    def answer(self, system_prompt, user_prompt, max_tokens=512, control=None):
+    asked: list[bool] = []
+
+    def answer(self, system_prompt, user_prompt, max_tokens=512, control=None, sample=True):
+        _Planner.asked.append(sample)
         return _ANSWER
 
 
@@ -178,7 +387,7 @@ class _Coder:
     last_stats = None
 
     def __init__(self, pages):
-        self.pages, self.asked = list(pages), []
+        self.pages, self.asked, self.room = list(pages), [], []
 
     def count_tokens(self, text):
         return len(text.split())
@@ -186,9 +395,17 @@ class _Coder:
     def prompt_budget(self, max_tokens):
         return 100_000
 
-    def answer(self, system_prompt, user_prompt, max_tokens=512, control=None, sample=True):
+    def answer(self, system_prompt, user_prompt, max_tokens=512, control=None, sample=True, begin=None, temperature=None):
         self.asked.append(user_prompt)
-        return self.pages.pop(0)
+        self.room.append((max_tokens, begin, temperature))
+        page = self.pages.pop(0)
+        if control is not None and control.on_text is not None:
+            # As a model would: piece by piece, until told to stop.
+            for start in range(0, len(page), 200):
+                control.on_text(page[start:start + 200])
+                if control.should_stop is not None and control.should_stop():
+                    return page[:start + 200]
+        return page
 
 
 @pytest.fixture
@@ -197,6 +414,7 @@ def studio(monkeypatch, tmp_path):
     loaded: list[tuple[str, str]] = []
     coder = _Coder([_PAGE])
     _Artist.made.clear()
+    _Planner.asked.clear()
 
     def create_llm(engine, *, device="AUTO", model_repo=None, **kwargs):
         loaded.append((model_repo, device))
@@ -229,9 +447,14 @@ def test_on_one_gpu_the_pictures_come_first_and_the_models_never_share_it(studio
     assert result.attempts == 1 and all(check.passed for check in result.checks)
     assert "data:image/jpeg;base64," in result.html and "picture-2.jpg" not in result.html  # embedded: one file
     assert "picture-2.jpg" in result.html_source  # ...and still readable as the model wrote it
+    assert ".figures { display: grid;" in result.html and "the studio's layout rules" in result.html_source
     # The coder was told the pictures by name and how to begin, in that order.
     asked = coder.asked[0]
     assert asked.index("- hero.jpg (1024x576)") < asked.index("Start your reply with <!DOCTYPE html>.")
+    assert asked.index("HOW THE STUDIO BUILDS IT") < asked.index("- hero.jpg (1024x576)")
+    # ...and its answer was begun for it, with room for a full page, at the coding model's own temperature;
+    # the planner took its most likely words.
+    assert coder.room == [(8192, "<!DOCTYPE html>\n", 0.7)] and _Planner.asked == [False]
     assert loaded == [("OpenVINO/Qwen3-8B-int4-cw-ov", "NPU"), ("OpenVINO/Qwen3-Coder-30B-A3B-Instruct-int4-ov", "GPU.0")]
 
 
@@ -244,7 +467,7 @@ def test_on_two_gpus_they_work_at_the_same_time_and_both_stay_loaded(studio, mon
         drawing.wait(5)  # the pictures are not ready until the page has been written...
         return original(self, prompt, width, height, path, seed)
 
-    def answer(system_prompt, user_prompt, max_tokens=512, control=None, sample=True):
+    def answer(system_prompt, user_prompt, max_tokens=512, control=None, sample=True, begin=None, temperature=None):
         drawing.set()  # ...which proves the page did not wait for them
         return _PAGE
 
@@ -265,6 +488,66 @@ def test_a_page_cut_off_is_asked_for_once_more_with_the_fault_named(studio):
     assert "cut off" in coder.asked[1] and "cut off" not in coder.asked[0]
 
 
+def test_a_picture_the_stylesheet_puts_behind_the_hero_counts_as_placed(studio):
+    agent, coder, _loaded, work_dir = studio
+    # The page leaves the hero's picture to the studio's rule, as it is told to.
+    coder.pages = [_PAGE.replace(".hero{background-image:url('hero.jpg')}", "").replace("<h1>Bakery</h1>", '<section class="hero"><h1>Bakery</h1></section>')]
+    log: list[tuple] = []
+    result = agent.build(
+        "a bakery page", assignment=Assignment("NPU", "GPU.0", "GPU.0", together=False), work_dir=work_dir,
+        on_step=lambda *event: log.append(event),
+    )
+    assert result.attempts == 1 and all(check.passed for check in result.checks)
+    assert result.pictures_used == ["hero.jpg", "picture-2.jpg", "picture-3.jpg"]
+    assert ("page", "done", "GPU.0", "3 of 3 picture(s) placed") in log and "hero.jpg" not in result.html
+
+
+def test_a_page_going_round_in_circles_is_stopped_and_asked_for_again(studio):
+    agent, coder, _loaded, work_dir = studio
+    looping = _PAGE.replace("</style>", _LOOP * 400 + "</style>")
+    coder.pages = [looping, _PAGE]
+    log: list[tuple] = []
+    result = agent.build(
+        "a bakery page", assignment=Assignment("NPU", "GPU.0", "GPU.0", together=False), work_dir=work_dir,
+        on_step=lambda *event: log.append(event),
+    )
+    assert result.attempts == 2 and all(check.passed for check in result.checks) and result.cancelled is False
+    assert ("page", "done", "GPU.0", "stopped: it was repeating itself") in log
+    assert "round in circles" in coder.asked[1] and "cut off" not in coder.asked[1]
+
+
+def test_a_planner_that_sends_its_example_back_is_asked_once_more(studio, monkeypatch):
+    agent, _coder, _loaded, work_dir = studio
+    example = planning.SYSTEM_PROMPT.split("never its content:\n")[1]
+    answers = [example, _ANSWER]
+
+    def answer(self, system_prompt, user_prompt, max_tokens=512, control=None, sample=True):
+        _Planner.asked.append(sample)
+        return answers.pop(0)
+
+    monkeypatch.setattr(_Planner, "answer", answer)
+    result = agent.build("a bakery page", assignment=Assignment("NPU", "GPU.0", "GPU.0", together=False), work_dir=work_dir)
+    assert _Planner.asked == [False, True]  # asked the same way it would say the same thing again
+    assert result.plan.title == "Baked with Care" and len(result.plan.pictures) == 3
+
+
+def test_a_page_asking_the_network_for_a_picture_gets_one_drawn_instead(studio):
+    agent, coder, _loaded, work_dir = studio
+    coder.pages = [_PAGE.replace("</body>", '<img src="https://placehold.co/300x200?text=Ines" alt="Ines at the oven">'
+                                            '<img src="https://placehold.co/80x80"></body>')]
+    result = agent.build("a bakery page", assignment=Assignment("NPU", "GPU.0", "GPU.0", together=False), work_dir=work_dir)
+    assert result.attempts == 1 and all(check.passed for check in result.checks)  # self-contained again
+    assert result.pictures[-1].prompt == "Ines at the oven, editorial photograph, soft natural light"
+    assert "placehold.co" not in result.html and 'src="extra-1.jpg"' in result.html_source
+
+
+def test_an_img_pointing_nowhere_with_nothing_to_draw_from_is_taken_out(studio):
+    agent, coder, _loaded, work_dir = studio
+    coder.pages = [_PAGE.replace("</body>", '<img src="https://placehold.co/80x80"></body>')]
+    result = agent.build("a bakery page", assignment=Assignment("NPU", "GPU.0", "GPU.0", together=False), work_dir=work_dir)
+    assert "placehold.co" not in result.html and len(result.pictures) == 3 and all(check.passed for check in result.checks)
+
+
 def test_a_page_that_repeats_a_picture_gets_more_pictures_not_a_rewrite(studio):
     agent, coder, _loaded, work_dir = studio
     twice = _PAGE.replace("</body>", '<img src="picture-2.jpg" alt="Hands dusting flour"><h3>Brioche</h3></body>')
@@ -276,7 +559,7 @@ def test_a_page_that_repeats_a_picture_gets_more_pictures_not_a_rewrite(studio):
     )
     assert result.attempts == 1 and len(coder.asked) == 1  # the page was written once
     assert seen == ["hero.jpg", "picture-2.jpg", "picture-3.jpg", "extra-1.jpg"]
-    assert result.pictures[-1].prompt.startswith("Brioche: Hands dusting flour. Style: warm and cozy")
+    assert result.pictures[-1].prompt == "Brioche: Hands dusting flour, editorial photograph, soft natural light"
     assert all(check.passed for check in result.checks) and 'src="extra-1.jpg"' in result.html_source
     # In turn, still: the coder made room for the image model to come back.
     assert agent.loaded() == {"plan": "NPU", "images": "GPU.0"}

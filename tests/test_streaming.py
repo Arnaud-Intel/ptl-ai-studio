@@ -208,6 +208,33 @@ def test_openvino_draws_by_default_and_takes_its_first_choice_when_asked():
     assert asked == [{"temperature": 0.2}, {"do_sample": False}]
 
 
+def test_openvino_can_be_made_to_begin_an_answer_and_to_draw_more_freely():
+    llm = _openvino_llm()
+    llm._tokenizer.apply_chat_template = (
+        lambda messages, add_generation_prompt, extra_context=None: "|".join(m["content"] for m in messages) + ">"
+    )
+    asked = []
+
+    class Recording:
+        def generate(self, prompt, max_new_tokens, streamer=None, **choice):
+            asked.append((prompt, choice))
+            if streamer is not None:
+                streamer.write("<html>")
+            return SimpleNamespace(texts=["<html>"], perf_metrics=_PerfMetrics())
+
+    llm.pipeline = Recording()
+    control, seen = _collector()
+    written = llm.answer("system", "question", control=control, begin="<!DOCTYPE html>\n", temperature=0.7)
+    assert written == "<!DOCTYPE html>\n<html>"
+    # The chat template is applied here and the runtime told to take the string as it is: the answer's
+    # first words are already in it. Whoever follows the answer sees those words too.
+    assert asked == [(["system|question><!DOCTYPE html>\n"], {"temperature": 0.7, "apply_chat_template": False})]
+    assert seen == ["<!DOCTYPE html>\n", "<html>"]
+    # Without them nothing changes: a chat, at the bricks' usual temperature.
+    llm.answer("system", "question")
+    assert asked[1][1] == {"temperature": 0.2} and not isinstance(asked[1][0][0], str)
+
+
 def test_llama_takes_its_first_choice_at_temperature_zero():
     llm, _ = _portable_llm(["Yes", "."])
     temperatures = []

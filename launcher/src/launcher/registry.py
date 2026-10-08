@@ -271,12 +271,14 @@ REGISTRY: list[Demo] = [
         category="Productivity",
         tagline="One request, three chips: a planner, an image model and a coding model build an illustrated page.",
         description=(
-            "Experimental. A one-line request becomes an illustrated, self-contained web page, with "
-            "three models doing one job each: a small model on the NPU writes the brief and describes "
-            "the pictures, an image model draws them on the integrated GPU, and the coding model "
-            "writes the page around them -- at the same time on a discrete GPU when there is one, in "
-            "turn on the integrated GPU when there is not. Plain code on the CPU conducts: it decides "
-            "who works where, checks the finished page, and asks for it once more if it falls short."
+            "Experimental. A request -- one line, or a full brief -- becomes an illustrated, "
+            "self-contained web page, with three models doing one job each: a small model on the NPU "
+            "names the page, says what it presents and briefs six photographs, an image model takes "
+            "them on the integrated GPU, and the coding model writes the page around them -- at the "
+            "same time on a discrete GPU when there is one, in turn on the integrated GPU when there "
+            "is not. Plain code on the CPU conducts: it decides who works where, tells the coding "
+            "model how a designed page is built, checks the finished page, and asks for it once more "
+            "if it falls short."
         ),
         engines=["openvino"],
         status="available",

@@ -132,11 +132,14 @@ class PageAgentRunner:
         with self._state_lock:
             self._state["plan"] = {
                 "title": plan.title,
+                "headline": plan.headline,
                 "style": plan.style,
                 "sections": plan.sections,
+                "offers": plan.offers,
                 "notes": plan.notes,
                 "pictures": [
-                    {"name": p.name, "width": p.width, "height": p.height, "prompt": p.prompt, "ready": False, "seconds": None}
+                    {"name": p.name, "width": p.width, "height": p.height, "prompt": p.prompt, "role": p.role,
+                     "ready": False, "seconds": None}
                     for p in plan.pictures
                 ],
             }

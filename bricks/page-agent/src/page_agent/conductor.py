@@ -1,13 +1,16 @@
 """The conductor: plain code on the CPU that puts three models to work on
 three chips and checks what comes back. No model of its own.
 
-    request --> [plan]   a small model on the NPU writes the brief and
-                         describes the pictures
-            --> [images] an image model draws them          } at the same
+    request --> [plan]   a small model on the NPU names the page, says what
+                         it presents and briefs six photographs
+            --> [images] an image model takes them          } at the same
             --> [page]   a coding model writes the HTML     } time, with two
-                         around their file names            } GPUs
-            --> [check]  the conductor verifies the page and, for a fault a
-                         second try can fix, asks for the page once more
+                         around their file names, told how  } GPUs
+                         the studio builds a page
+            --> [check]  the conductor puts the studio's layout rules into
+                         the page, verifies it, has any picture it still
+                         lacks drawn and, for a fault a second try can
+                         fix, asks for the page once more
 
 The page is written from the pictures' descriptions, never from the pictures
 themselves, which is why the two middle steps can overlap: with a discrete
@@ -31,9 +34,11 @@ from pantherlake_ai_core import npu
 from pantherlake_ai_core.engine import Engine, GpuDevice
 from pantherlake_ai_core.types import GenerationControl, stopped
 
+from . import art_direction
 from . import checks as checking
 from . import plan as planning
 from .repeats import give_repeats_their_own
+from .runaway import Watch
 from .types import Assignment, Check, DrawnPicture, PageResult
 
 # The planner: the general-purpose model meeting-notes writes with, for the
@@ -41,7 +46,17 @@ from .types import Assignment, Check, DrawnPicture, PageResult
 # for. The NPU needs its own build; the standard one does not compile there.
 _PLANNER_REPO = "OpenVINO/Qwen3-8B-int4-ov"
 _PLANNER_REPO_NPU = "OpenVINO/Qwen3-8B-int4-cw-ov"
-_PLAN_MAX_TOKENS = 400
+_PLAN_MAX_TOKENS = 600  # thirteen lines, six of them a sentence describing a picture: 210 to 270 tokens
+# A page built the studio's way is 5,000 to 5,500 tokens. html-creator's own
+# limit (6,144) would cut one in a few off at the footer, and a page cut off
+# is written again.
+_PAGE_MAX_TOKENS = 8192
+# The coding model's own temperature (Qwen3-Coder's generation settings), not
+# the 0.2 the other bricks draw at. At 0.2 a long stylesheet now and then
+# turns into a loop -- `.section-title h2 {...} .section-title p {...}` over
+# and over until the tokens run out: three pages in fifteen (2026-10-08).
+# At 0.7, none in thirteen, on the same requests.
+_PAGE_TEMPERATURE = 0.7
 
 PLAN, IMAGES, PAGE, CHECK = "plan", "images", "page", "check"
 STEPS = (PLAN, IMAGES, PAGE, CHECK)
@@ -102,6 +117,7 @@ class PageAgent:
         self._planner_device: str | None = None
         self._images = None
         self._page: HtmlCreatorSession | None = None
+        self._ran_away = False  # the page last written was stopped for going round in circles
 
     # ------------------------------------------------------------------ models
 
@@ -133,7 +149,7 @@ class PageAgent:
 
     # ------------------------------------------------------------------- steps
 
-    def _plan(self, request: str, device: str, report: StepReport, on_downloading):
+    def _plan(self, request: str, device: str, report: StepReport, on_downloading, control=None):
         report(PLAN, "loading", device, "")
         started = time.perf_counter()
         try:
@@ -145,8 +161,18 @@ class PageAgent:
                 self._planner_device = device
             # Where it really is: a planner asked onto a lost NPU carries on elsewhere.
             report(PLAN, "running", getattr(self._planner, "device", device), "")
-            answer = self._planner.answer(planning.SYSTEM_PROMPT, request, max_tokens=_PLAN_MAX_TOKENS)
-            plan, stats = planning.parse(request, answer), getattr(self._planner, "last_stats", None)
+            # The most likely word each time: nine plans out of nine were sound
+            # that way, where drawing among the likely words gave one that was
+            # the prompt's own example sent back and one that said the same
+            # sentence for two pictures.
+            answer = self._planner.answer(planning.SYSTEM_PROMPT, request, max_tokens=_PLAN_MAX_TOKENS, sample=False)
+            plan = planning.parse(request, answer)
+            if plan.copied and not stopped(control):
+                # Asked the same way it would answer the same thing, so this time it draws.
+                answer = self._planner.answer(planning.SYSTEM_PROMPT, request, max_tokens=_PLAN_MAX_TOKENS, sample=True)
+                again = planning.parse(request, answer)
+                plan = again if again.copied < plan.copied else plan
+            stats = getattr(self._planner, "last_stats", None)
         except Exception as exc:  # a planner that cannot be asked costs the plan, not the page
             plan, stats = planning.fallback(request, f"The planner could not be used ({exc}); the page is made from the request alone."), None
         seconds = time.perf_counter() - started
@@ -190,6 +216,7 @@ class PageAgent:
             picture_kit.Picture(spec.name, work_dir / spec.name, "image/jpeg", spec.width, spec.height, spec.prompt)
             for spec in plan.pictures
         ]
+        watch = Watch(control)  # stops a page that has started repeating itself
         result = self._page.generate(
             mode="landing_page",
             prompt=prompt,
@@ -198,11 +225,20 @@ class PageAgent:
             # After the pictures, where the model heeds it: what to fix from a
             # first try, then the rules about the pictures and the first line.
             closing="\n".join(part for part in (note, plan.closing()) if part),
+            max_tokens=_PAGE_MAX_TOKENS,
+            temperature=_PAGE_TEMPERATURE,
             on_ready=lambda: report(PAGE, "running", device, ""),
             on_downloading=on_downloading,
-            control=control,
+            control=watch.control,
         )
-        report(PAGE, "done", device, f"{len(result.pictures_used)} of {len(offered)} picture(s) placed")
+        self._ran_away = watch.ran_away
+        if watch.ran_away:
+            # Kept beside the pictures: what a page was repeating when it was
+            # stopped is the first thing anybody asks, and it is gone otherwise.
+            (work_dir / "stopped-page.html").write_text(result.html_source or result.html, encoding="utf-8")
+        _written, shown = _finished(result, plan)
+        detail = f"{len(shown)} of {len(offered)} picture(s) placed"
+        report(PAGE, "done", device, "stopped: it was repeating itself" if watch.ran_away else detail)
         return result, time.perf_counter() - started
 
     # --------------------------------------------------------------------- run
@@ -231,7 +267,7 @@ class PageAgent:
         began = time.perf_counter()
         seconds: dict[str, float] = {}
 
-        plan, planner_stats, seconds[PLAN] = self._plan(request, assignment.planner, report, on_downloading)
+        plan, planner_stats, seconds[PLAN] = self._plan(request, assignment.planner, report, on_downloading, control)
         if on_plan is not None:
             on_plan(plan)
         prompt = plan.page_prompt()
@@ -278,28 +314,32 @@ class PageAgent:
             page, seconds[PAGE] = self._write(prompt, plan, assignment.page, work_dir, report, on_downloading, None, control)
 
         report(CHECK, "running", "CPU", "")
-        written = page.html_source or page.html
-        verdict = checking.review(written, plan, page.pictures_used, page.html_truncated)
+        names = [spec.name for spec in plan.pictures]
+        written, used = _finished(page, plan)
+        verdict = checking.review(written, plan, used, page.html_truncated)
         attempts = 1
-        note = checking.repair_note(verdict)
+        note = checking.repair_note(verdict, self._ran_away)
         if note and not stopped(control):
             report(CHECK, "running", "CPU", "asking for the page once more: " + "; ".join(c.name for c in verdict if not c.passed))
             again, extra = self._write(
                 prompt, plan, assignment.page, work_dir, report, on_downloading, None, control, note
             )
             seconds[PAGE] += extra
-            second = checking.review(again.html_source or again.html, plan, again.pictures_used, again.html_truncated)
+            rewritten, shown = _finished(again, plan)
+            second = checking.review(rewritten, plan, shown, again.html_truncated)
             attempts = 2
             if _passed(second) >= _passed(verdict):
-                page, verdict = again, second
+                page, verdict, written, used = again, second, rewritten, shown
 
-        # A picture shown several times is a page asking for more pictures
-        # (see repeats.py): they are drawn from the page's own alt texts.
-        written = page.html_source or page.html
-        patched, wanted = give_repeats_their_own(written, [spec.name for spec in plan.pictures])
-        if wanted and not stopped(control):
-            report(CHECK, "running", "CPU", f"the page shows a picture more than once: {len(wanted)} more to draw")
-            specs = [planning.PictureSpec(name, *planning.BODY_SIZE, _in_style(alt, plan)) for name, alt in wanted]
+        # A picture shown several times, or one nobody drew, is a page asking
+        # for more pictures (see repeats.py): they are drawn from the page's
+        # own alt texts.
+        patched, wanted = give_repeats_their_own(written, names)
+        if not wanted:
+            written = patched  # nothing to draw; at most an <img> pointing nowhere was taken out
+        elif not stopped(control):
+            report(CHECK, "running", "CPU", f"the page asks for {len(wanted)} more picture(s)")
+            specs = [planning.PictureSpec(name, *planning.BODY_SIZE, _as_a_photograph(alt)) for name, alt in wanted]
             if assignment.images == assignment.page:
                 self._release_page()  # in turn, as before: the image model comes back alone
             more, extra = self._draw(
@@ -334,13 +374,20 @@ class PageAgent:
         )
 
 
+def _finished(page, plan: planning.PagePlan) -> tuple[str, list[str]]:
+    """The page as the model wrote it, with the studio's layout rules at the
+    top of its stylesheet, and the planned pictures it shows."""
+    written = art_direction.with_stylesheet(page.html_source or page.html, plan.pictures)
+    return written, picture_kit.referenced(written, [spec.name for spec in plan.pictures])
+
+
 def _passed(verdict: list[Check]) -> int:
     return sum(check.passed for check in verdict)
 
 
-def _in_style(description: str, plan: planning.PagePlan) -> str:
+def _as_a_photograph(description: str) -> str:
     """What the image model is asked for, for a picture the page described
-    itself: its alt text, in the look the plan gave the others."""
-    if plan.style:
-        return f"{description.rstrip('.')}. Style: {plan.style}"
+    itself: its alt text, as a photograph. Not in the plan's STYLE, which is
+    the page's -- its colours, its type -- and an image model told "an
+    elegant serif" draws letters."""
     return f"{description.rstrip('.')}, editorial photograph, soft natural light"

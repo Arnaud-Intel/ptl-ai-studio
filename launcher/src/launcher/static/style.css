@@ -930,6 +930,7 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
 .agent-step.failed .step-state { color: var(--danger); }
 
 .agent-plan .plan-title { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.agent-plan .plan-headline { margin: 0 0 6px; font-size: 13.5px; font-style: italic; }
 .agent-plan .plan-line { margin: 0 0 4px; font-size: 12.5px; color: var(--text-dim); }
 .agent-plan .plan-note { margin: 0 0 4px; font-size: 12.5px; color: var(--warning); }
 

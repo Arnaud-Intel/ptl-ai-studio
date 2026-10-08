@@ -1,7 +1,7 @@
 [project]
 name = "page-agent"
 version = "0.1.0"
-description = "EXPERIMENTAL. Turns a one-line request into an illustrated, self-contained web page by putting three models to work on three chips: a small model plans it, an image model draws its pictures, a coding model writes the HTML. Composes doc-qa and html-creator; the image model is the only new one."
+description = "EXPERIMENTAL. Turns a request -- one line, or a full brief -- into an illustrated, self-contained web page by putting three models to work on three chips: a small model plans it, an image model draws its pictures, a coding model writes the HTML. Composes doc-qa and html-creator; the image model is the only new one."
 requires-python = ">=3.10"
 dependencies = [
     "pantherlake-ai-core",

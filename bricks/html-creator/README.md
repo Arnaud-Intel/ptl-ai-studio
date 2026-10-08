@@ -198,6 +198,14 @@ markdown code fence if the model wraps its raw-HTML output in one despite
 being told not to (see "Verified on this machine" above -- this fires in
 practice, not just in theory).
 
+On the OpenVINO engine the page's first line is no longer the model's to
+choose: its answer is begun for it with `<!DOCTYPE html>` (`begin`, in
+doc-qa's model wrapper). The 30B coder now and then answered a long request
+with an opening code fence and nothing else -- two in four of the
+[page-agent](../page-agent/README.md)'s -- which the stripper turns into an
+empty page; begun that way it has not done it in 48 pages. The portable
+engine has no such handle and keeps the stripper as its only guard.
+
 ## One LLM call, not two
 
 Unlike `code-review-assist` (one call for the commit message, one for

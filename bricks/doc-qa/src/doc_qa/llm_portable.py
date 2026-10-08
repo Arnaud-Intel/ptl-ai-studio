@@ -40,12 +40,14 @@ class PortableLLM:
 
     def answer(
         self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control: GenerationControl | None = None,
-        sample: bool = True,
+        sample: bool = True, begin: str | None = None, temperature: float | None = None,
     ) -> str:
         """`control`, if given, receives each piece of the answer as it is
         written and can stop it part-way (see GenerationControl).
-        `sample=False` always takes the most likely next token."""
-        temperature = 0.2 if sample else 0.0  # llama.cpp: zero means no draw
+        `sample=False` always takes the most likely next token. `begin` is
+        accepted and not used: this engine's chat call has no way to start
+        the answer for the model."""
+        temperature = (temperature or 0.2) if sample else 0.0  # llama.cpp: zero means no draw
         needed = self.count_tokens(system_prompt) + self.count_tokens(user_prompt) + TEMPLATE_TOKENS
         budget = self.prompt_budget(max_tokens)
         if needed > budget:

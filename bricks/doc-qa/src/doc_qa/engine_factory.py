@@ -38,9 +38,13 @@ class LLM(Protocol):
     last_stats: GenerationStats | None
 
     # `control`, if given, sees the answer as it is written and can stop it.
+    # `begin`, if given, is how the answer starts: the model carries on from
+    # those words instead of choosing its own first ones (OpenVINO engine;
+    # the portable one takes it and leaves the model free). `temperature`,
+    # if given, replaces the 0.2 every brick draws at.
     def answer(
         self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control: GenerationControl | None = None,
-        sample: bool = True,
+        sample: bool = True, begin: str | None = None, temperature: float | None = None,
     ) -> str: ...
     # How long a prompt may be, in the model's own tokens: what lets a caller
     # split or trim its input *before* the model refuses it.

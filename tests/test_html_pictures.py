@@ -98,6 +98,10 @@ def test_text_about_a_picture_is_not_a_reference_to_it(kit):
         '<img src="my-hero-ridge.svg.bak">',
     ):
         assert pictures.embed(written, offered) == (written, [])
+        assert pictures.referenced(written, ["hero-ridge.svg"]) == []
+    # The same question without the files: which of these names does the page refer to?
+    page = '<img src="img/fjord.svg" alt="hero-ridge.svg"><div style="background: url(\'peak.jpg\')"></div>'
+    assert pictures.referenced(page, ["hero-ridge.svg", "fjord.svg", "peak.jpg", "lake.jpg"]) == ["fjord.svg", "peak.jpg"]
 
 
 class _FakeLLM:
@@ -106,9 +110,10 @@ class _FakeLLM:
         self.asked = None
         self.last_stats = None
 
-    def answer(self, system_prompt, user_prompt, max_tokens=512, control=None, sample=True):
+    def answer(self, system_prompt, user_prompt, max_tokens=512, control=None, sample=True, begin=None, temperature=None):
         self.asked = (system_prompt, user_prompt)
         self.sampled = sample
+        self.begun = begin
         return self.reply
 
 
@@ -142,6 +147,8 @@ def test_a_page_without_pictures_is_asked_and_returned_as_before(monkeypatch):
     result = session.generate(prompt="a bakery")
     assert "PICTURES" not in llm.asked[0] and llm.asked[1] == "a bakery"
     assert result.html == written and result.html_source is None and result.pictures_offered == 0
+    # The page's first line is not left to the model, which now and then opened a code fence and stopped there.
+    assert llm.begun == "<!DOCTYPE html>\n"
 
 
 def test_the_model_is_kept_between_pages_unless_asked_for_the_same_page_every_time(monkeypatch):

@@ -259,7 +259,25 @@ a new one or the deferred list, and moves its original wording to
   as generate; (8) a licence check of FLUX.1-schnell's OpenVINO build
   (Apache-2.0 on the card) belongs with R17. (filed 2026-10-08, user
   request)
-- [ ] **The 30B coder can answer a page request with an opening code fence
+  *2026-10-08, evening, after "the pages are a bit bland":* the pages are
+  now art-directed (the brick's README says how: a fuller plan with six
+  pictures each given a place, a specification of the page in every
+  request, some twenty layout rules put into every stylesheet), and the
+  samples are briefs. That moves the list. (1) stands and is longer: a
+  build is 82-92 s once the models are loaded, 145-162 s the first time.
+  (2) is better, not closed: the one French request tried since got English
+  photographs. (3) stands; what asks for lettering is now taken out of the
+  plan. New: (9) every page has the same skeleton -- a choice of two or
+  three would be the next step, picked by the planner; (10) a long brief is
+  not always carried whole (week prices, a year per project): a check says
+  which figures are missing and nothing puts them back; (11) the planner's
+  photographs are plain, and a picture is still never looked at before it
+  is used; (12) the planner reads a brief's wording closely: "a launch page
+  for Kivu Nightfall, the new coffee of..." got "Roasted after dark | How to
+  Brew | Subscription" as its three things, and "a one-page site for a
+  coffee roaster" with the same three coffees listed got the coffees. The
+  sample was reworded; a presenter's own brief will meet the same thing.
+- [x] **The 30B coder can answer a page request with an opening code fence
   and nothing else.** Seen while building the Page Agent: for a request
   made of a description, a title, a list of sections and a PICTURES list,
   `html-creator`'s landing-page instructions got "```" and the end -- on a
@@ -269,6 +287,13 @@ a new one or the deferred list, and moves its original wording to
   seen to do it, but nothing in it would notice: it would show an empty
   page. Worth a guard there (an answer with no `<html` is not a page) or
   the same closing line. (filed 2026-10-08, page-agent build)
+  *Done 2026-10-08:* the closing line stopped being enough the day the
+  requests grew (two in four came back as "```" at 2,300 tokens), so the
+  answer is now begun for the model -- `begin` in doc-qa's `answer`, which
+  applies the chat template itself and lets the runtime continue from
+  `<!DOCTYPE html>`. HTML Creator passes it for every page, document
+  summaries included. The portable engine takes the argument and cannot
+  honour it.
 - [ ] **A process can spin forever at exit after image and language models
   have shared the integrated GPU.** Found with the Page Agent's
   command-line tool on the XPS 14: after one build (image model, 30B coder,
@@ -284,6 +309,40 @@ a new one or the deferred list, and moves its original wording to
   report upstream once it is small enough to hand over. It matters beyond
   this brick because an in-app upgrade waits for the old process to end.
   (filed 2026-10-08, page-agent build)
+- [ ] **HTML Creator writes its pages at the temperature that made the Page
+  Agent's loop.** At 0.2, three of fifteen long pages from the 30B coder
+  ran away into the same CSS rules repeated until the tokens ran out; at the
+  model's own 0.7, none of thirteen (and one page stopped by the watch in
+  the twenty-two built after that). The Page Agent now writes at 0.7 and
+  has a watch that stops a looping page (`page_agent/runaway.py`); HTML
+  Creator still writes at 0.2 and would sit through the whole 6,144 tokens.
+  Its samples have not been seen to loop -- they were not looked at for it
+  either. Worth a count over its samples, and the watch moved somewhere
+  both can use it. Note that `repeatable` (most likely token every time)
+  can only make a loop more certain. (filed 2026-10-08, page-agent pages)
+- [ ] **A model on one GPU slows down while another works on the other.**
+  Seen while the Page Agent drew its pictures on the integrated GPU and
+  wrote its page on the B60: the coder wrote at 45 to 64 tokens/s instead
+  of 65 to 68, FLUX took 5 to 10 s a picture instead of 4.5 to 8.5, and the
+  planner on the NPU 23 to 31 s a plan instead of 14 while pictures were
+  drawn. Two chips at once is the brick's selling point, and it is true --
+  the build is shorter than in turn -- but "each model has its own chip"
+  overstates it: they share the CPU that feeds them, and the memory.
+  Not measured: where the time goes. (filed 2026-10-08, page-agent pages)
+- [ ] **After two hours of builds back to back the laptop holds itself to
+  15 W, and every demo takes half as long again.** Seen on the XPS 14 on
+  the evening of 2026-10-08, mains power, Windows on "Best performance":
+  from about 21:05 the processor package drew 15 W with eight cores busy --
+  what it draws at idle -- and stayed there through a few idle minutes. The
+  30B coder on the B60 fell from 52-64 tokens/s to 32-38, the integrated
+  GPU from 40 to 25-31, a FLUX picture from 5-10 s to 11-20 s; a warm
+  two-GPU Page Agent build went from 82-92 s to 130-140 s. Nothing else was
+  using the machine (sampled). Not known: what triggers it (heat, a Dell
+  thermal profile, the charger), how long it lasts, whether a rehearsal
+  before a show would put the machine in that state for the show. Worth an
+  hour with the hardware panel's power line on screen before the next long
+  demo, and a line in the presenter's notes either way. (filed 2026-10-08,
+  page-agent pages)
 
 ## What we are showing
 

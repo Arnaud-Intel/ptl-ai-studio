@@ -109,11 +109,21 @@ class OpenVINOLLM:
 
     def answer(
         self, system_prompt: str, user_prompt: str, max_tokens: int = 512, control: GenerationControl | None = None,
-        sample: bool = True,
+        sample: bool = True, begin: str | None = None, temperature: float | None = None,
     ) -> str:
         """`control`, if given, receives each piece of the answer as it is
         written and can stop it part-way: what was written is returned, and
         `last_stats.cancelled` says the answer is incomplete.
+
+        `begin`, if given, is how the answer starts, and the model carries
+        on from there: the chat template is applied here, those words are
+        put after it, and the runtime is asked to continue the string as it
+        is. It is what makes a page start with its doctype -- asked for one,
+        Qwen3-Coder-30B sometimes answers with an opening code fence and
+        nothing else, and saying "start your reply with <!DOCTYPE html>"
+        stopped that only while the request was short (two requests of
+        2,300 tokens out of four came back as "```", 2026-10-08; with the
+        doctype put there for it, both wrote their page).
 
         `sample=False` always takes the most likely next token instead of
         drawing among the likely ones. (The draw is seeded, so it repeats
@@ -123,17 +133,27 @@ class OpenVINOLLM:
         budget = self.prompt_budget(max_tokens)
         if needed > budget:
             raise PromptTooLong(needed, budget, self.device)
-        history = self._ov_genai.ChatHistory(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ]
-        )
-        if self._thinks_aloud:
-            history.set_extra_context({"enable_thinking": False})
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        quiet = {"enable_thinking": False} if self._thinks_aloud else None
+        if begin:
+            templated = self._tokenizer.apply_chat_template(messages, add_generation_prompt=True, extra_context=quiet)
+            # A list, for the result to come back with its timings like a chat's does.
+            prompt, as_written = [templated + begin], {"apply_chat_template": False}
+        else:
+            prompt, as_written = self._ov_genai.ChatHistory(messages), {}
+            if quiet:
+                prompt.set_extra_context(quiet)
         # The model's own settings draw each token at random among the likely
-        # ones; 0.2 keeps that draw close to the first choice.
-        choice = {"temperature": 0.2} if sample else {"do_sample": False}
+        # ones; 0.2 keeps that draw close to the first choice. That is right
+        # for an answer of a few hundred tokens and wrong for a stylesheet of
+        # a few thousand, where the first choice after a rule is another rule
+        # like it: a caller writing one asks for the model's own temperature
+        # (see the page agent, which lost three pages in fifteen to such loops
+        # at 0.2 and none in thirteen at 0.7).
+        choice = {"temperature": temperature or 0.2} if sample else {"do_sample": False}
 
         def generate():
             streaming, was_cancelled = {}, lambda: False
@@ -146,9 +166,11 @@ class OpenVINOLLM:
                     on_token=npu.breathe if self._on_npu else None,
                 )
             with npu.guard(self.device):
-                result = self.pipeline.generate(history, max_new_tokens=max_tokens, **choice, **streaming)
+                result = self.pipeline.generate(prompt, max_new_tokens=max_tokens, **choice, **as_written, **streaming)
             return result, was_cancelled()
 
+        if begin and control is not None and control.on_text is not None:
+            control.on_text(begin)  # whoever follows the answer sees all of it
         try:
             result, cancelled = generate()
         except npu.NpuLost:
@@ -157,4 +179,4 @@ class OpenVINOLLM:
             self._leave_npu()
             result, cancelled = generate()
         self.last_stats = GenerationStats.from_openvino(result, self.device, cancelled=cancelled)
-        return result.texts[0].strip()
+        return ((begin or "") + result.texts[0]).strip()

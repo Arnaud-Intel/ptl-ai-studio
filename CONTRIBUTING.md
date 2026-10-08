@@ -82,9 +82,11 @@ local_demo/
       pyproject.toml
       src/page_agent/
         plan.py                   <- the planner's instructions, and a tolerant reader of its answer
+        art_direction.py          <- how the studio builds a page: what every request is given, and the layout rules every page gets
         images.py                 <- the image model (openvino_genai.Text2ImagePipeline): the one new model
         conductor.py              <- who works where, at the same time or in turn; composes doc-qa + html-creator
-        checks.py / repeats.py    <- what is verified about the page, and how a repeated picture is mended
+        checks.py / repeats.py    <- what is verified about the page, and how a repeated or missing picture is mended
+        runaway.py                <- stops a page that has started writing the same rules over and over
         cli.py
     <next-brick>/
       pyproject.toml

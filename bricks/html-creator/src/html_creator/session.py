@@ -34,6 +34,11 @@ _MAX_TOKENS_BY_MODE = {
     "document": 3072,
 }
 
+# How every page starts, and the model is not asked: its answer is begun for
+# it (see doc-qa's `answer`). Left to choose, the coding model now and then
+# opens a markdown fence and stops there.
+_BEGIN = "<!DOCTYPE html>\n"
+
 _HTML_RULES = (
     "Output ONE complete, self-contained HTML document: start with "
     "<!DOCTYPE html>, include <meta charset=\"utf-8\"> and a responsive "
@@ -95,6 +100,7 @@ class HtmlCreatorSession:
         closing: str | None = None,
         repeatable: bool = False,
         max_tokens: int | None = None,
+        temperature: float | None = None,
         on_ready: Callable[[], None] | None = None,
         on_downloading: Callable[[], None] | None = None,
         control: GenerationControl | None = None,
@@ -128,7 +134,11 @@ class HtmlCreatorSession:
         seeded -- while four fresh models gave the same page four times.
         llama.cpp seeds its draw at random, so there it is the sampling
         that has to go. The price is the model's load time on every page.
-        Off by default."""
+        Off by default.
+
+        `temperature`, if given, is how freely the model draws its words
+        (the bricks' usual 0.2 otherwise; it means nothing with
+        `repeatable`)."""
         offered: list[picture_kit.Picture] = []
         picture_notes: list[str] = []
         if mode == "landing_page":
@@ -180,7 +190,8 @@ class HtmlCreatorSession:
 
         tokens = max_tokens or _MAX_TOKENS_BY_MODE[mode]
         raw_output = self._llm.answer(
-            system_prompt, source_text, max_tokens=tokens, control=control, sample=not repeatable
+            system_prompt, source_text, max_tokens=tokens, control=control, sample=not repeatable, begin=_BEGIN,
+            temperature=temperature,
         )
         html, fence_stripped = strip_code_fence(raw_output)
         truncated_output = not html.rstrip().lower().endswith("</html>")
