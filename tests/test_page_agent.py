@@ -6,6 +6,7 @@ order of work, and the routes."""
 from __future__ import annotations
 
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -14,9 +15,9 @@ from page_agent import art_direction, checks, conductor, runaway
 from page_agent import plan as planning
 from page_agent.conductor import PageAgent, assign
 from page_agent.repeats import give_repeats_their_own
-from page_agent.types import Assignment
+from page_agent.types import Assignment, DrawnPicture, PictureStats
 from pantherlake_ai_core.engine import GpuDevice
-from pantherlake_ai_core.types import GenerationControl
+from pantherlake_ai_core.types import GenerationControl, GenerationStats
 
 from launcher import app as launcher_app
 
@@ -352,12 +353,50 @@ def test_the_watch_still_stops_when_asked_to():
     assert asked.control.should_stop() is True and asked.ran_away is False
 
 
+# --- how fast each model works, in its own unit -----------------------------------------
+
+
+def test_an_image_models_speed_is_counted_in_pictures_and_in_steps(tmp_path):
+    def drawn(name, width, height, seconds, denoise):
+        return DrawnPicture(name, tmp_path / name, width, height, "x", seconds, steps=4, denoise_seconds=denoise)
+
+    stats = PictureStats.of([drawn("hero.jpg", 1024, 576, 7.5, 5.0), drawn("picture-2.jpg", 768, 512, 4.5, 3.0)], "GPU.0")
+    assert (stats.device, stats.pictures, stats.seconds, stats.megapixels, stats.steps) == ("GPU.0", 2, 12.0, 0.98, 8)
+    assert stats.images_per_minute == 10.0  # two in twelve seconds
+    assert stats.steps_per_second == 1.0  # eight steps in the eight seconds the runtime counted for them
+    # Where the runtime's counters cannot be read there is no steps figure, and the rest stands.
+    uncounted = PictureStats.of([drawn("hero.jpg", 1024, 576, 6.0, None)], "CPU")
+    assert uncounted.steps_per_second is None and uncounted.images_per_minute == 10.0
+    assert PictureStats.of([], "GPU.0") is None
+
+
+def test_a_build_says_how_fast_each_model_worked_and_what_loading_them_took(studio):
+    agent, coder, _loaded, work_dir = studio
+    coder.pages = [_PAGE, _PAGE]
+    told: list[tuple] = []
+    both = Assignment("NPU", "GPU.0", "GPU.1", together=True)
+    result = agent.build("a bakery page", assignment=both, work_dir=work_dir, on_metric=lambda *said: told.append(said))
+    # Each step in its own unit; the pictures' figure moves with every picture and is final at the last.
+    assert ("plan", 19.2, "tok/s", True) in told and ("page", 62.5, "tok/s", True) in told
+    pictures = [said for said in told if said[0] == "images"]
+    assert [said[2] for said in pictures] == ["images/min"] * 4 and [said[3] for said in pictures] == [False, False, True, True]
+    assert told[-1] == ("images", result.picture_stats.images_per_minute, "images/min", True)  # all of them, extras included
+    stats = result.picture_stats
+    assert (stats.device, stats.pictures, stats.steps, stats.megapixels) == ("GPU.0", 3, 12, 1.38)
+    assert stats.steps_per_second == 500.0  # twelve steps in the 0.024 s the stand-in says they took
+    assert result.planner_stats.tokens_per_second == 19.2 and result.stats.tokens_per_second == 62.5
+    # The first build loads three models and says what each took; with two GPUs the next one loads none.
+    assert set(result.loads) == {"plan", "images", "page"}
+    again = agent.build("a bakery page", assignment=both, work_dir=work_dir)
+    assert again.loads == {} and again.picture_stats.pictures == 3
+
+
 # --- the conductor's order of work ------------------------------------------------------
 
 
 class _Planner:
     device = "NPU"
-    last_stats = None
+    last_stats = GenerationStats("NPU", tokens=240, seconds=12.5, tokens_per_second=19.2)
 
     asked: list[bool] = []
 
@@ -370,6 +409,8 @@ class _Artist:
     """Stands in for the image model: writes a small file where a picture is asked for."""
 
     made: list["_Artist"] = []
+    # As the real one: four denoising steps a picture, and what they took by the runtime's own count.
+    last_steps, last_denoise_seconds = 4, 0.008
 
     def __init__(self, device, on_downloading=None):
         self.device, self.drawn = device, []
@@ -384,7 +425,7 @@ class _Artist:
 class _Coder:
     """Stands in for the coding model: writes what the test tells it to, one page per call."""
 
-    last_stats = None
+    last_stats = GenerationStats("GPU.0", tokens=4000, seconds=64.0, tokens_per_second=62.5, first_token_seconds=1.2)
 
     def __init__(self, pages):
         self.pages, self.asked, self.room = list(pages), [], []
@@ -638,16 +679,30 @@ def test_a_build_reports_its_steps_plan_and_pictures_while_it_runs(client, monke
     seen: dict = {}
 
     class _Session:
-        def build(self, request, *, assignment, work_dir, on_step, on_plan, on_picture, on_downloading, control):
+        def build(self, request, *, assignment, work_dir, on_step, on_plan, on_picture, on_downloading, control, on_metric):
             on_step("plan", "running", "NPU", "")
             plan = planning.parse(request, _ANSWER)
             on_plan(plan)
+            on_metric("plan", 19.2, "tok/s", True)
             on_step("plan", "done", "NPU", "3 picture(s) planned")
             on_step("images", "running", "GPU.0", "picture 1 of 3")
             (work_dir / "hero.jpg").write_bytes(b"\xff\xd8\xff\xd9")
             on_picture(SimpleNamespace(name="hero.jpg", width=1024, height=576, prompt="x", seconds=6.5))
+            on_metric("images", 9.23, "images/min", False)
             on_picture(SimpleNamespace(name="extra-1.jpg", width=768, height=512, prompt="Brioche", seconds=4.4))
+            on_step("page", "running", "GPU.1", "")
+            # The coding model writing: its rate is counted from its tokens as they come.
+            control.on_text("<!DOCTYPE html>")
+            control.on_tokens(20)
+            time.sleep(0.05)
+            control.on_tokens(20)
             seen["during"] = runner.progress()
+            seen["metrics"] = {
+                (m["stage"], m["unit"], m["sticky"]) for m in launcher_app.metrics.snapshot() if m["demo_id"] == "page-agent"
+            }
+            seen["written_so_far"] = client.get("/api/bricks/page-agent/partial?stage=page").json()["active"]
+            on_metric("page", 61.4, "tok/s", True)
+            on_step("page", "done", "GPU.1", "3 of 3 picture(s) placed")
             seen["picture"] = client.get("/api/page-agent/picture/hero.jpg").status_code
             seen["not_drawn"] = client.get("/api/page-agent/picture/picture-2.jpg").status_code
             seen["not_ours"] = client.get("/api/page-agent/picture/..%2Fsecrets.txt").status_code
@@ -656,7 +711,9 @@ def test_a_build_reports_its_steps_plan_and_pictures_while_it_runs(client, monke
             return SimpleNamespace(
                 html="<html></html>", html_source=None, plan=plan, assignment=assignment, pictures=[], pictures_used=[],
                 checks=[], attempts=1, seconds={"plan": 1.0, "images": 2.0, "page": 3.0, "total": 4.0}, cancelled=False,
-                stats=None, planner_stats=None,
+                stats=None, planner_stats=None, loads={"images": 27.4},
+                picture_stats=PictureStats("GPU.0", pictures=3, seconds=19.5, megapixels=1.38, steps=12,
+                                           images_per_minute=9.23, steps_per_second=0.92),
             )
 
     monkeypatch.setattr(runner, "_session", _Session())
@@ -667,16 +724,32 @@ def test_a_build_reports_its_steps_plan_and_pictures_while_it_runs(client, monke
     during = seen["during"]
     assert during["running"] is True and during["plan"]["title"] == "Baked with Care"
     assert [(s["id"], s["state"], s["device"]) for s in during["steps"]] == [
-        ("plan", "done", "NPU"), ("images", "running", "GPU.0"), ("page", "pending", "GPU.1"), ("check", "pending", "CPU"),
+        ("plan", "done", "NPU"), ("images", "running", "GPU.0"), ("page", "running", "GPU.1"), ("check", "pending", "CPU"),
     ]
+    # Each step with its own figure in its own unit -- the page's counted from its tokens while it is written.
+    rates = {s["id"]: s["rate"] for s in during["steps"]}
+    assert rates["plan"] == {"value": 19.2, "unit": "tok/s"} and rates["images"] == {"value": 9.23, "unit": "images/min"}
+    assert rates["page"]["unit"] == "tok/s" and rates["page"]["value"] > 0 and rates["check"] is None
+    # ...and each under its own stage, which is what puts it under its own chip in the hardware panel:
+    # the planner's to stay, the two at work to follow the work.
+    assert seen["metrics"] == {("plan", "tok/s", True), ("images", "images/min", False), ("page", "tok/s", False)}
+    assert seen["written_so_far"] is True  # the page being written is followed under the page step's own stage
     pictures = {p["name"]: p for p in during["plan"]["pictures"]}
     assert pictures["hero.jpg"]["ready"] and not pictures["picture-2.jpg"]["ready"] and pictures["extra-1.jpg"]["extra"]
     assert (seen["picture"], seen["not_drawn"], seen["not_ours"]) == (200, 404, 404)
     # The hardware panel shows the step under its chip, and the conductor under the CPU.
-    assert seen["active"] == {("images", "GPU.0"), ("conductor", "CPU")}
+    assert seen["active"] == {("images", "GPU.0"), ("conductor", "CPU")}  # the page was done by then
+    # What the build returns says how fast each model worked and what loading took.
+    built = answer.json()
+    assert built["picture_stats"]["images_per_minute"] == 9.23 and built["picture_stats"]["steps_per_second"] == 0.92
+    assert built["loads"] == {"images": 27.4} and built["plan"]["headline"] == "" and built["plan"]["offers"] == []
 
     after = client.get("/api/page-agent/progress").json()
     assert after["running"] is False and launcher_app.activity.snapshot() == []
+    # A step's last word stays for as long as its model is loaded; a figure that was only on its way goes.
+    left = {(m["stage"], m["value"]) for m in launcher_app.metrics.snapshot() if m["demo_id"] == "page-agent"}
+    assert left == {("plan", 19.2), ("page", 61.4)}
+    assert {s["id"]: s["rate"] and s["rate"]["value"] for s in after["steps"]}["page"] == 61.4
     assert client.get("/api/status").json().get("page-agent") is None
 
 

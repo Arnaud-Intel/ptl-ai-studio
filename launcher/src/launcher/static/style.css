@@ -928,6 +928,18 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
 .agent-step.done .step-state { color: var(--success); }
 .agent-step.failed { border-color: var(--danger); }
 .agent-step.failed .step-state { color: var(--danger); }
+/* How fast the step works, in its own unit. */
+.agent-step .step-rate { margin-top: 3px; font-size: 13px; font-weight: 600; color: var(--accent-hover); font-variant-numeric: tabular-nums; }
+
+/* What a build took, one row per model: chip, work done, time, speed. */
+.agent-perf-wrap { overflow-x: auto; margin: 0 0 8px; }
+.agent-perf { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.agent-perf th, .agent-perf td { padding: 6px 10px 6px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+.agent-perf thead th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-faint); font-weight: 600; }
+.agent-perf tbody th { font-weight: 600; color: var(--text); white-space: nowrap; }
+.agent-perf td { color: var(--text-dim); }
+.agent-perf td strong { color: var(--accent-hover); white-space: nowrap; }
+.agent-perf .perf-note { display: block; font-size: 11.5px; color: var(--text-faint); }
 
 .agent-plan .plan-title { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
 .agent-plan .plan-headline { margin: 0 0 6px; font-size: 13.5px; font-style: italic; }

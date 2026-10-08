@@ -43,6 +43,10 @@ class ImageMaker:
         self._model_dir = resolve_snapshot(model_repo or DEFAULT_REPO, local_dir=model_dir, on_downloading=on_downloading)
         self.device = device
         self.pipeline = ov_genai.Text2ImagePipeline(self._model_dir, device, **ov_config_for(device))
+        # About the last picture drawn: how many denoising steps, and what
+        # they took by the runtime's own count.
+        self.last_steps = 0
+        self.last_denoise_seconds: float | None = None
 
     def draw(self, prompt: str, width: int, height: int, path: Path, seed: int = 0) -> float:
         """Draw `prompt` at `width` x `height` into `path`. Returns the
@@ -58,9 +62,26 @@ class ImageMaker:
         tensor = self.pipeline.generate(
             prompt, width=width, height=height, num_inference_steps=_STEPS, rng_seed=seed
         )
+        self.last_steps, self.last_denoise_seconds = _STEPS, self._denoise_seconds()
         image = Image.fromarray(np.array(tensor.data[0], dtype=np.uint8))
         if path.suffix.lower() in (".jpg", ".jpeg"):
             image.save(path, quality=_JPEG_QUALITY, optimize=True)
         else:
             image.save(path)
         return time.perf_counter() - started
+
+    def _denoise_seconds(self) -> float | None:
+        """What the last picture's denoising steps took, from the pipeline's
+        own counters (one duration per step, in microseconds). None if they
+        cannot be read: the figure is for show, and never costs a picture.
+
+        Measured on the XPS 14's integrated GPU (2026-10-08, a machine
+        running slow that evening): of 12.3 s for a 768x512 picture, 9.2 s
+        were the four steps, 0.9 s reading the description and 2.1 s
+        decoding the picture -- so "steps per second" and "pictures per
+        minute" are two different figures, and both are reported."""
+        try:
+            durations = self.pipeline.get_performance_metrics().raw_metrics.iteration_durations
+            return sum(durations) / 1e6 if durations else None
+        except Exception:
+            return None

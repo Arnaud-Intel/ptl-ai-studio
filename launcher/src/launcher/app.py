@@ -1573,8 +1573,10 @@ async def page_agent_build(req: PageAgentRequest) -> JSONResponse:
             "assignment": asdict(result.assignment),
             "plan": {
                 "title": result.plan.title,
+                "headline": result.plan.headline,
                 "style": result.plan.style,
                 "sections": result.plan.sections,
+                "offers": result.plan.offers,
                 "notes": result.plan.notes,
             },
             "pictures": [
@@ -1586,8 +1588,12 @@ async def page_agent_build(req: PageAgentRequest) -> JSONResponse:
             "attempts": result.attempts,
             "seconds": result.seconds,
             "cancelled": result.cancelled,
+            # How fast each model worked, each in its own unit, and what
+            # loading each took in this build (nothing, once it is loaded).
             "stats": asdict(result.stats) if result.stats else None,
             "planner_stats": asdict(result.planner_stats) if result.planner_stats else None,
+            "picture_stats": asdict(result.picture_stats) if result.picture_stats else None,
+            "loads": result.loads,
         }
     )
 

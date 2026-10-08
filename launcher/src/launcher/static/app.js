@@ -2590,11 +2590,14 @@ const PANELS = {
             { pending: "waiting", loading: "loading the model", running: step.detail || "working", done: step.detail || "done", failed: "failed" }[
               step.state
             ] || step.state;
+          // How fast this step works, in its own unit: tokens per second for
+          // the two language models, images per minute for the image model.
+          const rate = step.rate && step.state !== "loading" ? `<div class="step-rate">${escapeHtml(formatMetric(step.rate))}</div>` : "";
           return (
             `<li class="agent-step ${escapeHtml(step.state)}"><div class="step-head">` +
             `<span class="step-name">${index + 1}. ${escapeHtml(step.label)}</span>` +
             `<span class="step-chip" title="${escapeHtml(deviceLabel(step.device))}">${escapeHtml(shortGpuName(deviceLabel(step.device)))}</span></div>` +
-            `<div class="step-state">${escapeHtml(what)}${seconds}</div></li>`
+            `<div class="step-state">${escapeHtml(what)}${seconds}</div>${rate}</li>`
           );
         })
         .join("");
@@ -2650,7 +2653,7 @@ const PANELS = {
         this.run({
           button: el("agent-build"),
           key: "page-agent",
-          partial: { target: el("agent-result") },
+          partial: { target: el("agent-result"), stage: "page" },
           busy: "Starting…",
           work: async () => {
             try {
@@ -2698,6 +2701,67 @@ const PANELS = {
       if (on) document.documentElement.requestFullscreen?.().catch(() => {});
       else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     },
+    // What the build took and how fast each model worked, one row per
+    // step, each in its own unit: an image model never produces a token.
+    speedsHtml(data) {
+      const chip = (device) => escapeHtml(shortGpuName(deviceLabel(device)));
+      const loaded = (step) => {
+        const seconds = (data.loads || {})[step];
+        return seconds ? `<span class="perf-note">+ ${seconds.toFixed(0)} s loading the model</span>` : "";
+      };
+      const tokens = (stats) =>
+        `<td><strong>${stats.tokens_per_second.toFixed(1)} tok/s</strong>` +
+        (stats.first_token_seconds !== null && stats.first_token_seconds !== undefined
+          ? `<span class="perf-note">first token after ${stats.first_token_seconds.toFixed(1)} s</span>`
+          : "") +
+        `</td>`;
+      const rows = [];
+      const plan = data.planner_stats;
+      if (plan) {
+        rows.push(
+          `<tr><th scope="row">Plan</th><td>${chip(plan.device)}</td><td>${plan.tokens.toLocaleString()} tokens</td>` +
+            `<td>${plan.seconds.toFixed(1)} s${loaded("plan")}</td>${tokens(plan)}</tr>`,
+        );
+      }
+      const pictures = data.picture_stats;
+      if (pictures) {
+        const steps =
+          pictures.steps_per_second !== null && pictures.steps_per_second !== undefined
+            ? `<span class="perf-note">${pictures.steps_per_second.toFixed(2)} denoising steps/s</span>`
+            : "";
+        rows.push(
+          `<tr><th scope="row">Pictures</th><td>${chip(pictures.device)}</td>` +
+            `<td>${pictures.pictures} images<span class="perf-note">${pictures.megapixels.toFixed(1)} megapixels, ${pictures.steps} steps</span></td>` +
+            `<td>${pictures.seconds.toFixed(1)} s${loaded("images")}</td>` +
+            `<td><strong>${pictures.images_per_minute.toFixed(1)} images/min</strong>${steps}</td></tr>`,
+        );
+      }
+      const page = data.stats;
+      if (page) {
+        const twice = data.attempts > 1 ? '<span class="perf-note">the second writing</span>' : "";
+        rows.push(
+          `<tr><th scope="row">Page</th><td>${chip(page.device)}</td><td>${page.tokens.toLocaleString()} tokens${twice}</td>` +
+            `<td>${page.seconds.toFixed(1)} s${loaded("page")}</td>${tokens(page)}</tr>`,
+        );
+      }
+      const how = data.assignment.together
+        ? "the pictures were drawn while the page was written"
+        : "the pictures were drawn first, then the page written";
+      const energy = page && page.energy;
+      const above = energy && energy.above_idle_joules !== null && energy.above_idle_joules !== undefined;
+      const total =
+        `<p class="gen-stats"><strong>${data.seconds.total.toFixed(0)} s</strong> in all -- ${escapeHtml(how)}` +
+        (energy
+          ? ` · <span class="energy" title="${escapeHtml(energyTitle(energy))}">${escapeHtml(energyText(energy))}` +
+            `${above ? " above idle" : " (processor package)"}</span>`
+          : "") +
+        `</p>`;
+      if (!rows.length) return total;
+      return (
+        `<div class="agent-perf-wrap"><table class="agent-perf"><thead><tr><th>Step</th><th>Chip</th><th>Work</th>` +
+        `<th>Time</th><th>Speed</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>${total}`
+      );
+    },
     renderResult(data) {
       this.currentHtml = data.html;
       const container = el("agent-result");
@@ -2708,15 +2772,7 @@ const PANELS = {
             `${check.detail && !check.passed ? ` -- ${escapeHtml(check.detail)}` : ""}</li>`,
         )
         .join("");
-      const how = data.assignment.together
-        ? "the pictures were drawn while the page was written"
-        : "the pictures were drawn first, then the page written";
-      const times = ["plan", "images", "page"].map((step) => `${step} ${data.seconds[step].toFixed(0)} s`).join(", ");
-      container.innerHTML =
-        stoppedNoteHtml(data) +
-        `<ul class="agent-checks">${checks}</ul>` +
-        `<p class="section-label">${escapeHtml(times)} -- ${escapeHtml(how)}.</p>` +
-        generationStatsHtml(data.stats);
+      container.innerHTML = stoppedNoteHtml(data) + `<ul class="agent-checks">${checks}</ul>` + this.speedsHtml(data);
       const iframe = document.createElement("iframe");
       iframe.className = "htmlc-preview-frame";
       iframe.setAttribute("sandbox", "allow-scripts");
@@ -3082,15 +3138,20 @@ function panelRows() {
     canStop: entry.can_stop !== false,
   }));
   for (const held of STATUS.loaded || []) {
-    if (rows.some((row) => row.kind === "active" && row.demoId === held.demo_id)) continue;
-    // A brick holding several models (the page agent: one per chip) has a row for each.
+    const stage = held.stage || "default";
+    const atWork = rows.filter((row) => row.kind === "active" && row.demoId === held.demo_id);
+    // A brick at work has no row for its idle model -- unless it holds several
+    // models, one per chip (the page agent): then a step that has finished
+    // keeps its row, and its last figure, while the others work. It cannot be
+    // unloaded from there until they have finished.
+    if (atWork.some((row) => stage === "default" || row.stage === stage)) continue;
     rows.push({
       demoId: held.demo_id,
-      stage: held.stage || "default",
+      stage,
       stageLabel: held.stage_label || null,
       device: held.device,
       kind: "loaded",
-      canStop: true,
+      canStop: atWork.length === 0,
     });
   }
   return rows;

@@ -89,9 +89,39 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  note: {note}", file=sys.stderr)
     for check in result.checks:
         print(f"  {'ok  ' if check.passed else 'FAIL'} {check.name}{': ' + check.detail if check.detail else ''}", file=sys.stderr)
+    for line in _speeds(result):
+        print(f"  {line}", file=sys.stderr)
     took = ", ".join(f"{step} {seconds:.0f} s" for step, seconds in result.seconds.items())
     print(f"Wrote {args.out} ({len(result.html) // 1024} KB) -- {took}.", file=sys.stderr)
     return 0 if all(check.passed for check in result.checks) else 2
+
+
+def _speeds(result) -> list[str]:
+    """How fast each model worked, one line per step, each in its own unit."""
+
+    def loaded(step: str) -> str:
+        return f" (model loaded in {result.loads[step]:.0f} s)" if result.loads.get(step) else ""
+
+    lines = []
+    plan, pictures, page = result.planner_stats, result.picture_stats, result.stats
+    if plan is not None:
+        lines.append(
+            f"plan     on {plan.device}: {plan.tokens} tokens in {plan.seconds:.1f} s, "
+            f"{plan.tokens_per_second:.1f} tok/s{loaded('plan')}"
+        )
+    if pictures is not None:
+        steps = f", {pictures.steps_per_second:.2f} steps/s" if pictures.steps_per_second else ""
+        lines.append(
+            f"pictures on {pictures.device}: {pictures.pictures} ({pictures.megapixels:.1f} megapixels) in "
+            f"{pictures.seconds:.1f} s, {pictures.images_per_minute:.1f} images/min{steps}{loaded('images')}"
+        )
+    if page is not None:
+        first = f", first token after {page.first_token_seconds:.1f} s" if page.first_token_seconds is not None else ""
+        lines.append(
+            f"page     on {page.device}: {page.tokens} tokens in {page.seconds:.1f} s, "
+            f"{page.tokens_per_second:.1f} tok/s{first}{loaded('page')}"
+        )
+    return lines
 
 
 def run() -> None:

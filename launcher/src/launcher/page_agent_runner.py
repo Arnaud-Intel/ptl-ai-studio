@@ -6,6 +6,12 @@ them at once, so beside the usual phase and activity reporting this runner
 keeps a step-by-step account of the build in hand -- which step is on which
 chip, the plan as soon as it is written, each picture as soon as it is
 drawn -- for the page to ask for while it waits (`progress()`).
+
+Each of the three models has its own figure in its own unit: tokens per
+second for the planner and the coding model, images per minute for the
+image model. They are reported under the step's own stage, which is what
+puts each one under its own chip in the hardware panel -- while the step
+works, and as "last" for as long as its model stays loaded.
 """
 from __future__ import annotations
 
@@ -77,15 +83,21 @@ class PageAgentRunner:
         ]
 
     def progress(self) -> dict:
-        """The build in hand, or the last one: its steps, plan and pictures."""
+        """The build in hand, or the last one: its steps -- each with the
+        time it has taken and how fast it works -- its plan and pictures."""
         with self._state_lock:
             state = copy.deepcopy(self._state)
         now = time.time()
+        # The coding model's rate while it writes is counted from its tokens
+        # as they come (generation.py): the conductor only knows it at the end.
+        live = {m["stage"]: m for m in metrics.snapshot() if m["demo_id"] == _DEMO_ID and not m["sticky"]}
         for step in state["steps"]:
             since, spent = step.pop("since"), step.pop("spent")
             if since is not None:
                 spent += now - since
             step["seconds"] = round(spent, 1) if (spent or step["state"] != "pending") else None
+            if step["state"] == "running" and step["id"] in live:
+                step["rate"] = {"value": live[step["id"]]["value"], "unit": live[step["id"]]["unit"]}
         return state
 
     def picture(self, name: str) -> Path | None:
@@ -127,6 +139,16 @@ class PageAgentRunner:
         if doing:
             message = " · ".join(doing)
             events.set_phase(_DEMO_ID, "loading" if loading_only else "running", message[0].upper() + message[1:] + "...")
+
+    def _on_metric(self, step: str, value: float, unit: str, final: bool) -> None:
+        """How fast a step works, as the conductor tells it: kept with the
+        step for the panel's own tiles, and reported under the step's stage
+        for the hardware panel -- to stay ("last 19 tok/s") once it is the
+        step's last word."""
+        with self._state_lock:
+            entry = next(item for item in self._state["steps"] if item["id"] == step)
+            entry["rate"] = {"value": round(float(value), 2), "unit": unit}
+        metrics.report(_DEMO_ID, value, unit, stage=step, sticky=final)
 
     def _on_plan(self, plan: PagePlan) -> None:
         with self._state_lock:
@@ -182,7 +204,7 @@ class PageAgentRunner:
                     },
                     "steps": [
                         {"id": step, "label": _LABELS[step], "device": device, "state": "pending", "detail": "",
-                         "since": None, "spent": 0.0}
+                         "since": None, "spent": 0.0, "rate": None}
                         for step, device in zip(STEPS, (assignment.planner, assignment.images, assignment.page, "CPU"))
                     ],
                     "plan": None,
@@ -195,7 +217,9 @@ class PageAgentRunner:
             # The conductor is code on the CPU, and says so in the hardware panel.
             activity.set_active(_DEMO_ID, engine=_ENGINE, device="CPU", stage=_CONDUCTOR, stage_label=_CONDUCTOR)
             events.set_phase(_DEMO_ID, "loading", "Starting...")
-            live = generation.get(_DEMO_ID)
+            # Under the page step's own stage, so that the rate counted from
+            # its tokens shows under the chip that writes it.
+            live = generation.get(_DEMO_ID, PAGE)
             started = energy.mark()
             try:
                 result = self._session.build(
@@ -207,6 +231,7 @@ class PageAgentRunner:
                     on_picture=self._on_picture,
                     on_downloading=on_downloading,
                     control=live.begin(),
+                    on_metric=self._on_metric,
                 )
             except Exception as exc:
                 with self._state_lock:
@@ -226,7 +251,6 @@ class PageAgentRunner:
                     self._state["running"] = False
             if result.stats is not None:
                 result.stats.energy = energy.since(started, _DEMO_ID)
-                metrics.report(_DEMO_ID, result.stats.tokens_per_second, "tok/s", sticky=True)
             events.clear_phase(_DEMO_ID)
             return result
         finally:

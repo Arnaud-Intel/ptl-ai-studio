@@ -30,6 +30,46 @@ class DrawnPicture:
     height: int
     prompt: str
     seconds: float
+    # The denoising steps it took, and what they took by the runtime's own
+    # count (None where that cannot be read): `seconds` also holds reading
+    # the description, decoding the picture and writing the file.
+    steps: int = 0
+    denoise_seconds: float | None = None
+
+
+@dataclass
+class PictureStats:
+    """How fast a build's pictures were drawn, in an image model's own units
+    -- it never produces a token. `seconds` is the drawing alone, loading
+    the model left out. `steps_per_second` is the rate of the denoising
+    steps, the figure image models are compared by; it is taken from the
+    runtime's own counters and is None where they could not be read."""
+
+    device: str
+    pictures: int
+    seconds: float
+    megapixels: float
+    steps: int
+    images_per_minute: float
+    steps_per_second: float | None = None
+
+    @classmethod
+    def of(cls, pictures: list[DrawnPicture], device: str) -> PictureStats | None:
+        seconds = sum(picture.seconds for picture in pictures)
+        if not pictures or seconds <= 0:
+            return None
+        steps = sum(picture.steps for picture in pictures)
+        timed = [picture for picture in pictures if picture.denoise_seconds]
+        denoising = sum(picture.denoise_seconds for picture in timed)
+        return cls(
+            device=device,
+            pictures=len(pictures),
+            seconds=round(seconds, 2),
+            megapixels=round(sum(picture.width * picture.height for picture in pictures) / 1e6, 2),
+            steps=steps,
+            images_per_minute=round(60 * len(pictures) / seconds, 2),
+            steps_per_second=round(sum(picture.steps for picture in timed) / denoising, 2) if denoising > 0 else None,
+        )
 
 
 @dataclass
@@ -60,6 +100,11 @@ class PageResult:
     seconds: dict[str, float] = field(default_factory=dict)
     planner_stats: GenerationStats | None = None
     stats: GenerationStats | None = None  # the page model's
+    picture_stats: PictureStats | None = None
+    # Seconds this build spent loading each step's model ("plan", "images",
+    # "page"): what the first build costs that the next ones do not. A model
+    # already in memory is not in it.
+    loads: dict[str, float] = field(default_factory=dict)
     # The page as the model wrote it, with file names where `html` has the
     # pictures themselves.
     html_source: str | None = None

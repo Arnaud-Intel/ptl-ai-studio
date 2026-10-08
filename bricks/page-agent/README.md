@@ -178,6 +178,53 @@ loop: 4 to 6%), stops the page under 10%, and the page is asked for again
 with that said. What it was writing is kept beside the pictures as
 `stopped-page.html`.
 
+## What it reports
+
+How fast each model works, each in its own unit -- an image model never
+produces a token:
+
+| Step | Figure | Counted from |
+| --- | --- | --- |
+| plan | tokens/s | the runtime's own timing of the planner's answer |
+| pictures | images/min, and denoising steps/s | the time each picture took to draw, loading left out; the steps from the image pipeline's own counters |
+| page | tokens/s, and the wait for the first token | its tokens as they come while it writes, then the runtime's timing of the whole page |
+
+With them: the tokens written, the megapixels drawn, what loading each model
+took (the first build's cost that the next ones do not pay), and the energy
+of the whole build above idle.
+
+Images per minute rather than per second, because a picture takes 5 to 10 s:
+"8.6 images/min" reads, "0.14 images/s" does not. Steps per second is the
+figure image models are usually compared by, and is not the same thing: of
+the 12.3 s one 768x512 picture took that evening, 9.2 s were its four steps,
+0.9 s reading the description and 2.1 s decoding the picture.
+
+Where they show:
+
+- **The command line** ends with one line per model:
+  ```
+  plan     on NPU: 214 tokens in 15.8 s, 15.4 tok/s (model loaded in 9 s)
+  pictures on GPU.0: 6 (2.9 megapixels) in 79.2 s, 4.5 images/min, 0.34 steps/s (model loaded in 38 s)
+  page     on GPU.1: 3883 tokens in 93.4 s, 42.4 tok/s, first token after 1.9 s (model loaded in 58 s)
+  ```
+  (a real one, from the evening the machine was holding itself back: see
+  below for what it does when it is not).
+- **The launcher's panel**: each step's tile carries its figure while it
+  works -- the pictures' moves with every picture, the page's with the
+  tokens -- and a table under the checks gives chip, work done, time and
+  speed for each model once the page is there.
+- **The hardware panel**: each figure sits under the chip that earned it,
+  and stays there as "last" for as long as the model is loaded, so the NPU
+  still shows the planner's tokens/s while the two GPUs work.
+- **The API**: `POST /api/page-agent/build` returns `planner_stats`,
+  `picture_stats`, `stats` (the page's) and `loads`; `GET
+  /api/page-agent/progress` has each step's `rate` while a build runs.
+
+Watching the figures move is the quickest way to see what two chips at once
+really costs: on the evening they were added, the coding model wrote at 20
+to 28 tokens/s on the B60 while the pictures were being drawn on the
+integrated GPU, and at 63 as soon as the last one was done.
+
 ## What it takes (XPS 14, 2026-10-08)
 
 Core Ultra X7 358H, Arc B390 integrated GPU, NPU; an Arc Pro B60 attached for

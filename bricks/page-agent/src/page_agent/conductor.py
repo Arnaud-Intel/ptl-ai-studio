@@ -39,7 +39,7 @@ from . import checks as checking
 from . import plan as planning
 from .repeats import give_repeats_their_own
 from .runaway import Watch
-from .types import Assignment, Check, DrawnPicture, PageResult
+from .types import Assignment, Check, DrawnPicture, PageResult, PictureStats
 
 # The planner: the general-purpose model meeting-notes writes with, for the
 # same reasons (see that brick) -- and already on the NPU if notes were asked
@@ -64,6 +64,11 @@ STEPS = (PLAN, IMAGES, PAGE, CHECK)
 # on_step(step, state, device, detail): state is "loading" (a model is being
 # brought up), "running", "done" or "failed".
 StepReport = Callable[[str, str, str, str], None]
+# on_metric(step, value, unit, final): how fast a step is working, in its own
+# unit -- "tok/s" for the two language models, "images/min" for the image
+# model. `final` is False for a figure that will be followed by another
+# (after each picture), True for the step's last word.
+MetricReport = Callable[[str, float, str, bool], None]
 
 
 def planner_repo(device: str) -> str:
@@ -118,6 +123,10 @@ class PageAgent:
         self._images = None
         self._page: HtmlCreatorSession | None = None
         self._ran_away = False  # the page last written was stopped for going round in circles
+        # For the build in hand: where each step's speed is told, and what
+        # loading each model took.
+        self._tell: MetricReport = lambda step, value, unit, final: None
+        self._loads: dict[str, float] = {}
 
     # ------------------------------------------------------------------ models
 
@@ -159,6 +168,7 @@ class PageAgent:
                     self.engine, device=device, model_repo=planner_repo(device), on_downloading=on_downloading
                 )
                 self._planner_device = device
+                self._loads[PLAN] = time.perf_counter() - started
             # Where it really is: a planner asked onto a lost NPU carries on elsewhere.
             report(PLAN, "running", getattr(self._planner, "device", device), "")
             # The most likely word each time: nine plans out of nine were sound
@@ -173,6 +183,8 @@ class PageAgent:
                 again = planning.parse(request, answer)
                 plan = again if again.copied < plan.copied else plan
             stats = getattr(self._planner, "last_stats", None)
+            if stats is not None:
+                self._tell(PLAN, stats.tokens_per_second, "tok/s", True)
         except Exception as exc:  # a planner that cannot be asked costs the plan, not the page
             plan, stats = planning.fallback(request, f"The planner could not be used ({exc}); the page is made from the request alone."), None
         seconds = time.perf_counter() - started
@@ -187,6 +199,7 @@ class PageAgent:
         if self._images is None or self._images.device != device:
             self._release_images()
             self._images = ImageMaker(device, on_downloading=on_downloading)
+            self._loads[IMAGES] = self._loads.get(IMAGES, 0.0) + time.perf_counter() - started
         drawn: list[DrawnPicture] = []
         for index, spec in enumerate(specs, 1):
             if stopped(control):
@@ -197,9 +210,18 @@ class PageAgent:
             # description differ, and the same request draws the same page.
             seed = zlib.crc32(spec.name.encode("utf-8")) % 2_000_000_000
             seconds = self._images.draw(spec.prompt, spec.width, spec.height, path, seed)
-            drawn.append(DrawnPicture(spec.name, path, spec.width, spec.height, spec.prompt, round(seconds, 2)))
+            drawn.append(
+                DrawnPicture(
+                    spec.name, path, spec.width, spec.height, spec.prompt, round(seconds, 2),
+                    steps=getattr(self._images, "last_steps", 0),
+                    denoise_seconds=getattr(self._images, "last_denoise_seconds", None),
+                )
+            )
             if on_picture is not None:
                 on_picture(drawn[-1])
+            so_far = PictureStats.of(drawn, device)
+            if so_far is not None:
+                self._tell(IMAGES, so_far.images_per_minute, "images/min", index == len(specs))
         report(IMAGES, "done", device, f"{len(drawn)} picture(s) drawn")
         return drawn, time.perf_counter() - started
 
@@ -217,6 +239,13 @@ class PageAgent:
             for spec in plan.pictures
         ]
         watch = Watch(control)  # stops a page that has started repeating itself
+        to_load = self._page._llm is None  # the session loads its model on its first page
+
+        def ready() -> None:
+            if to_load:
+                self._loads[PAGE] = self._loads.get(PAGE, 0.0) + time.perf_counter() - started
+            report(PAGE, "running", device, "")
+
         result = self._page.generate(
             mode="landing_page",
             prompt=prompt,
@@ -227,10 +256,12 @@ class PageAgent:
             closing="\n".join(part for part in (note, plan.closing()) if part),
             max_tokens=_PAGE_MAX_TOKENS,
             temperature=_PAGE_TEMPERATURE,
-            on_ready=lambda: report(PAGE, "running", device, ""),
+            on_ready=ready,
             on_downloading=on_downloading,
             control=watch.control,
         )
+        if result.stats is not None:
+            self._tell(PAGE, result.stats.tokens_per_second, "tok/s", True)
         self._ran_away = watch.ran_away
         if watch.ran_away:
             # Kept beside the pictures: what a page was repeating when it was
@@ -254,11 +285,13 @@ class PageAgent:
         on_picture: Callable[[DrawnPicture], None] | None = None,
         on_downloading: Callable[[], None] | None = None,
         control: GenerationControl | None = None,
+        on_metric: MetricReport | None = None,
     ) -> PageResult:
         """Blocks until the page is built. `on_step` follows the work step by
         step; `on_plan` and `on_picture` hand over what there is to show as
-        soon as it exists; `control` receives the page as it is written and
-        can stop the run."""
+        soon as it exists; `on_metric` is told how fast each step works, in
+        its own unit; `control` receives the page as it is written and can
+        stop the run."""
         if not request or not request.strip():
             raise ValueError("Describe the page to build.")
         request = request.strip()
@@ -266,6 +299,8 @@ class PageAgent:
         work_dir.mkdir(parents=True, exist_ok=True)
         began = time.perf_counter()
         seconds: dict[str, float] = {}
+        self._tell = on_metric or (lambda step, value, unit, final: None)
+        self._loads = {}
 
         plan, planner_stats, seconds[PLAN] = self._plan(request, assignment.planner, report, on_downloading, control)
         if on_plan is not None:
@@ -357,6 +392,12 @@ class PageAgent:
         verdict = checking.review(written, plan, used, page.html_truncated)
         report(CHECK, "done", "CPU", f"{_passed(verdict)} of {len(verdict)} checks passed")
 
+        # Every picture of the build, the extra ones included: the figure the
+        # pictures step is left with.
+        picture_stats = PictureStats.of(drawn, assignment.images)
+        if picture_stats is not None:
+            self._tell(IMAGES, picture_stats.images_per_minute, "images/min", True)
+
         seconds["total"] = time.perf_counter() - began
         return PageResult(
             html=html,
@@ -369,6 +410,8 @@ class PageAgent:
             seconds={step: round(value, 1) for step, value in seconds.items()},
             planner_stats=planner_stats,
             stats=page.stats,
+            picture_stats=picture_stats,
+            loads={step: round(value, 1) for step, value in self._loads.items()},
             html_source=written,
             cancelled=stopped(control),
         )
