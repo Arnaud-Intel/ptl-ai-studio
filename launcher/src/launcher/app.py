@@ -1677,7 +1677,8 @@ def _own_route(method: str, path: str, body: dict | None, timeout: float):
             message = json.loads(exc.read()).get("error") or str(exc)
         except Exception:
             message = str(exc)
-        raise RuntimeError(message) from None
+        # 409 is a demo saying it is still at something: the director waits for it.
+        raise (autodemo.Busy if exc.code == 409 else RuntimeError)(message) from None
 
 
 def _street_cameras_reachable() -> bool:

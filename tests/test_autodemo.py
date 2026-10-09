@@ -57,10 +57,14 @@ class Stage:
         self.fail: dict[str, str] = {}
         self.slow: dict[str, threading.Event] = {}
         self.cancels: dict[str, str] = {}  # a route that, called, lets a slow one go: what cancelling does
+        self.busy: dict[str, int] = {}  # how many more times a route answers that its demo is still busy
         self.answers: dict[str, dict] = {}
 
     def __call__(self, method, path, body, timeout):
         self.calls.append((method, path, body))
+        if self.busy.get(path, 0) > 0:
+            self.busy[path] -= 1
+            raise autodemo.Busy("A page is being built already -- wait for it, or stop it first.")
         if path in self.fail:
             raise RuntimeError(self.fail[path])
         if path in self.cancels:
@@ -174,6 +178,29 @@ def test_a_scene_that_fails_is_noted_and_skipped_and_three_in_a_row_stop_the_loo
     state = alone.snapshot()
     assert "3 scenes failed one after the other" in state["notice"] and len(state["failures"]) == 3
     assert alone.running is False and alone.awake[-1] == "released"
+
+
+def test_a_demo_still_letting_go_of_its_last_run_is_waited_for_not_counted_as_a_failure():
+    stage = Stage()
+    stage.busy = {"/page/build": 3, "/batch/start": 2}  # skipped a moment ago, and not done ending
+    page = lambda stand, loop: _scene("page", Ask("/page/build"))  # noqa: E731
+    batch = lambda stand, loop: _scene("batch", Start("/batch/start"), stop=["/batch/stop"])  # noqa: E731
+    director = _director(stage, [page, batch])
+    director.start()
+    assert _until(lambda: director.snapshot()["loop"] >= 2)
+    director.stop()
+    assert director.snapshot()["failures"] == [] and stage.posted().count("/page/build") >= 4  # asked again until it took
+    # A demo that stays busy longer than it is waited for is a failure after all, in the route's own words.
+    stage.busy = {"/page/build": 10_000}
+    stuck = _director(stage, [page], busy_wait=0.1, max_failures=1)
+    stuck.start()
+    assert _until(lambda: stuck.snapshot()["state"] == autodemo.STOPPED)
+    assert "being built already" in stuck.snapshot()["failures"][0]["error"]
+    # And the wait itself can be skipped or stopped.
+    patient = _director(stage, [page], busy_wait=30)
+    patient.start()
+    assert _until(lambda: stage.posted().count("/page/build") > 5)
+    assert patient.stop(wait=3)["state"] == autodemo.IDLE and patient.snapshot()["failures"] == []
 
 
 def test_a_scene_that_never_finishes_is_ended_and_a_request_that_takes_too_long_is_cancelled():
@@ -361,7 +388,8 @@ def test_every_scene_tells_its_story_a_sentence_or_two_at_a_time_in_both_languag
     stage = Stage()
     for options in ({}, {"dgpu": "off"}):
         english, french = _stand(stage, **options), _stand(stage, lang="fr", **options)
-        for build in autodemo_scenes.PLAYLIST:
+        # The playlist's own scenes, and the one that takes the streets' place every other turn.
+        for build in [*autodemo_scenes.PLAYLIST, autodemo_scenes.herd_and_line]:
             scene, scène = build(english, 1), build(french, 1)
             assert isinstance(scene, Scene) and isinstance(scène, Scene)
             assert len(scene.beats) >= 3 and scene.beats[0].stage == "" and scene.beats[0].after == 0  # it opens at once

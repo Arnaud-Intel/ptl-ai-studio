@@ -307,7 +307,30 @@ def test_the_auto_demo_counts_a_herd_and_a_line_with_the_same_detector_when_thei
     assert [feed["path"] for feed in street.steps[0].body["feeds"]] == ["C:/v/a.webm", "C:/v/b.webm"]
     missing = autodemo_scenes.herd_and_line(_stand(_listed()), 1)
     assert isinstance(missing, Skip) and "Prepare models" in missing.reason
-    assert autodemo_scenes.PLAYLIST.index(autodemo_scenes.herd_and_line) == autodemo_scenes.PLAYLIST.index(autodemo_scenes.smart_city) + 1
+
+
+def test_the_loop_plays_one_counting_scene_a_turn_the_streets_then_the_herd_and_the_line():
+    listed = _listed() + [
+        {"name": "Bottle capping line", "kind": "file", "ready": True, "counting": ["line"], "feeds": "C:/v/bottles.webm"},
+        {"name": "Cattle on the road", "kind": "file", "ready": True, "counting": ["herd"], "feeds": "C:/v/cattle.webm"},
+    ]
+    stand = _stand(listed)
+    turns = [autodemo_scenes.counting(stand, loop) for loop in (1, 2, 3, 4, 5)]
+    assert [scene.id for scene in turns] == ["smart-city", "herd-and-line", "smart-city", "herd-and-line", "smart-city"]
+    # The streets still change chips each time they play, which is now every other turn.
+    streets = [[feed["path"] for feed in scene.steps[0].body["feeds"]] for scene in turns[::2]]
+    assert streets == [["C:/v/a.webm", "C:/v/b.webm"], ["C:/v/b.webm", "C:/v/a.webm"], ["C:/v/a.webm", "C:/v/b.webm"]]
+    # One slot in the playlist, not two scenes of the same brick back to back.
+    assert autodemo_scenes.counting in autodemo_scenes.PLAYLIST
+    assert autodemo_scenes.smart_city not in autodemo_scenes.PLAYLIST and autodemo_scenes.herd_and_line not in autodemo_scenes.PLAYLIST
+    # The one whose turn it is cannot play: the other does, rather than the loop going a scene short.
+    only_streets = _stand(_listed())
+    assert [autodemo_scenes.counting(only_streets, loop).id for loop in (1, 2)] == ["smart-city", "smart-city"]
+    only_herd = _stand([entry for entry in listed if entry.get("counting")])
+    assert [autodemo_scenes.counting(only_herd, loop).id for loop in (1, 2)] == ["herd-and-line", "herd-and-line"]
+    # Neither can: it says why the one whose turn it was could not.
+    nothing = autodemo_scenes.counting(_stand(_listed(ready=False)), 2)
+    assert isinstance(nothing, Skip) and "Prepare models" in nothing.reason
 
 
 def test_without_its_videos_the_auto_demo_falls_back_on_the_live_cameras_or_says_what_it_needs():

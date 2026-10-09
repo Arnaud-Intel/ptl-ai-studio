@@ -425,6 +425,28 @@ def seeing_and_answering(stand: Stand, loop: int) -> Scene | Skip:
     )
 
 
+def counting(stand: Stand, loop: int) -> Scene | Skip:
+    """One counting scene a turn of the loop, not two in a row (asked for by
+    the user on 2026-10-09): the streets on the first turn, the herd and the
+    line on the second, the streets again on the third. Two scenes of the
+    same brick back to back read as one long one.
+
+    If the one whose turn it is cannot play here -- its videos not fetched,
+    no network for the cameras -- the other plays in its place rather than
+    the loop going a scene short."""
+    streets_turn = loop % 2 == 1
+    # Each is told how many times it has played itself, not which turn of
+    # the loop this is: the streets change chips every time they play.
+    mine = (loop + 1) // 2
+    first, second = (smart_city, herd_and_line) if streets_turn else (herd_and_line, smart_city)
+    scene = first(stand, mine)
+    if isinstance(scene, Skip):
+        instead = second(stand, loop)
+        if isinstance(instead, Scene):
+            return instead
+    return scene
+
+
 # In the order they play. Heavy and light alternate: the 30B model lost a
 # fifth of its speed after many runs in a row (docs/AUTO_DEMO.md).
-PLAYLIST: list[Builder] = [page_agent, expense_extraction, smart_city, herd_and_line, seeing_and_answering]
+PLAYLIST: list[Builder] = [page_agent, expense_extraction, counting, seeing_and_answering]

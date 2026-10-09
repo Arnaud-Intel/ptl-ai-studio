@@ -163,6 +163,12 @@ class SceneFailed(RuntimeError):
     pass
 
 
+class Busy(RuntimeError):
+    """A route answered that its demo is still at something (HTTP 409): a
+    page still being planned after its scene was skipped, a batch of receipts
+    still stopping. Not a failure yet: it is letting go, and is asked again."""
+
+
 class _Interrupted(Exception):
     """The scene was ended from outside: stopped or skipped."""
 
@@ -200,10 +206,16 @@ class Director:
         idle_resume: float = 300.0,
         max_failures: int = 3,
         poll: float = 0.5,
+        busy_wait: float = 75.0,
         keep_awake: tuple[Callable[[], bool], Callable[[], None]] = (awake.hold, awake.release),
     ):
         self._call, self._playlist, self._online = call, list(playlist), online
         self._idle_resume, self._max_failures, self._poll = idle_resume, max_failures, poll
+        # How long a demo that says it is busy is waited for. A page being
+        # planned when its scene was skipped takes up to a minute to end, and
+        # somebody skipping through the loop is back at it sooner than that:
+        # three scenes refused for that would stop the loop on no fault at all.
+        self._busy_wait = busy_wait
         self._hold_awake, self._release_awake = keep_awake
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -480,7 +492,7 @@ class Director:
         if isinstance(step, Wait):
             self._pause_for(max(0.0, min(step.seconds, deadline - time.monotonic())))
         elif isinstance(step, Start):
-            self._call("POST", step.path, step.body, 120)
+            self._post(step.path, step.body, 120, deadline)
         elif isinstance(step, Until):
             end = min(deadline, time.monotonic() + step.timeout)
             while self._call("GET", step.path, None, 30).get(step.key) != step.equals:
@@ -490,6 +502,19 @@ class Director:
         elif isinstance(step, Ask):
             self._ask(step, scene, deadline)
 
+    def _post(self, path: str, body: dict, timeout: float, deadline: float) -> dict:
+        """Call a route, asking again for a while if its demo says it is
+        still busy with what it was doing before."""
+        end = min(deadline, time.monotonic() + self._busy_wait)
+        while True:
+            try:
+                return self._call("POST", path, body, timeout)
+            except Busy:
+                if time.monotonic() >= end:
+                    raise
+                if self._interrupt.wait(min(2.0, self._poll * 4)):
+                    raise _Interrupted() from None
+
     def _ask(self, step: Ask, scene: Scene, deadline: float) -> None:
         """The request runs on a thread of its own, so that the director can
         still be interrupted while a page takes its minute and a half."""
@@ -497,7 +522,9 @@ class Director:
 
         def work() -> None:
             try:
-                box["answer"] = self._call("POST", step.path, step.body, step.timeout)
+                box["answer"] = self._post(step.path, step.body, step.timeout, deadline)
+            except _Interrupted:
+                pass  # the loop below has seen the same interruption
             except Exception as exc:
                 box["error"] = exc
 

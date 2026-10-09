@@ -173,7 +173,9 @@ a new one or the deferred list, and moves its original wording to
   the fetched set (six clips, about 120 MB), a feed says what it counts
   (`COUNTING` in the brick's `types.py`: street, line, herd; the **Counts**
   menu on a feed's card), "A herd and a line, two chips" is offered beside
-  the street pair, and the Auto Demo plays it as a fourth scene. Left: a
+  the street pair, and the Auto Demo plays it in turn with the streets --
+  the streets on the first turn of the loop, this on the second, as the
+  user asked after seeing them back to back. Left: a
   second factory clip as good as the bottles, and counts that do not run
   high. **Defects are out of this detector's
   reach**: it names everyday objects, it does not judge them; Intel's bolt

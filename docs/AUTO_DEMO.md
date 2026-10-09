@@ -118,10 +118,11 @@ Not built yet, most useful first:
 - The proofing pass on Object Detection that lets the fourth scene through
   (Document Q&A had its own on 2026-10-09: see the backlog's R06), and an
   output view for it.
-- A fourth scene, "Count whatever passes", follows the streets when its two
-  videos have been fetched: a cattle drive and a bottle capping line through
-  the same detector, each counted for what it shows. It says so itself that
-  its tallies run high.
+- "Count whatever passes" -- a cattle drive and a bottle capping line through
+  the same detector, each counted for what it shows -- takes turns with the
+  streets: the streets on the first turn of the loop, the herd and the line
+  on the second, never both in one turn. If one of the two cannot play, the
+  other plays every turn. It says so itself that its tallies run high.
 - The street scene plays two videos kept on the machine when they have been
   fetched (the live London cameras otherwise, which need the internet). One
   of the two, Shibuya from above, is a crowd the detector boxes a handful
