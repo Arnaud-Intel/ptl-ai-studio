@@ -281,6 +281,10 @@ def test_a_stop_that_cannot_be_immediate_says_stopping_until_the_demo_in_hand_ha
     assert "/page/stop" in stage.posted() and director.awake[-1] == "released"
     director.start()  # and now it can be started again
     director.stop()
+    # A loop that ended in the very instant it was told to stop: "stopping" written after its own "idle".
+    with director._lock:
+        director._state["state"] = autodemo.STOPPING
+    assert director.snapshot()["state"] == autodemo.IDLE and director.pause()["state"] == autodemo.IDLE
 
 
 def test_the_loop_cannot_be_started_twice_and_a_stand_with_nothing_to_play_says_so():

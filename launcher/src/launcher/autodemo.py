@@ -244,7 +244,14 @@ class Director:
             state = dict(self._state)
             state["scene"] = dict(state["scene"]) if state["scene"] else None
             state["now"] = time.time()
-            return state
+        # "Stopping" is only ever true of a loop that is still there. One
+        # that ended in the instant it was told to stop wrote "idle" first
+        # and had "stopping" written over it (seen once, on the test
+        # machine): what is said is what is so.
+        if state["state"] == STOPPING and not self.running:
+            state["state"] = STOPPED if state["notice"] else IDLE
+            state["scene"] = None
+        return state
 
     def result(self) -> dict | None:
         """What the scene in hand was answered, for the page to draw:
