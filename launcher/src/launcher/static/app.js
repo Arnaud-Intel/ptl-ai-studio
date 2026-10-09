@@ -3414,6 +3414,328 @@ function closeLogViewer() {
   el("log-open").focus();
 }
 
+// --- Auto Demo ----------------------------------------------------------------------
+// The app running itself on a stand. The launcher directs (autodemo.py) and
+// this page follows: it asks where the loop is, opens the panel of the scene
+// in hand, and puts above it what the scene says about itself -- what is
+// happening, which chip does which part on which engine and why, what to
+// look at -- with each chip's live figure beside its line.
+
+const AUTODEMO = {
+  state: null,
+  sceneKey: null, // the scene being followed: its id and when it started
+  drawn: false, // its result has been handed to the panel
+  stopPartial: null,
+  lastTouch: 0,
+  figures: new Map(), // the last figure seen on each chip's line, by scene
+  options: { dgpu: "auto", big_screen: false },
+};
+const AUTODEMO_POLL_MS = 1000;
+
+function autodemoActive() {
+  return !!AUTODEMO.state && ["checking", "playing", "paused"].includes(AUTODEMO.state.state);
+}
+
+function autodemoStandHtml(stand) {
+  const yes = (text) => `<li class="found">${escapeHtml(text)}</li>`;
+  const no = (text) => `<li class="missing">${escapeHtml(text)}</li>`;
+  return (
+    `<ul class="autodemo-stand">` +
+    (stand.npu ? yes("NPU") : no("No NPU")) +
+    (stand.igpu ? yes(`Integrated GPU (${stand.igpu})`) : no("No integrated GPU")) +
+    (stand.dgpu ? yes(`Discrete GPU (${stand.dgpu})`) : no("No discrete GPU in use")) +
+    (stand.cameras ? yes(stand.cameras === 1 ? "A camera" : `${stand.cameras} cameras`) : no("No camera: the screen is watched instead")) +
+    (stand.internet ? yes("Internet") : no("No internet")) +
+    `</ul>`
+  );
+}
+
+function autodemoPlaylistHtml(playlist) {
+  return (
+    `<ol class="autodemo-playlist">` +
+    playlist
+      .map(
+        (entry) =>
+          `<li class="${entry.playable ? "plays" : "skipped"}"><strong>${escapeHtml(entry.title)}</strong>` +
+          `<span>${entry.playable ? "plays" : `skipped: ${escapeHtml(entry.reason)}`}</span></li>`,
+      )
+      .join("") +
+    `</ol>`
+  );
+}
+
+async function autodemoCheck() {
+  const box = el("autodemo-check");
+  el("autodemo-start").disabled = true;
+  try {
+    // Asked once with the discrete GPU, to know whether there is one to leave out.
+    const found = await fetchJSON("/api/autodemo/check?dgpu=auto");
+    const hasDiscrete = !!found.stand.dgpu;
+    const check =
+      AUTODEMO.options.dgpu === "off" && hasDiscrete ? await fetchJSON("/api/autodemo/check?dgpu=off") : found;
+    box.innerHTML =
+      `<p class="section-label">This stand</p>${autodemoStandHtml(check.stand)}` +
+      `<div class="autodemo-options">` +
+      (hasDiscrete
+        ? `<label><input id="autodemo-use-dgpu" type="checkbox"${AUTODEMO.options.dgpu === "auto" ? " checked" : ""} /> ` +
+          `Use the discrete GPU (untick it if it will be unplugged, or to rehearse a stand without it)</label>`
+        : "") +
+      `<label><input id="autodemo-big" type="checkbox"${AUTODEMO.options.big_screen ? " checked" : ""} /> ` +
+      `Large display: bigger text, to be read from a few metres</label></div>` +
+      `<p class="section-label">One turn of the loop</p>${autodemoPlaylistHtml(check.playlist)}`;
+    const useDiscrete = el("autodemo-use-dgpu");
+    if (useDiscrete) {
+      useDiscrete.addEventListener("change", () => {
+        AUTODEMO.options.dgpu = useDiscrete.checked ? "auto" : "off";
+        autodemoCheck();
+      });
+    }
+    el("autodemo-big").addEventListener("change", (event) => {
+      AUTODEMO.options.big_screen = event.target.checked;
+    });
+    el("autodemo-start").disabled = !check.playlist.some((entry) => entry.playable);
+  } catch (err) {
+    showPlaceholder(box, `The stand could not be looked at: ${err.message}`);
+  }
+}
+
+function openAutodemoModal() {
+  el("autodemo-modal-overlay").hidden = false;
+  el("autodemo-modal-close").focus();
+  paintStatus(el("autodemo-start-status"), "", null);
+  autodemoCheck();
+}
+
+function closeAutodemoModal() {
+  el("autodemo-modal-overlay").hidden = true;
+}
+
+async function startAutodemo() {
+  el("autodemo-start").disabled = true;
+  try {
+    AUTODEMO.lastTouch = Date.now(); // the click that starts the loop is not a visitor's
+    await postJSON("/api/autodemo/start", AUTODEMO.options);
+    closeAutodemoModal();
+    autodemoTick();
+  } catch (err) {
+    paintStatus(el("autodemo-start-status"), `Error: ${err.message}`, "error");
+    el("autodemo-start").disabled = false;
+  }
+}
+
+// A chip's figure, as the hardware panel has it. A figure that belongs to
+// work in hand goes when the work ends, and a scene's result is looked at
+// after that: the last one seen in this scene stays on its line as "last".
+function autodemoFigure(chip) {
+  if (!chip.demo) return "";
+  const key = `${AUTODEMO.sceneKey}|${chip.demo}|${chip.stage}`;
+  const metric = (STATUS.metrics || []).find((m) => m.demo_id === chip.demo && m.stage === chip.stage);
+  if (!metric) {
+    const seen = AUTODEMO.figures.get(key);
+    return seen ? `<span class="was">last</span> ${escapeHtml(seen)}` : "";
+  }
+  const text = formatMetric(metric);
+  AUTODEMO.figures.set(key, text);
+  return `${metric.sticky ? '<span class="was">last</span> ' : ""}${escapeHtml(text)}`;
+}
+
+function autodemoClock(seconds) {
+  const left = Math.max(0, Math.round(seconds));
+  return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+}
+
+function autodemoCaptionHtml(state) {
+  const buttons = (extra = "") =>
+    `<div class="autodemo-buttons">${extra}` +
+    `<button type="button" class="link-btn" data-autodemo="stop">Stop the Auto Demo</button></div>`;
+  if (state.state === "stopped") {
+    const failures = (state.failures || [])
+      .map((failure) => `<li><strong>${escapeHtml(failure.title)}</strong> ${escapeHtml(failure.error)}</li>`)
+      .join("");
+    return (
+      `<div class="autodemo-bar"><span class="autodemo-tag">Auto Demo</span></div>` +
+      `<h2>The Auto Demo has stopped</h2><p>${escapeHtml(state.notice)}</p>` +
+      (failures ? `<ul class="autodemo-failures">${failures}</ul>` : "") +
+      `<div class="autodemo-buttons"><button type="button" class="link-btn" data-autodemo="dismiss">Close</button></div>`
+    );
+  }
+  if (state.state === "paused" && state.paused) {
+    return (
+      `<div class="autodemo-bar"><span class="autodemo-tag">Auto Demo · paused</span></div>` +
+      `<h2>Go ahead, try it</h2>` +
+      `<p>The demo is yours. It takes up again by itself in ` +
+      `<strong data-ad-clock></strong> once nobody is touching anything.</p>` +
+      buttons('<button type="button" class="link-btn" data-autodemo="resume">Resume now</button>')
+    );
+  }
+  const scene = state.scene;
+  if (!scene) {
+    return (
+      `<div class="autodemo-bar"><span class="autodemo-tag">Auto Demo</span></div>` +
+      `<h2>${state.state === "checking" ? "Looking at what this stand has..." : "Next scene coming up..."}</h2>` +
+      buttons()
+    );
+  }
+  const playable = (state.playlist || []).filter((entry) => entry.playable);
+  const position = playable.findIndex((entry) => entry.id === scene.id) + 1;
+  const phase = { working: "at work", answered: "the result is in", showing: "the result" }[scene.phase] || scene.phase;
+  const chips = scene.chips
+    .map(
+      (chip, index) =>
+        `<li><span class="ad-chip">${escapeHtml(chip.chip)}</span>` +
+        `<span class="ad-does"><strong>${escapeHtml(chip.runs)}</strong> ${escapeHtml(chip.why)}</span>` +
+        `<span class="ad-figure" data-ad-chip="${index}"></span></li>`,
+    )
+    .join("");
+  return (
+    `<div class="autodemo-bar"><span class="autodemo-tag">Auto Demo</span>` +
+    `<span>Scene ${position || 1} of ${playable.length || 1} · ${escapeHtml(phase)} · <span data-ad-clock></span></span>` +
+    buttons('<button type="button" class="link-btn" data-autodemo="skip">Next scene</button>') +
+    `</div>` +
+    `<h2>${escapeHtml(scene.title)}</h2>` +
+    `<div class="autodemo-columns"><div>` +
+    `<h3>What is happening</h3><p>${escapeHtml(scene.happening)}</p>` +
+    `<h3>What to look at</h3><ul class="autodemo-look">${scene.look_at.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` +
+    `</div><div><h3>Which chip, and why</h3><ul class="autodemo-chips">${chips}</ul></div></div>`
+  );
+}
+
+// The scene's demo has been started by the launcher, not by this page: the
+// panel takes it up the way it does after a reload.
+async function autodemoAttach(scene) {
+  if (!currentPanel || currentPanel.id !== scene.demo) return;
+  try {
+    await currentPanel.rehydrate();
+  } catch {
+    // The panel shows what it can; the caption says the rest.
+  }
+  if (scene.demo === "page-agent") {
+    if (AUTODEMO.stopPartial) AUTODEMO.stopPartial();
+    AUTODEMO.stopPartial = followPartial("page-agent", { target: el("agent-result"), stage: "page" });
+  }
+}
+
+async function autodemoDrawResult(scene) {
+  try {
+    const result = await fetchJSON("/api/autodemo/result");
+    const panel = PANELS[scene.demo];
+    if (result.scene !== scene.id || !panel || !panel.renderResult || !result.data) return;
+    if (AUTODEMO.stopPartial) AUTODEMO.stopPartial();
+    AUTODEMO.stopPartial = null;
+    panel.renderResult(result.data);
+    // The result is what the scene was for: bring it into view.
+    const shown = el(`${panel.prefix}-result`);
+    const frame = shown && shown.querySelector("iframe");
+    (frame || shown)?.scrollIntoView({ behavior: "smooth", block: frame ? "center" : "start" });
+  } catch {
+    // Drawn at the next look if it could not be fetched now.
+    AUTODEMO.drawn = false;
+  }
+}
+
+function autodemoRender(state) {
+  const previous = AUTODEMO.state;
+  AUTODEMO.state = state;
+  const caption = el("autodemo-caption");
+  const on = autodemoActive();
+  const show = on || (state.state === "stopped" && !AUTODEMO.dismissed);
+  document.body.classList.toggle("autodemo-on", on);
+  document.body.classList.toggle("autodemo-big", on && !!(state.stand && state.stand.big_screen));
+  caption.hidden = !show;
+  if (!show) {
+    if (previous && ["playing", "paused", "checking"].includes(previous.state)) AUTODEMO.sceneKey = null;
+    return;
+  }
+  if (on) AUTODEMO.dismissed = false;
+  const scene = state.state === "playing" ? state.scene : null;
+  if (scene) {
+    const key = `${scene.id}@${scene.started_at}`;
+    if (key !== AUTODEMO.sceneKey) {
+      AUTODEMO.sceneKey = key;
+      AUTODEMO.drawn = false;
+      AUTODEMO.figures.clear();
+      if (location.hash !== `#/brick/${scene.demo}`) location.hash = `#/brick/${scene.demo}`;
+      window.scrollTo(0, 0);
+      // Once the panel is open and the demo has had the time to start.
+      setTimeout(() => autodemoAttach(scene), 1500);
+    }
+    if (scene.result_ready && !AUTODEMO.drawn) {
+      AUTODEMO.drawn = true;
+      autodemoDrawResult(scene);
+    }
+  }
+  // Drawn when the scene or its phase changes; between two changes only the
+  // clock and the figures move. A button redrawn every second can lose the
+  // click that was on its way to it.
+  const shape = [
+    state.state, scene ? AUTODEMO.sceneKey : "", scene ? scene.phase : "", state.notice, (state.failures || []).length,
+  ].join("|");
+  if (caption.dataset.shape !== shape) {
+    caption.dataset.shape = shape;
+    caption.innerHTML = autodemoCaptionHtml(state);
+  }
+  const clock = caption.querySelector("[data-ad-clock]");
+  if (clock) {
+    clock.textContent =
+      state.state === "paused" && state.paused
+        ? autodemoClock(state.paused.resumes_at - state.now)
+        : scene
+          ? autodemoClock(state.now - scene.started_at)
+          : "";
+  }
+  if (scene) {
+    for (const node of caption.querySelectorAll("[data-ad-chip]")) {
+      const figure = autodemoFigure(scene.chips[Number(node.dataset.adChip)]);
+      if (node.innerHTML !== figure) node.innerHTML = figure;
+    }
+  }
+}
+
+async function autodemoTick() {
+  try {
+    autodemoRender(await fetchJSON("/api/autodemo"));
+  } catch {
+    // The launcher is restarting or away: the next look will tell.
+  }
+}
+
+// A visitor at the machine: the loop steps aside. A press or a key, not a
+// mouse that moved -- a stand gets bumped.
+function autodemoTouched(event) {
+  if (!autodemoActive() || AUTODEMO.state.state === "checking") return;
+  if (event.target instanceof Element && event.target.closest("#autodemo-caption, #autodemo-modal-overlay")) return;
+  if (Date.now() - AUTODEMO.lastTouch < 2000) return;
+  AUTODEMO.lastTouch = Date.now();
+  postJSON("/api/autodemo/touch", {}).then(autodemoRender).catch(() => {});
+}
+
+function wireAutodemo() {
+  el("autodemo-open").addEventListener("click", openAutodemoModal);
+  el("autodemo-modal-close").addEventListener("click", closeAutodemoModal);
+  el("autodemo-modal-overlay").addEventListener("click", (event) => {
+    if (event.target === el("autodemo-modal-overlay")) closeAutodemoModal();
+  });
+  el("autodemo-start").addEventListener("click", startAutodemo);
+  el("autodemo-caption").addEventListener("click", (event) => {
+    const action = event.target instanceof Element ? event.target.closest("[data-autodemo]") : null;
+    if (!action) return;
+    const what = action.dataset.autodemo;
+    if (what === "dismiss") {
+      AUTODEMO.dismissed = true;
+      el("autodemo-caption").hidden = true;
+      return;
+    }
+    AUTODEMO.lastTouch = Date.now();
+    postJSON(`/api/autodemo/${what}`, {}).then(autodemoRender).catch(() => {});
+  });
+  for (const kind of ["pointerdown", "keydown", "wheel"]) {
+    document.addEventListener(kind, autodemoTouched, { capture: true, passive: true });
+  }
+  // Asked all the time, so that a page opened or reloaded mid-loop joins it.
+  setInterval(autodemoTick, AUTODEMO_POLL_MS);
+  autodemoTick();
+}
+
 // --- Updates ----------------------------------------------------------------------
 // The launcher asks GitHub (through git) whether a newer version exists as it
 // starts. The page offers it once per launcher start -- the server remembers,
@@ -3889,6 +4211,7 @@ async function init() {
     location.hash = "#/";
   });
   el("log-open").addEventListener("click", openLogViewer);
+  wireAutodemo();
   el("update-open").addEventListener("click", openUpdateFromFooter);
   el("app-version").addEventListener("click", openChangelogModal);
   el("changelog-modal-close").addEventListener("click", closeChangelogModal);

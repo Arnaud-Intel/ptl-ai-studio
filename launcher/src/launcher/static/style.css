@@ -900,6 +900,78 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
   line-height: 1.7;
 }
 
+/* --- Auto Demo: what the scene on screen is, for a stand nobody is at --------- */
+.autodemo-caption {
+  margin: 0 0 18px;
+  padding: 16px 20px 18px;
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--bg-input);
+}
+.autodemo-caption h2 { margin: 6px 0 10px; font-size: 24px; line-height: 1.2; }
+.autodemo-caption h3 {
+  margin: 12px 0 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--accent-hover);
+}
+.autodemo-caption p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--text); max-width: 70ch; }
+.autodemo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.autodemo-tag {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.autodemo-buttons { margin-left: auto; display: flex; gap: 14px; }
+.autodemo-columns { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 4px 28px; }
+.autodemo-look, .autodemo-chips, .autodemo-failures { margin: 0; padding: 0; list-style: none; }
+.autodemo-look li { position: relative; padding-left: 14px; margin-bottom: 4px; font-size: 13.5px; line-height: 1.5; color: var(--text-dim); }
+.autodemo-look li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-hover); }
+.autodemo-chips li {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.autodemo-chips li:first-child { border-top: none; }
+.autodemo-chips .ad-chip { font-weight: 700; color: var(--text); }
+.autodemo-chips .ad-does { color: var(--text-dim); }
+.autodemo-chips .ad-does strong { display: block; color: var(--text); font-weight: 600; }
+.autodemo-chips .ad-figure { min-width: 96px; text-align: right; font-weight: 700; font-size: 15px; color: var(--accent-hover); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.autodemo-chips .ad-figure .was { font-size: 11px; font-weight: 500; color: var(--text-faint); }
+.autodemo-failures li { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+@media (max-width: 980px) { .autodemo-columns { grid-template-columns: 1fr; } }
+/* Read from a few metres. */
+body.autodemo-big .autodemo-caption h2 { font-size: 34px; }
+body.autodemo-big .autodemo-caption p { font-size: 18px; }
+body.autodemo-big .autodemo-look li, body.autodemo-big .autodemo-chips li { font-size: 16px; }
+body.autodemo-big .autodemo-chips li { grid-template-columns: 150px minmax(0, 1fr) auto; }
+body.autodemo-big .autodemo-chips .ad-figure { font-size: 22px; }
+body.autodemo-big .autodemo-bar { font-size: 15px; }
+
+/* The start dialog: what the stand has, what one turn of the loop plays. */
+.autodemo-stand { margin: 0 0 12px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 13px; }
+.autodemo-stand li { padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; }
+.autodemo-stand li.found { color: var(--success); border-color: var(--success); }
+.autodemo-stand li.missing { color: var(--text-faint); }
+.autodemo-options { display: grid; gap: 6px; margin: 0 0 14px; font-size: 13.5px; }
+.autodemo-playlist { margin: 0 0 14px; padding-left: 22px; font-size: 13.5px; }
+.autodemo-playlist li { margin-bottom: 6px; }
+.autodemo-playlist li span { display: block; font-size: 12.5px; color: var(--success); }
+.autodemo-playlist li.skipped strong { color: var(--text-dim); font-weight: 500; }
+.autodemo-playlist li.skipped span { color: var(--text-faint); }
+
 /* --- Page agent: the steps of a build, the plan, the pictures --------------- */
 .agent-steps {
   list-style: none;

@@ -1,10 +1,14 @@
 # Auto Demo: groundwork
 
-Status: **the foundation is built** (2026-10-08); the rest of this note is
-the design it was built from, written 2026-10-04. See "Where it stands"
-just below.
+Status: **it runs** (2026-10-09): the director, a first playlist of three
+scenes, and the page that follows it. The rest of this note is the design
+it was built from, written 2026-10-04. See "Where it stands" just below.
 
-## Where it stands (2026-10-08)
+To start it: **Auto Demo**, at the top of the page. The dialog says what the
+stand has and what one turn of the loop will play; the discrete GPU can be
+left out there, and the text made larger for a big display.
+
+## Where it stands (2026-10-09)
 
 Decided with the user that day:
 
@@ -41,20 +45,48 @@ Built, and tested without a browser or a model (`tests/test_autodemo.py`):
   `resume`, `skip`.
 - **Keep-awake** while the loop runs (`launcher/keep_awake.py`), and no
   upgrade while it is on.
+- **The page's side** (`static/app.js`, "Auto Demo"): a start dialog with
+  the pre-start check; then, while the loop runs, the scene's own panel on
+  screen and above it what the scene says about itself -- what is
+  happening, each chip with what runs there, on which engine and why, each
+  with its live figure, and what to look at. The page asks where the loop
+  is once a second, so one opened or reloaded mid-scene joins it. A request
+  that answers once is drawn with the panel's own code and brought into
+  view. A press or a key anywhere but on the caption steps the loop aside
+  ("Go ahead, try it", with the time left before it comes back).
 
-Not built yet:
+**One real run** (XPS 14 with the B60, 2026-10-09, about eight minutes,
+watched): the Page Agent built and showed a page in 2 min 27 s with its
+three models loading, the three sample receipts were read and listed, two
+London traffic cameras ran at 25 and 24 frames a second on the integrated
+GPU and the NPU, a click paused the loop and stopped the cameras, "Resume
+now" took it to the next turn -- the Page Agent again, on its second sample
+-- and "Stop" left nothing running. No scene failed. That is one turn and a
+bit, not a day.
 
-- **The page's side**: following `/api/autodemo`, opening the scene's panel,
-  the explanation beside it with live figures, the pre-start check as a
-  dialog, the touch that pauses.
-- A run of several hours on the real machine. The director has only met
-  stand-ins: no scene has yet been played through it with real models.
+Not built yet, most useful first:
+
+- **A run of several hours** on the real machine, watched through the
+  activity log. The loop has been round once.
+- **The caption leaves the screen when the result arrives**: the page scrolls
+  to the built page, which is what the scene was for, and the explanation is
+  above it. On a stand the two belong together -- a caption that stays in
+  view (a column beside the panel on a wide display, a bar that sticks to
+  the top otherwise).
+- **A built page is only seen from its top**: nobody scrolls the preview on a
+  stand. Scrolling it slowly needs a line of script in the page as it is
+  handed to the preview.
 - The proofing pass on Object Detection and Document Q&A that lets the
   fourth scene through.
 - Deleting the loop's own expense reports (they pile up: one per turn), and
   unloading the large models between scenes on a machine short of memory.
-- Step C of the plan below (camera scenes beyond the fallback, start and
-  stop by the clock).
+- The update prompt and the models dialog can still open over a running
+  loop; an upgrade itself is refused.
+- A scene's figure goes when its work ends, on the hardware panel as in the
+  caption (which keeps the last one it saw). The receipts are read in half
+  a minute, so their two figures are on screen for a moment only.
+- Step C of the plan below (start and stop by the clock, more camera
+  scenes).
 
 It was built on backlog ticket **R21** (one-click stage scenarios): a scene
 here is what R21 calls a scenario, and a row of scenario buttons on the home

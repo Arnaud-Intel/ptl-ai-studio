@@ -102,6 +102,10 @@ a new one or the deferred list, and moves its original wording to
   not: the page's side, a long run on the real machine, the proofing pass
   on Object Detection and Document Q&A that the fourth scene waits for,
   and deleting the loop's own expense reports.
+  *2026-10-09:* the page's side is built and the loop has been round once
+  on the real machine with no failure (three scenes, a pause, a stop). Next,
+  in the note's order: a run of several hours, a caption that stays in view
+  beside the result, and the proofing pass for the fourth scene.
 - [ ] **A model picker for each brick: nine candidate models tried, and what
   each would take.** Asked for with Qwen3.8 27B for coding, an NPU
   alternative for summarising and Gemma 4 as examples. Tried on the XPS 14,
