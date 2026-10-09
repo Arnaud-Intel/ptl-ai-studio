@@ -37,3 +37,6 @@ sample-data/videos/*
 
 # What the in-app upgrade last did (see launcher/updates.py); its log is *.log.
 logs/upgrade-result.json
+
+# Films of the Auto Demo made for sharing: large, and not source.
+recordings/
