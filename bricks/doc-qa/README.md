@@ -32,7 +32,8 @@ back to a from-source build (which needs `cmake` and a C++ toolchain).
 > Face and cached (`~/.cache/huggingface`). Every run after that is fully
 > offline. The index itself is cached per folder+engine under
 > `~/.cache/pantherlake-ai-studio/doc-qa/`, so re-running against the same
-> folder doesn't re-embed everything.
+> folder doesn't re-embed everything -- as long as the folder holds what it
+> held: add, remove or rewrite a file and the index is built again.
 
 ## Usage
 
@@ -52,7 +53,7 @@ Run on Intel NPU via OpenVINO:
 uv run doc-qa ./my-notes --engine openvino --compute-device NPU
 ```
 
-Force a full rebuild of the index (e.g. after editing the documents):
+Force a full rebuild of the index (a changed folder is noticed without it):
 
 ```bash
 uv run doc-qa ./my-notes --reindex
@@ -87,9 +88,20 @@ uv run doc-qa ./my-notes --reindex
    exists, indexing screen captures continuously rather than all at once.
 3. **Retrieve & answer** ([`pipeline.py`](src/doc_qa/pipeline.py)) — the
    question is embedded the same way, the top-k most similar chunks are
-   retrieved, and a local chat model answers from those excerpts only (the
-   system prompt tells it to say "I don't know" rather than guess, and to
-   cite which excerpt(s) it used).
+   retrieved, and a local chat model answers from those excerpts only, each
+   handed to it under the name of its file (the system prompt asks for full
+   sentences, the file each fact comes from, and "the documents do not say"
+   rather than a guess). With the OpenVINO engine, a passage that is not
+   close enough to the question is not read, and a question no passage is
+   close to is answered "the documents do not say" without asking the model:
+   a small model handed passages beside the point improvises.
+
+The OpenVINO embedding model (Qwen3-Embedding) is read at its last token,
+which is how it was trained; read at its first, as it was until 2026-10-09,
+the right file came first for 2 questions of 10 on the sample folder, against
+8 of 10. On the NPU it takes one text at a time in a fixed shape of 512
+tokens (0.07 s each); see [`embedder_openvino.py`](src/doc_qa/embedder_openvino.py)
+for what was measured.
 
 Both the embedder and the LLM are picked by [`engine_factory.py`](src/doc_qa/engine_factory.py)
 behind a small `Embedder`/`LLM` protocol -- `embedder_portable.py` /

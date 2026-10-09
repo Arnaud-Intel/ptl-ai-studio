@@ -115,8 +115,9 @@ Not built yet, most useful first:
 
 - **A run of several hours** on the real machine, watched through the
   activity log. The loop has been round a few times, not a day.
-- The proofing pass on Object Detection and Document Q&A that lets the
-  fourth scene through, and an output view for it.
+- The proofing pass on Object Detection that lets the fourth scene through
+  (Document Q&A had its own on 2026-10-09: see the backlog's R06), and an
+  output view for it.
 - A camera clip that starts over takes its chip off the hardware panel for
   a second or two; the stage holds its "at work" for six seconds to cover
   it, the panel does not.

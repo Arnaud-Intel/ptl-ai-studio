@@ -1961,6 +1961,14 @@ const PANELS = {
     id: "doc-qa",
     prefix: "docqa",
     indexed: false,
+    // Which files were read, by name: "it says it looked at three files and
+    // I gave it two" has to be something a person can check.
+    indexedText(result) {
+      const files = result.files || [];
+      const names = files.slice(0, 6).join(", ") + (files.length > 6 ? ` and ${files.length - 6} more` : "");
+      const count = `${files.length} file${files.length === 1 ? "" : "s"}, ${result.chunks} passage${result.chunks === 1 ? "" : "s"}`;
+      return `Indexed ${count} from ${result.folder}` + (names ? `: ${names}` : "");
+    },
     populate(data) {
       attachRecents("docqa-folder");
       wireEngineAndDevice(el("docqa-engine"), el("docqa-compute-device"), data);
@@ -1973,7 +1981,7 @@ const PANELS = {
         const status = await fetchJSON("/api/doc-qa/status");
         this.setIndexed(status.indexed);
         if (status.indexed) {
-          this.setStatus(`Indexed ${status.chunks} chunk(s) from ${status.folder}`, "live");
+          this.setStatus(this.indexedText(status), "live");
           if (!el("docqa-folder").value) el("docqa-folder").value = status.folder;
         }
       } catch {
@@ -2014,7 +2022,7 @@ const PANELS = {
               compute_device: el("docqa-compute-device").value,
               reindex: el("docqa-reindex").checked,
             }),
-          done: (r) => `Indexed ${r.chunks} chunk(s) from ${r.folder}`,
+          done: (r) => this.indexedText(r),
         });
         if (result) rememberPath("docqa-folder");
         this.setIndexed(Boolean(result));
@@ -2043,7 +2051,17 @@ const PANELS = {
           appendLine(box, "line-answer", answer.text);
           if (answer.cancelled) appendLine(box, "line-note", "Stopped -- this answer is incomplete.");
           if (answer.sources && answer.sources.length) {
-            appendLine(box, "line-note", "Sources: " + answer.sources.map((s) => `${s.source} [${s.score.toFixed(2)}]`).join(", "));
+            // By file, with how many passages of each: what the answer was
+            // written from, in a form that can be checked against the folder.
+            const passages = new Map();
+            for (const source of answer.sources) passages.set(source.source, (passages.get(source.source) || 0) + 1);
+            const count = answer.sources.length;
+            appendLine(
+              box,
+              "line-note",
+              `Written from ${count} passage${count === 1 ? "" : "s"} of ${passages.size} file${passages.size === 1 ? "" : "s"}: ` +
+                [...passages].map(([file, times]) => (times > 1 ? `${file} (${times})` : file)).join(", "),
+            );
           }
         } catch (err) {
           appendLine(box, "line-answer", `Error: ${err.message}`);

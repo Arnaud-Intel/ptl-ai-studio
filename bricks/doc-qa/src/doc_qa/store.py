@@ -32,6 +32,11 @@ class VectorStore:
     def size(self) -> int:
         return len(self.chunks)
 
+    @property
+    def sources(self) -> list[str]:
+        """The files the index was built from, in the order they were read."""
+        return list(dict.fromkeys(chunk.source for chunk in self.chunks))
+
     @staticmethod
     def _normalize(vectors: list[list[float]]) -> np.ndarray:
         matrix = np.asarray(vectors, dtype=np.float32)
@@ -63,18 +68,32 @@ class VectorStore:
         top_indices = np.argsort(-scores)[:top_k]
         return [RetrievedChunk(chunk=self.chunks[i], score=float(scores[i])) for i in top_indices]
 
-    def save(self, cache_dir: Path) -> None:
+    def save(self, cache_dir: Path, *, fingerprint: str | None = None) -> None:
+        """`fingerprint`: what the index was built from, for `load` to
+        check before it is used again."""
         cache_dir.mkdir(parents=True, exist_ok=True)
         np.save(cache_dir / "vectors.npy", self._vectors)
         meta = [asdict(c) for c in self.chunks]
         (cache_dir / "chunks.json").write_text(json.dumps(meta), encoding="utf-8")
+        if fingerprint is not None:
+            (cache_dir / "built-from.json").write_text(json.dumps({"fingerprint": fingerprint}), encoding="utf-8")
 
     @classmethod
-    def load(cls, cache_dir: Path) -> "VectorStore | None":
+    def load(cls, cache_dir: Path, *, fingerprint: str | None = None) -> "VectorStore | None":
+        """With a `fingerprint`, only an index built from exactly that is
+        loaded: one built from anything else, or from nobody knows what
+        (saved before fingerprints were kept), is not there."""
         vectors_path = cache_dir / "vectors.npy"
         chunks_path = cache_dir / "chunks.json"
         if not vectors_path.exists() or not chunks_path.exists():
             return None
+        if fingerprint is not None:
+            try:
+                built_from = json.loads((cache_dir / "built-from.json").read_text(encoding="utf-8")).get("fingerprint")
+            except (OSError, ValueError, AttributeError):
+                built_from = None
+            if built_from != fingerprint:
+                return None
         store = cls()
         store._vectors = np.load(vectors_path)
         meta = json.loads(chunks_path.read_text(encoding="utf-8"))

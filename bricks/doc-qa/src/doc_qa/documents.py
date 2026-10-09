@@ -1,6 +1,7 @@
 """Load and chunk local documents (.txt, .md, .pdf) for indexing."""
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 from .types import Chunk
@@ -17,6 +18,20 @@ def _read_pdf(path: Path) -> str:
 
     reader = PdfReader(str(path))
     return "\n\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def fingerprint(folder: Path) -> str:
+    """What the folder holds, as far as an index of it is concerned: every
+    supported file, with its size and when it was last written. An index
+    built from other contents is an index of another folder, whatever the
+    path says -- a file removed since would go on being quoted."""
+    digest = hashlib.sha1()
+    for path in sorted(folder.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in SUPPORTED_SUFFIXES:
+            continue
+        stat = path.stat()
+        digest.update(f"{path.relative_to(folder).as_posix()}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode("utf-8"))
+    return digest.hexdigest()
 
 
 def load_documents(folder: Path) -> list[tuple[str, str]]:

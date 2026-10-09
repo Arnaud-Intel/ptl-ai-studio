@@ -58,10 +58,13 @@ def create_embedder(
     device: str = "AUTO",
     model_dir: str | None = None,
     on_downloading: Callable[[], None] | None = None,
+    pooling: str | None = None,
 ) -> Embedder:
     """`on_downloading`, if given, fires before an openvino model that isn't
     already cached locally starts downloading (portable's GGUF download
-    isn't covered)."""
+    isn't covered). `pooling` (OpenVINO engine): how a text becomes one
+    vector, for a caller that has vectors made the old way to stay
+    compatible with -- see embedder_openvino."""
     if engine == Engine.PORTABLE:
         from .embedder_portable import PortableEmbedder
 
@@ -70,7 +73,8 @@ def create_embedder(
     if engine == Engine.OPENVINO:
         from .embedder_openvino import OpenVINOEmbedder
 
-        return OpenVINOEmbedder(device=device, model_dir=model_dir, on_downloading=on_downloading)
+        extra = {"pooling": pooling} if pooling else {}
+        return OpenVINOEmbedder(device=device, model_dir=model_dir, on_downloading=on_downloading, **extra)
 
     raise ValueError(f"Unknown engine '{engine}'.")
 

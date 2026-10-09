@@ -589,7 +589,7 @@ async def doc_qa_ingest(req: DocQAIngestRequest) -> JSONResponse:
         )
     except Exception as exc:
         return error_response(exc)
-    return JSONResponse({"chunks": count, "folder": folder})
+    return JSONResponse({"chunks": count, "folder": folder, "files": doc_qa_runner.status()["files"]})
 
 
 @app.get("/api/doc-qa/status")

@@ -54,8 +54,12 @@ class DocQARunner:
         stall a status request)."""
         session = self._session
         if session is None or session.folder is None:
-            return {"indexed": False, "folder": None, "chunks": 0}
-        return {"indexed": session.store.size > 0, "folder": str(session.folder), "chunks": session.store.size}
+            return {"indexed": False, "folder": None, "chunks": 0, "files": []}
+        return {
+            "indexed": session.store.size > 0, "folder": str(session.folder), "chunks": session.store.size,
+            # Which files the answers can come from: said, so that it can be checked.
+            "files": session.store.sources,
+        }
 
     def ask(self, *, question: str, top_k: int) -> Answer:
         """Blocking."""

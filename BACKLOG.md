@@ -117,6 +117,30 @@ a new one or the deferred list, and moves its original wording to
   whole turn in English and most of one in French. The receipts scene plays
   the five worn receipts, as asked. Next: a run of several hours, and the
   proofing pass on Object Detection for the fourth scene.
+- [ ] **Document Q&A was answering from passages drawn nearly by lot.**
+  Found while replaying the stale-index report (R06). The embedding model,
+  Qwen3-Embedding, is trained to be read at its last token; the pipeline
+  read it at its first. On the sample folder, with ten questions whose
+  answer is in one known file, the right file came first for 2 of 10, and
+  for 8 of 10 once read at the last token (9 of 10 among the four passages
+  read), on the integrated GPU and the NPU alike. On top of that the prompt
+  ended on "refer to the excerpts by their [number]", and the whole answer
+  to four of six questions was "[1]". Both fixed on 2026-10-09; with the
+  new prompt, five questions of five that have an answer got the right
+  facts and three of four that have none were declined. Two things on the
+  NPU as well: indexing any folder of more than one passage failed inside
+  the plugin (a call with two texts), and one text took 1.6 s; now one text
+  a call in a fixed shape of 512 tokens, 0.07 s each.
+  What is left: (1) **screen memory still reads the model at its first
+  token**, because its index on disk was built that way and the two kinds
+  of vector cannot be mixed -- its search is as weak as Document Q&A's
+  was, and moving it means embedding again every text it has kept;
+  (2) Qwen2.5-1.5B still falls for a trick ("the chief executive's home
+  address" gets his name) and garbles a long four-part answer on the NPU;
+  Qwen3-8B on the NPU is the thing to measure there; (3) a passage longer
+  than 512 tokens (dense text, or a language that takes more tokens a
+  character) is cut short on the NPU. (filed 2026-10-09, proofing pass
+  asked for by the user)
 - [ ] **Expense lines: what the small model still gets wrong.** The Auto
   Demo's stage puts each receipt beside its line, and the first watched run
   showed the customer as the vendor of every receipt. Fixed the same day
@@ -569,6 +593,17 @@ the release gate.
   CPU's -- minutes, not the timebox.
 
 - [ ] **R06 · P1 · Invalidate stale document and embedding caches.**
+  *2026-10-09:* reported from the field -- "it said it had looked at three
+  files when only two were given, and made things up". Replayed with the
+  real models: a folder indexed with three files, one taken out, indexed
+  again without "Rebuild the index", went on answering from the file that
+  was gone. Done for Document Q&A: an index is kept with a fingerprint of
+  what it was built from (every supported file, its size and when it was
+  written) and with how the embedder reads a text, and is built again when
+  either differs; an indexing that fails no longer leaves the last
+  folder's documents answering. The panel names the files indexed and the
+  files each answer was written from. Left of this ticket: screen memory's
+  index, and pinned model revisions (R10).
   Add a source manifest and embedding identity including model/revision and
   chunking configuration; detect changed/deleted/added files on ingest. Record
   full embedding identity for screen memory too. Fail clearly or rebuild when

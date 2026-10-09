@@ -32,6 +32,13 @@ _CACHE_ROOT = Path.home() / ".cache" / "pantherlake-ai-studio" / "smart-recall"
 SCREENSHOTS_DIR = _CACHE_ROOT / "screenshots"
 INDEX_DIR = _CACHE_ROOT / "index"
 _INDEX_META_PATH = INDEX_DIR / "meta.json"
+# The index on disk holds vectors read at the model's first token, which is
+# how every one of them was made. Document Q&A moved to the last token on
+# 2026-10-09 (doc_qa.embedder_openvino has the measurement: the right
+# passage first for 8 questions of 10 instead of 2). This brick's search
+# would gain as much, but vectors made the two ways cannot share an index:
+# moving it means embedding again every text already kept (BACKLOG inbox).
+_INDEX_POOLING = "first-token"
 
 # Skip indexing near-empty OCR results (e.g. a blank desktop, a loading
 # screen) -- there's nothing meaningful to search for there.
@@ -92,7 +99,9 @@ class RecallIndex:
         if meta is None:
             raise RuntimeError("Nothing has been recorded yet -- run `smart-recall record` first.")
         self.embed_engine = Engine(meta["embed_engine"])
-        self.embedder = create_embedder(self.embed_engine, device=device or default_device(self.embed_engine))
+        self.embedder = create_embedder(
+            self.embed_engine, device=device or default_device(self.embed_engine), pooling=_INDEX_POOLING
+        )
         self.store = _load_store()
 
     def search(self, question: str, top_k: int = 5) -> list[RetrievedChunk]:
@@ -141,7 +150,7 @@ def run(
         _save_index_meta(embed_engine.value)
 
     ocr_session = OcrSession(ocr_engine, device=ocr_device)
-    embedder = create_embedder(embed_engine, device=embed_device)
+    embedder = create_embedder(embed_engine, device=embed_device, pooling=_INDEX_POOLING)
     store = _load_store()
     next_chunk_index = store.size
 

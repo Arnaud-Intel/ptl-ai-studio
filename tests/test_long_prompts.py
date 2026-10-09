@@ -149,9 +149,13 @@ def _hit(source: str, words: int):
 
 
 def test_qa_drops_the_weakest_excerpts_that_do_not_fit():
+    from doc_qa.pipeline import _SYSTEM_PROMPT as qa_prompt
+
     retrieved = [_hit("best.md", 40), _hit("second.md", 40), _hit("third.md", 40), _hit("fourth.md", 40)]
-    # 180 - 40 (instructions) - 32 (template) leaves ~108: two 40-word passages, not three.
-    used = fit_excerpts(_WordLLM(window=180), retrieved, "What is the budget?", max_tokens=100)
+    # After the instructions and the template, room for about 108 words: two 40-word passages
+    # with their labels and the question, not three.
+    window = _words(qa_prompt) + 32 + 108
+    used = fit_excerpts(_WordLLM(window=window), retrieved, "What is the budget?", max_tokens=100)
     assert [r.chunk.source for r in used] == ["best.md", "second.md"]
 
 

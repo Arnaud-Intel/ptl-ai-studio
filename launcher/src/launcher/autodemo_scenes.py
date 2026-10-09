@@ -15,8 +15,9 @@ What goes in was decided with the user on 2026-10-08 and -09:
   started. Every sentence here is written in both.
 - Smart City plays only when the internet is reachable.
 - "Seeing and answering" (object detection with document Q&A) is written
-  and held back until those two bricks have had a proofing pass: it does
-  not play until its entry is taken out of `HELD_BACK`.
+  and held back until both bricks have had a proofing pass (Document Q&A
+  had its own on 2026-10-09): it does not play until its entry is taken
+  out of `HELD_BACK`.
 
 Writing a beat: one or two sentences, plain words, no figure that is not on
 screen. A beat with a `stage` is shown when that stage of the demo is seen
@@ -31,7 +32,10 @@ from .autodemo import Ask, Beat, Builder, Chip, Scene, Skip, Stand, Start, Until
 
 # Scenes that are written but not to be played yet, and why.
 HELD_BACK: dict[str, str] = {
-    "seeing-and-answering": "held back until Object Detection and Document Q&A have had their proofing pass",
+    # Document Q&A had its pass on 2026-10-09 (the search, the prompt, the
+    # index kept after the folder changed). Object Detection has not, and
+    # the stage has no view yet for a camera picture beside an answer.
+    "seeing-and-answering": "held back until Object Detection has had its proofing pass and the stage has a view for it",
 }
 
 _IGPU, _DGPU, _NPU, _CPU = "Integrated GPU", "Arc Pro B60", "NPU", "CPU"
