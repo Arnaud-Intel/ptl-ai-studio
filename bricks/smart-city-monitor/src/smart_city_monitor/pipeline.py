@@ -17,27 +17,19 @@ from pantherlake_ai_core.engine import Engine
 
 from . import sources
 from .tracker import Tracker
-from .types import CountSnapshot, FeedSpec, TrackedDetection
+from .types import COUNTING, CountSnapshot, FeedSpec, TrackedDetection, labels_counted
 
-# COCO labels relevant to a street/CCTV scene, present with matching
-# spellings in both object-detection engines' vocabularies (DETR's
-# COCO-91 and YOLO11s's COCO-80) -- mapped to the display name shown in
-# counts. Detections for anything else are dropped before tracking, so
-# neither the drawn boxes nor the counts are cluttered with e.g. "chair".
-RELEVANT_LABELS: dict[str, str] = {
-    "person": "Pedestrians",
-    "bicycle": "Bicycles",
-    "car": "Cars",
-    "motorcycle": "Motorcycles",
-    "bus": "Buses",
-    "truck": "Trucks",
-}
+# What a street feed counts, which is what a feed counts unless told
+# otherwise (types.COUNTING has the other kinds and the reason for them).
+RELEVANT_LABELS: dict[str, str] = COUNTING["street"]
 
 
 class FeedCounters:
-    """One feed's per-label trailing-60-second counts and running totals."""
+    """One feed's per-label trailing-60-second counts and running totals,
+    under the names its kind of counting gives them."""
 
-    def __init__(self) -> None:
+    def __init__(self, labels: dict[str, str] = RELEVANT_LABELS) -> None:
+        self._labels = labels
         self._last_60s: dict[str, deque[float]] = defaultdict(deque)
         self._total: dict[str, int] = defaultdict(int)
 
@@ -45,7 +37,7 @@ class FeedCounters:
         for t in tracks:
             if not t.is_new:
                 continue
-            label = RELEVANT_LABELS[t.label]  # tracks are already filtered to RELEVANT_LABELS
+            label = self._labels[t.label]  # tracks are already filtered to this feed's labels
             self._last_60s[label].append(now)
             self._total[label] += 1
 
@@ -67,7 +59,8 @@ class _SharedState:
         self._active_feeds = [f.feed_id for f in feeds]
         self._per_feed_last_60s: dict[str, dict[str, int]] = {f.feed_id: {} for f in feeds}
         self._per_feed_total: dict[str, dict[str, int]] = {f.feed_id: {} for f in feeds}
-        self._counters = {f.feed_id: FeedCounters() for f in feeds}
+        # An unknown kind of counting is refused here, before anything loads.
+        self._counters = {f.feed_id: FeedCounters(labels_counted(f.counting)) for f in feeds}
 
     def record(self, feed_id, tracks, now):
         with self._lock:
@@ -169,6 +162,7 @@ def run(
 
         def feed_worker(feed: FeedSpec) -> None:
             tracker = Tracker()
+            counted = labels_counted(feed.counting)
             ready = False
             failed = False
 
@@ -192,7 +186,7 @@ def run(
                             ready_feeds.add(feed.feed_id)
                         if on_ready is not None:
                             on_ready(feed.feed_id)
-                    relevant = [d for d in detections if d.label in RELEVANT_LABELS]
+                    relevant = [d for d in detections if d.label in counted]
                     tracks = tracker.update(relevant, now)
                     state.record(feed.feed_id, tracks, now)
                     on_frame(feed.feed_id, frame, tracks)

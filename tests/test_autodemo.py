@@ -39,6 +39,8 @@ SAMPLES = {
         {"name": "Tower Bridge", "group": "Other", "feeds": "https://clips.example/1.mp4"},
         {"name": "Westminster Bridge", "group": "Other", "feeds": "https://clips.example/2.mp4"},
         {"name": "London, two chips", "group": "Other", "feeds": "https://clips.example/1.mp4|NPU\nhttps://clips.example/2.mp4"},
+        {"name": "Cattle on the road", "group": "On this machine", "kind": "file", "ready": True, "counting": ["herd"], "feeds": "C:/v/cattle.webm"},
+        {"name": "Bottle capping line", "group": "On this machine", "kind": "file", "ready": True, "counting": ["line"], "feeds": "C:/v/bottles.webm"},
     ],
     "doc-qa": [{"name": "Can the pilot launch?", "folder": "C:/docs", "question": "Is it approved?"}],
 }
@@ -234,6 +236,24 @@ def test_a_pause_nobody_ends_ends_by_itself():
     assert _until(lambda: director.snapshot()["loop"] > held_at)
     director.stop()
     assert director.pause()["state"] == autodemo.IDLE  # nothing to pause when nothing runs
+
+
+def test_a_stop_that_cannot_be_immediate_says_stopping_until_the_demo_in_hand_has_let_go():
+    stage = Stage()
+    stage.slow["/page/build"] = threading.Event()  # a page being planned: nothing cuts it short
+    director = _director(stage, [lambda stand, loop: _scene("page", Ask("/page/build"), stop=["/page/stop"])])
+    director.start()
+    assert _until(lambda: "/page/build" in stage.posted())
+    state = director.stop(wait=0.05)
+    assert state["state"] == autodemo.STOPPING and director.running is True  # not "idle": it has not let go yet
+
+    with pytest.raises(Conflict, match="still stopping"):
+        director.start()
+    stage.slow["/page/build"].set()  # the model has answered
+    assert _until(lambda: director.snapshot()["state"] == autodemo.IDLE and not director.running)
+    assert "/page/stop" in stage.posted() and director.awake[-1] == "released"
+    director.start()  # and now it can be started again
+    director.stop()
 
 
 def test_the_loop_cannot_be_started_twice_and_a_stand_with_nothing_to_play_says_so():

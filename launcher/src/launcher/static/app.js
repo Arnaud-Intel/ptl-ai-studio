@@ -986,6 +986,7 @@ function feedCardValue(card) {
     engine: card.querySelector(".feed-engine").value,
     compute_device: card.querySelector(".feed-device").value,
     model_path: model === CUSTOM_MODEL ? card.querySelector(".feed-model-path").value.trim() || null : null,
+    counting: card.querySelector(".feed-counting").value,
   };
 }
 
@@ -1138,6 +1139,7 @@ function addFeedCard(preset = {}) {
     card.querySelector(".feed-engine").dispatchEvent(new Event("change"));
   }
   if (preset.device) selectDevice(card.querySelector(".feed-device"), preset.device);
+  if (preset.counting) card.querySelector(".feed-counting").value = preset.counting;
   if (preset.type) {
     card.querySelector(".feed-type").value = preset.type;
     card.querySelector(".feed-type").dispatchEvent(new Event("change"));
@@ -1833,14 +1835,17 @@ const PANELS = {
       );
       picker.disabled = !samples.length;
       const addSample = (sample) => {
-        for (const line of sample.feeds.split("\n").map((l) => l.trim()).filter(Boolean)) {
+        const lines = sample.feeds.split("\n").map((l) => l.trim()).filter(Boolean);
+        lines.forEach((line, index) => {
           const pipe = line.lastIndexOf("|");
           addFeedCard({
             type: sample.kind === "file" ? "file" : "url",
             path: pipe === -1 ? line : line.slice(0, pipe),
             device: pipe === -1 ? null : line.slice(pipe + 1).trim(),
+            // What this feed is watched for: traffic, a production line, a herd.
+            counting: (sample.counting || [])[index] || "street",
           });
-        }
+        });
       };
       picker.onchange = () => {
         const sample = samples.find((entry) => entry.name === picker.value);
@@ -1878,6 +1883,7 @@ const PANELS = {
               path: feed.path,
               engine: feed.engine,
               device: feed.compute_device,
+              counting: feed.counting,
             });
           }
           this.renderHealth(data.health || {});
@@ -3615,8 +3621,13 @@ function landingRender() {
   const note = el("landing-notice");
   // The loop gave up by itself: whoever comes back to the machine is told why.
   const stopped = !!state && state.state === "stopped" && !!state.notice;
-  note.hidden = !stopped;
+  // Told to stop, and not done yet: a page being planned ends when its
+  // model has answered. It cannot be started again until then.
+  const stopping = !!state && state.state === "stopping";
+  note.hidden = !(stopped || stopping);
   if (stopped) note.textContent = state.notice;
+  if (stopping) note.textContent = "The Auto Demo is stopping: the demo it was showing is finishing. It can be started again in a moment.";
+  el("landing-auto").disabled = stopping;
 }
 
 // ------------------------------------------------------------------ before it starts

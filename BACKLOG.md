@@ -169,15 +169,16 @@ a new one or the deferred list, and moves its original wording to
   hand-held and blurred, and half its sheep are called cows. Counts run
   high everywhere (a track lost and found is counted twice): the herd is a
   few dozen animals, not 90.
-  Not built: the brick counts street things only (`RELEVANT_LABELS`), so
-  playing these needs a notion of what a feed is counting -- a person on a
-  line is a worker, not a pedestrian. **Defects are out of this detector's
+  *Same day, built on the user's word:* the bottles and the cattle are in
+  the fetched set (six clips, about 120 MB), a feed says what it counts
+  (`COUNTING` in the brick's `types.py`: street, line, herd; the **Counts**
+  menu on a feed's card), "A herd and a line, two chips" is offered beside
+  the street pair, and the Auto Demo plays it as a fourth scene. Left: a
+  second factory clip as good as the bottles, and counts that do not run
+  high. **Defects are out of this detector's
   reach**: it names everyday objects, it does not judge them; Intel's bolt
   clip is for a model trained for it (and MVTec, the usual defect set, is
-  non-commercial). Where each file is and its checksum, for the day this is
-  built: capping machine `upload.wikimedia.org/wikipedia/commons/a/ae/Capping_machine_in_action.webm`
-  (sha256 `eb8fc5e9...9ab2088`), cattle `.../commons/1/1a/Moving_cows_to_the_summer_range_%2842877666722%29.webm`
-  (sha256 `acc17d3a...8c8c1f`). (filed 2026-10-09, user request)
+  non-commercial). (filed 2026-10-09, user request)
 - [ ] **Document Q&A was answering from passages drawn nearly by lot.**
   Found while replaying the stale-index report (R06). The embedding model,
   Qwen3-Embedding, is trained to be read at its last token; the pipeline

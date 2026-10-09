@@ -168,6 +168,10 @@ class _Interrupted(Exception):
 
 
 IDLE, CHECKING, PLAYING, PAUSED, STOPPED = "idle", "checking", "playing", "paused", "stopped"
+# Told to stop, and still letting go of the demo it was in. A page being
+# planned cannot be cut short: it ends when its model has answered, which
+# can be half a minute after the stop was asked for.
+STOPPING = "stopping"
 
 
 def _never(host: str = "", port: int = 0) -> bool:
@@ -247,7 +251,10 @@ class Director:
         """`dgpu`: "auto" uses the discrete GPU if it is plugged in, "off"
         plays as if it were not there. `lang`: the story's language."""
         if self.running:
-            raise Conflict("The Auto Demo is already running.")
+            raise Conflict(
+                "The Auto Demo is still stopping: the demo it was showing is finishing. Try again in a moment."
+                if self._stop.is_set() else "The Auto Demo is already running."
+            )
         if dgpu not in ("auto", "off"):
             raise ValueError("dgpu is 'auto' or 'off'.")
         if lang not in LANGUAGES:
@@ -265,9 +272,15 @@ class Director:
         return self.snapshot()
 
     def stop(self, wait: float = 30.0) -> dict:
+        """Ends the loop and waits up to `wait` seconds for it to have let
+        go of everything. If it has not by then, the answer says "stopping"
+        rather than pretend: the loop is idle when the demo it was in has
+        finished or been cancelled."""
         self._stop.set()
         self._interrupt.set()
         thread = self._thread
+        if thread is not None and thread.is_alive():
+            self._set(state=STOPPING, paused=None)
         if thread is not None and thread is not threading.current_thread():
             thread.join(wait)
         return self.snapshot()
@@ -414,6 +427,8 @@ class Director:
 
     def _play(self, scene: Scene) -> bool:
         """True unless the scene failed. Being interrupted is not failing."""
+        if self._stop.is_set():  # stopped between the look at the playlist and here: nothing more is started
+            return True
         self._interrupt.clear()
         now = time.time()
         with self._lock:

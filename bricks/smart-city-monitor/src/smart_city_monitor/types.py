@@ -38,6 +38,58 @@ class FeedSpec:
     name: str = ""  # display name (e.g. the file's basename); defaults to feed_id if unset
     engine: Engine | None = None  # None -> the engine the run was started with
     model_path: str | None = None  # None -> that engine's built-in model
+    counting: str = "street"  # what is counted in it: a key of COUNTING
+
+
+# What a feed is watched for: the detector's labels worth a box and a count
+# there, and the name each is counted under. Anything else it sees is dropped
+# before tracking, so neither the picture nor the counts fill up with chairs.
+#
+# The labels are ones both engines' vocabularies spell the same way (DETR's
+# COCO-91 and YOLO11s's COCO-80), which is why they are single words.
+#
+# A kind of counting, not a kind of model: it is the same detector on a
+# street, a production line and a pasture. It names everyday things; it does
+# not judge them -- a dented bottle is a bottle. And the same person is a
+# pedestrian in one place and a worker in another, which is why this is a
+# choice per feed and not one longer list.
+COUNTING: dict[str, dict[str, str]] = {
+    "street": {
+        "person": "Pedestrians",
+        "bicycle": "Bicycles",
+        "car": "Cars",
+        "motorcycle": "Motorcycles",
+        "bus": "Buses",
+        "truck": "Trucks",
+    },
+    "line": {
+        "bottle": "Bottles",
+        "cup": "Cups",
+        "apple": "Apples",
+        "orange": "Oranges",
+        "banana": "Bananas",
+        "broccoli": "Broccoli",
+        "carrot": "Carrots",
+        "donut": "Donuts",
+        "person": "Workers",
+    },
+    "herd": {
+        "cow": "Cattle",
+        "sheep": "Sheep",
+        "horse": "Horses",
+        "dog": "Dogs",
+        "bird": "Birds",
+        "person": "People",
+    },
+}
+COUNTING_NAMES: dict[str, str] = {"street": "Street traffic", "line": "Production line", "herd": "Herd"}
+
+
+def labels_counted(counting: str) -> dict[str, str]:
+    try:
+        return COUNTING[counting]
+    except KeyError:
+        raise ValueError(f"Unknown kind of counting '{counting}': one of {', '.join(COUNTING)}.") from None
 
 
 @dataclass

@@ -10,7 +10,7 @@ from pantherlake_ai_core import engine as engine_mod
 
 from . import pipeline, sources
 from .draw import draw_tracks
-from .types import FeedSpec
+from .types import COUNTING, FeedSpec
 
 _SUMMARY_INTERVAL_SECONDS = 10.0
 
@@ -59,6 +59,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stop each feed at end-of-file instead of restarting it from the beginning.",
     )
     p.add_argument(
+        "--counting", choices=sorted(COUNTING), default="street",
+        help="What to count in the feeds: street traffic, things on a production line, or animals in a herd. Default: street.",
+    )
+    p.add_argument(
         "--show", action="store_true",
         help="Also open one live annotated window per feed (needs a display; off by default).",
     )
@@ -94,7 +98,8 @@ def main(argv: list[str] | None = None) -> int:
     for i, raw in enumerate(args.sources, start=1):
         path, device = _parse_source(raw, default_device)
         feeds.append(
-            FeedSpec(feed_id=f"feed-{i}", path=path, compute_device=device, name=sources.display_name(path))
+            FeedSpec(feed_id=f"feed-{i}", path=path, compute_device=device, name=sources.display_name(path),
+                     counting=args.counting)
         )
 
     print(f"Monitoring {len(feeds)} feed(s) (engine={engine.value}):")

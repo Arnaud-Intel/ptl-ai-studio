@@ -1,5 +1,5 @@
-"""The street videos the city monitor plays from disk: which they are, where
-they come from, and fetching them.
+"""The videos the city monitor plays from disk -- streets, a factory line, a
+herd: which they are, where they come from, and fetching them.
 
 A video is tens of megabytes: too much to keep in the repository, where every
 clone would carry it for good. Each one is fetched instead from where its
@@ -12,7 +12,7 @@ Each entry says under which licence its video may be passed on and whom to
 credit; `sample-data/videos/README.md` says the same beside the files.
 
 A file is used only if it is, byte for byte, the one that was looked at when
-it was chosen (size and SHA-256). Two of the four come from Wikimedia
+it was chosen (size and SHA-256). Two of the six come from Wikimedia
 Commons as its own 1080p version of the upload, which Commons is free to
 encode again one day: the checksum would then stop matching, and the remedy
 is a second address in `urls` -- they are tried in order -- for a copy that
@@ -48,6 +48,9 @@ class SampleVideo:
     licence: str
     credit: str
     source_page: str
+    # What there is to count in it, as the city monitor names its kinds of
+    # counting: "street", "line" (a production line) or "herd".
+    counts: str = "street"
 
     @property
     def path(self) -> Path:
@@ -111,6 +114,39 @@ INTEL_STREET = SampleVideo(
     source_page="https://github.com/intel-iot-devkit/sample-videos",
 )
 
+# Not streets: the same detector counting other things. Chosen by the same
+# measurement from four that were tried (2026-10-09): bottles a median of 3
+# boxes on screen and nothing mistaken; cattle a median of 8, with the rider,
+# the horses and the dog named too. Fruit on a belt (empty 60% of the time,
+# each item counted several times) and sheep on a slope (half of them called
+# cows) were not kept.
+CAPPING_LINE = SampleVideo(
+    key="bottle-capping-line",
+    name="Bottle capping line",
+    description="Glass bottles moving through the capping machine of a distillery, a few in view at a time. 21 seconds, 1080p.",
+    filename="bottle-capping-line.webm",
+    urls=("https://upload.wikimedia.org/wikipedia/commons/a/ae/Capping_machine_in_action.webm",),
+    size_bytes=7_081_982,
+    sha256="eb8fc5e99ef515dfbceef74e59d533b696a4d735607c32295519a567b9ab2088",
+    licence="CC BY 3.0",
+    credit="Work With Sounds / La Fonderie, via Wikimedia Commons",
+    source_page="https://commons.wikimedia.org/wiki/File:Capping_machine_in_action.webm",
+    counts="line",
+)
+CATTLE_DRIVE = SampleVideo(
+    key="cattle-drive",
+    name="Cattle on the road",
+    description="A herd driven along a gravel road past the camera, with a rider and a dog. 28 seconds, 720p.",
+    filename="cattle-drive.webm",
+    urls=("https://upload.wikimedia.org/wikipedia/commons/1/1a/Moving_cows_to_the_summer_range_%2842877666722%29.webm",),
+    size_bytes=20_678_398,
+    sha256="acc17d3aa29d3511f9c2ba47604e6f14bcbf882ddb0e62ad37054f75fa8c8c1f",
+    licence="Public domain",
+    credit="Bureau of Land Management Oregon and Washington, via Wikimedia Commons",
+    source_page="https://commons.wikimedia.org/wiki/File:Moving_cows_to_the_summer_range_(42877666722).webm",
+    counts="herd",
+)
+
 # In the order they are offered. The first two are what the city monitor
 # opens on and what the Auto Demo plays, chosen by measurement (2026-10-09,
 # the brick's own detector and tracker over one pass of each clip):
@@ -121,7 +157,7 @@ INTEL_STREET = SampleVideo(
 #   (Ljubljana)    median  7            1%                32 a minute   <- looked at, not kept
 #   Shibuya        median  3           28%                27 a minute
 #   Intel sample   median  0           58%                 --
-VIDEOS: tuple[SampleVideo, ...] = (TORONTO, TYUMEN, SHIBUYA, INTEL_STREET)
+VIDEOS: tuple[SampleVideo, ...] = (TORONTO, TYUMEN, SHIBUYA, INTEL_STREET, CAPPING_LINE, CATTLE_DRIVE)
 BY_KEY = {video.key: video for video in VIDEOS}
 
 

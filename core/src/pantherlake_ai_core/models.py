@@ -77,7 +77,7 @@ def _street_videos_spec() -> ModelSpec:
     from . import sample_videos
 
     return ModelSpec(
-        "street-videos", "Street videos (4 sample clips)", ("smart-city-monitor",), SAMPLES,
+        "street-videos", "Sample videos for counting (6 clips)", ("smart-city-monitor",), SAMPLES,
         note="What the city monitor plays from disk, fetched from Wikimedia Commons and GitHub where their authors "
              "published them. See sample-data/videos/README.md for licences and credits.",
         fetch=_fetch_street_videos, present=sample_videos.all_present, on_disk=sample_videos.bytes_on_disk,

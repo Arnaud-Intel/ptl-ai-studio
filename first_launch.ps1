@@ -173,11 +173,11 @@ print('Launcher imports OK. This checks discovery, not model inference.')
         if (-not $prepared) { Write-Host 'Models were not confirmed ready. Use Prepare models in the app or rerun this helper.' -ForegroundColor Yellow }
 
         # Whatever set of models was chosen: the city monitor opens on these, and they are small.
-        Write-Host "`nStreet videos for the Smart City demo: four short clips, about 90 MB in all."
+        Write-Host "`nSample videos for the Smart City demo: six short clips (streets, a bottle line, a herd), about 120 MB in all."
         Write-Host 'Fetched from Wikimedia Commons and GitHub, where their authors published them (sample-data/videos/README.md).'
-        if ((Read-Choice 'Fetch the street videos? Y = fetch, S = skip' @('Y', 'S') 'Y') -eq 'Y') {
+        if ((Read-Choice 'Fetch the sample videos? Y = fetch, S = skip' @('Y', 'S') 'Y') -eq 'Y') {
             if (-not (Invoke-UvStep @('run', '--no-sync', 'panther-lake-prefetch', 'street-videos') -Optional)) {
-                Write-Host 'Street videos not fetched. They are fetched the first time the demo plays them, or by Prepare models.' -ForegroundColor Yellow
+                Write-Host 'Sample videos not fetched. They are fetched the first time the demo plays them, or by Prepare models.' -ForegroundColor Yellow
             }
         }
 

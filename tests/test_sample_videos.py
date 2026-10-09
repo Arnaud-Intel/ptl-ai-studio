@@ -135,11 +135,12 @@ def test_a_stop_keeps_what_was_fetched_for_next_time(there):
 
 def test_every_video_says_where_it_comes_from_and_under_which_licence():
     readme = (Path(sample_videos.SAMPLE_ROOT) / "videos" / "README.md").read_text(encoding="utf-8")
-    assert len({video.key for video in sample_videos.VIDEOS}) == len(sample_videos.VIDEOS) == 4
+    assert len({video.key for video in sample_videos.VIDEOS}) == len(sample_videos.VIDEOS) == 6
+    assert [video.counts for video in sample_videos.VIDEOS] == ["street"] * 4 + ["line", "herd"]
     for video in sample_videos.VIDEOS:
         assert video.urls and all(url.startswith("https://") for url in video.urls)
         assert re.fullmatch(r"[0-9a-f]{64}", video.sha256) and video.size_bytes > 1_000_000
-        assert video.licence.startswith("CC") and video.credit and video.source_page.startswith("https://")
+        assert video.licence.startswith(("CC", "Public domain")) and video.credit and video.source_page.startswith("https://")
         # Two of the licences ask for the credit: it travels with the files.
         assert video.filename in readme and video.credit.split(",")[0] in readme
     assert sample_videos.for_path(sample_videos.TORONTO.path) is sample_videos.TORONTO
@@ -195,13 +196,16 @@ def test_starting_a_feed_on_a_video_not_fetched_yet_fetches_it_first(monkeypatch
     order = []
     monkeypatch.setattr(sample_videos, "present", lambda video: False)
     monkeypatch.setattr(sample_videos, "download", lambda video, *args, **kwargs: order.append(f"fetch {video.key}"))
-    monkeypatch.setattr(launcher_app.smart_city_monitor_runner, "start", lambda **kwargs: order.append("start"))
+    started = {}
+    monkeypatch.setattr(launcher_app.smart_city_monitor_runner, "start",
+                        lambda **kwargs: (order.append("start"), started.update(kwargs)))
     web = TestClient(launcher_app.app)
     # The portable engine: the one a machine without OpenVINO has, as where these tests run.
     body = {"feeds": [{"path": str(sample_videos.TORONTO.path), "engine": "portable"},
                       {"path": r"C:\videos\mine.mp4", "engine": "portable"}]}
     assert web.post("/api/smart-city-monitor/start", json=body).status_code == 200
     assert order == ["fetch toronto-crossing", "start"]  # the visitor's own file is none of its business
+    assert [feed.counting for feed in started["feeds"]] == ["street", "street"]
     # A video that cannot be fetched is said, and nothing is started on it.
     order.clear()
 
@@ -211,6 +215,46 @@ def test_starting_a_feed_on_a_video_not_fetched_yet_fetches_it_first(monkeypatch
     monkeypatch.setattr(sample_videos, "download", unreachable)
     refused = web.post("/api/smart-city-monitor/start", json=body)
     assert refused.status_code >= 400 and "could not be reached" in refused.text and order == []
+
+
+def test_a_feed_counts_what_it_is_watched_for_and_the_same_person_under_another_name():
+    from smart_city_monitor.pipeline import FeedCounters
+    from smart_city_monitor.types import COUNTING, FeedSpec, TrackedDetection, labels_counted
+
+    def new(label, number):
+        return TrackedDetection(track_id=number, label=label, confidence=0.9, box=(0, 0, 10, 10), is_new=True)
+
+    assert FeedSpec(feed_id="feed-1", path="x.mp4", compute_device="CPU").counting == "street"  # unless told otherwise
+    line, herd = FeedCounters(labels_counted("line")), FeedCounters(labels_counted("herd"))
+    line.record([new("bottle", 1), new("bottle", 2), new("person", 3)], now=1.0)
+    herd.record([new("cow", 1), new("dog", 2), new("person", 3)], now=1.0)
+    assert line.snapshot(2.0)[1] == {"Bottles": 2, "Workers": 1}
+    assert herd.snapshot(2.0)[1] == {"Cattle": 1, "Dogs": 1, "People": 1}
+    assert COUNTING["street"]["person"] == "Pedestrians" and "bottle" not in COUNTING["street"] and "car" not in COUNTING["herd"]
+    with pytest.raises(ValueError, match="one of street, line, herd"):
+        labels_counted("defects")  # the detector names things; it does not judge them
+
+
+def test_the_second_pair_is_a_herd_and_a_line_each_counted_for_what_it_shows(monkeypatch):
+    pair = next(sample for sample in samples.SAMPLES if sample.name == "A herd and a line, two chips")
+    assert pair.feeds == f"{sample_videos.CATTLE_DRIVE.path}|GPU\n{sample_videos.CAPPING_LINE.path}|NPU"
+    assert pair.counting == ("herd", "line") and not pair.default and pair.group == samples.LOCAL
+    alone = {sample.videos[0]: sample for sample in samples.SAMPLES if sample.kind == "file" and len(sample.videos) == 1}
+    assert alone["cattle-drive"].counting == ("herd",) and alone["bottle-capping-line"].counting == ("line",)
+    assert alone["toronto-crossing"].counting == ("street",)
+    # Started with nothing said, a sample video is counted for what it shows; told, a feed counts what it is told to.
+    started = {}
+    monkeypatch.setattr(sample_videos, "present", lambda video: True)
+    monkeypatch.setattr(launcher_app.smart_city_monitor_runner, "start", lambda **kwargs: started.update(kwargs))
+    web = TestClient(launcher_app.app)
+    feeds = [{"path": str(sample_videos.CATTLE_DRIVE.path), "engine": "portable"},
+             {"path": str(sample_videos.CAPPING_LINE.path), "engine": "portable"},
+             {"path": "C:/videos/my-line.mp4", "engine": "portable", "counting": "line"}]
+    answer = web.post("/api/smart-city-monitor/start", json={"feeds": feeds})
+    assert answer.status_code == 200 and [feed.counting for feed in started["feeds"]] == ["herd", "line", "line"]
+    assert [feed["counting"] for feed in answer.json()["feeds"]] == ["herd", "line", "line"]  # for the page to rebuild its cards
+    refused = web.post("/api/smart-city-monitor/start", json={"feeds": [{"path": "C:/v/x.mp4", "engine": "portable", "counting": "defects"}]})
+    assert refused.status_code == 400 and "feed 1" in refused.text and "defects" in refused.text
 
 
 # --- in the Auto Demo -------------------------------------------------------------------
@@ -243,6 +287,27 @@ def test_the_auto_demo_plays_the_videos_on_disk_with_no_network_and_swaps_their_
     assert "disque" in autodemo_scenes.smart_city(_stand(_listed(), lang="fr"), 1).beats[0].text
     again = autodemo_scenes.smart_city(_stand(_listed()), 2)
     assert [feed["path"] for feed in again.steps[0].body["feeds"]] == ["C:/v/b.webm", "C:/v/a.webm"]  # the other chip each
+
+
+def test_the_auto_demo_counts_a_herd_and_a_line_with_the_same_detector_when_their_videos_are_there():
+    listed = _listed() + [
+        {"name": "Bottle capping line", "kind": "file", "ready": True, "counting": ["line"], "feeds": "C:/v/bottles.webm"},
+        {"name": "Cattle on the road", "kind": "file", "ready": True, "counting": ["herd"], "feeds": "C:/v/cattle.webm"},
+    ]
+    scene = autodemo_scenes.herd_and_line(_stand(listed), 1)
+    assert isinstance(scene, Scene) and scene.demo == "smart-city-monitor" and scene.view == "cameras"
+    assert scene.steps[0].body["feeds"] == [
+        {"path": "C:/v/cattle.webm", "compute_device": "GPU.0", "counting": "herd"},  # the 30-frame clip on the GPU
+        {"path": "C:/v/bottles.webm", "compute_device": "NPU", "counting": "line"}]
+    assert [feed["name"] for feed in scene.props["feeds"]] == ["Cattle on the road", "Bottle capping line"]
+    assert "never trained" in scene.beats[1].text and "counted twice" in scene.beats[3].text  # what it is, and how far to trust it
+    assert scene.stop == ("/api/smart-city-monitor/stop",)
+    # The street scene goes on playing streets: a herd is not a second street.
+    street = autodemo_scenes.smart_city(_stand(listed[4:] + listed[:4]), 1)
+    assert [feed["path"] for feed in street.steps[0].body["feeds"]] == ["C:/v/a.webm", "C:/v/b.webm"]
+    missing = autodemo_scenes.herd_and_line(_stand(_listed()), 1)
+    assert isinstance(missing, Skip) and "Prepare models" in missing.reason
+    assert autodemo_scenes.PLAYLIST.index(autodemo_scenes.herd_and_line) == autodemo_scenes.PLAYLIST.index(autodemo_scenes.smart_city) + 1
 
 
 def test_without_its_videos_the_auto_demo_falls_back_on_the_live_cameras_or_says_what_it_needs():

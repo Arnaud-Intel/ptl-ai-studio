@@ -52,6 +52,9 @@ class Sample:
     # started if "Prepare models" has not fetched them already.
     videos: tuple[str, ...] = ()
     default: bool = False  # what the panel opens with
+    # What each of its feeds counts, in the order of `feeds` (types.COUNTING).
+    # Empty means street traffic throughout.
+    counting: tuple[str, ...] = ()
 
 
 LOCAL = "On this machine"
@@ -154,7 +157,7 @@ def _from_disk(video: sample_videos.SampleVideo) -> Sample:
     return Sample(
         name=video.name,
         description=f"{video.description} Played in a loop from this machine. {video.licence}, {video.credit}.",
-        feeds=str(video.path), group=LOCAL, kind="file", videos=(video.key,),
+        feeds=str(video.path), group=LOCAL, kind="file", videos=(video.key,), counting=(video.counts,),
     )
 
 
@@ -168,6 +171,15 @@ SAMPLES: list[Sample] = [
         # holds in full, and the GPU has room for either.
         feeds=f"{sample_videos.TORONTO.path}|NPU\n{sample_videos.TYUMEN.path}|GPU",
         group=LOCAL, kind="file", videos=(sample_videos.TORONTO.key, sample_videos.TYUMEN.key), default=True,
+    ),
+    Sample(
+        name="A herd and a line, two chips",
+        description="Cattle driven along a road on the GPU and bottles on a capping line on the NPU: the same "
+                    "detector counting other things than traffic, from this machine's disk.",
+        # The cattle clip is the one at 30 frames a second: it gets the GPU, as Tyumen does above.
+        feeds=f"{sample_videos.CATTLE_DRIVE.path}|GPU\n{sample_videos.CAPPING_LINE.path}|NPU",
+        group=LOCAL, kind="file", videos=(sample_videos.CATTLE_DRIVE.key, sample_videos.CAPPING_LINE.key),
+        counting=("herd", "line"),
     ),
     *[_from_disk(video) for video in sample_videos.VIDEOS],
 ] + [

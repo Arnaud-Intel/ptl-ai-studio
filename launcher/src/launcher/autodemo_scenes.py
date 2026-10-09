@@ -209,6 +209,12 @@ def expense_extraction(stand: Stand, loop: int) -> Scene | Skip:
     )
 
 
+def _counts(sample: dict) -> str:
+    """What a one-feed sample of the city monitor counts: street traffic
+    unless it says otherwise."""
+    return (sample.get("counting") or ["street"])[0]
+
+
 def smart_city(stand: Stand, loop: int) -> Scene | Skip:
     say = lambda english, french: _say(stand, english, french)  # noqa: E731
     title = say("Street cameras, one per chip", "Des caméras de rue, une par puce")
@@ -220,7 +226,7 @@ def smart_city(stand: Stand, loop: int) -> Scene | Skip:
     # full pictures, people as well as cars, and no network to depend on.
     # The first two, which are the two in high definition; each turn of the
     # loop they change chips.
-    on_disk = [s for s in single if s.get("kind") == "file" and s.get("ready")][:2]
+    on_disk = [s for s in single if s.get("kind") == "file" and s.get("ready") and _counts(s) == "street"][:2]
     from_disk = len(on_disk) == 2
     if from_disk:
         first, second = on_disk if loop % 2 else reversed(on_disk)
@@ -296,6 +302,76 @@ def smart_city(stand: Stand, loop: int) -> Scene | Skip:
     )
 
 
+def herd_and_line(stand: Stand, loop: int) -> Scene | Skip:
+    """The same brick and the same detector as the street scene, counting
+    other things: the point is that nothing was trained for them."""
+    say = lambda english, french: _say(stand, english, french)  # noqa: E731
+    title = say("Count whatever passes", "Compter tout ce qui passe")
+    if not stand.igpu:
+        return Skip(title, "needs a GPU")
+    on_disk = [s for s in stand.samples("smart-city-monitor")
+               if s.get("kind") == "file" and s.get("ready") and "\n" not in str(s.get("feeds", ""))]
+    herd = next((s for s in on_disk if _counts(s) == "herd"), None)
+    line = next((s for s in on_disk if _counts(s) == "line"), None)
+    if herd is None or line is None:
+        return Skip(title, "needs its sample videos fetched (Prepare models)")
+    other = "NPU" if stand.npu else "CPU"
+    other_chip = _NPU if stand.npu else _CPU
+    return Scene(
+        id="herd-and-line",
+        title=title,
+        demo="smart-city-monitor",
+        view="cameras",
+        beats=(
+            Beat(say(
+                "The same detector, pointed at other work. On the left, cattle driven along a road; on the right, "
+                "bottles on a capping line. Both videos play from this laptop's disk.",
+                "Le même détecteur, face à un autre travail. À gauche, un troupeau mené sur une route ; à droite, "
+                "des bouteilles sur une ligne de capsulage. Les deux vidéos sont lues depuis le disque de ce portable.",
+            )),
+            Beat(say(
+                "It was never trained on this herd or this factory. It knows what a cow and a bottle look like, "
+                "finds them in each frame and follows each one across the picture.",
+                "Il n'a jamais été entraîné sur ce troupeau ni sur cette usine. Il sait à quoi ressemblent une vache "
+                "et une bouteille, les trouve dans chaque image et suit chacune à travers le cadre.",
+            ), stage="feed-1", after=8.0),
+            Beat(say(
+                f"Each video has its own chip again: the herd on the integrated GPU, the line on the {other_chip}. "
+                "A pasture gate or a production line is a camera and a few watts away from being counted.",
+                f"Chaque vidéo a de nouveau sa puce : le troupeau sur le GPU intégré, la ligne sur le {other_chip}. "
+                "Une barrière de pâturage ou une ligne de production : une caméra et quelques watts suffisent à compter.",
+            ), stage="feed-2", after=20.0),
+            Beat(say(
+                # Measured: about 90 "cows" counted for a herd of a few dozen.
+                "The tallies under each picture rise as things pass. They run high: an animal hidden behind "
+                "another and seen again is counted twice. Enough to watch a flow, not yet to bill by.",
+                "Les compteurs sous chaque image montent au passage. Ils voient large : un animal caché derrière "
+                "un autre puis revu est compté deux fois. Assez pour suivre un flux, pas encore pour facturer.",
+            ), after=32.0),
+        ),
+        chips=(
+            Chip(_IGPU, say("Counts the herd · YOLO11s detector", "Compte le troupeau · détecteur YOLO11s"),
+                 "smart-city-monitor", ("feed-1",)),
+            Chip(other_chip, say("Counts the bottles · YOLO11s detector", "Compte les bouteilles · détecteur YOLO11s"),
+                 "smart-city-monitor", ("feed-2",)),
+        ),
+        props={"feeds": [{"id": "feed-1", "name": herd["name"], "chip": _IGPU},
+                         {"id": "feed-2", "name": line["name"], "chip": other_chip}]},
+        steps=(
+            Start("/api/smart-city-monitor/start", {
+                "engine": "openvino", "loop": True,
+                # The herd on the GPU: its clip is the one at 30 frames a second.
+                "feeds": [{"path": herd["feeds"], "compute_device": stand.igpu, "counting": "herd"},
+                          {"path": line["feeds"], "compute_device": other, "counting": "line"}],
+            }),
+            Wait(50.0),
+        ),
+        stop=("/api/smart-city-monitor/stop",),
+        hold=0.0,
+        at_most=130.0,
+    )
+
+
 def seeing_and_answering(stand: Stand, loop: int) -> Scene | Skip:
     say = lambda english, french: _say(stand, english, french)  # noqa: E731
     title = say("Seeing and answering at once", "Voir et répondre en même temps")
@@ -351,4 +427,4 @@ def seeing_and_answering(stand: Stand, loop: int) -> Scene | Skip:
 
 # In the order they play. Heavy and light alternate: the 30B model lost a
 # fifth of its speed after many runs in a row (docs/AUTO_DEMO.md).
-PLAYLIST: list[Builder] = [page_agent, expense_extraction, smart_city, seeing_and_answering]
+PLAYLIST: list[Builder] = [page_agent, expense_extraction, smart_city, herd_and_line, seeing_and_answering]

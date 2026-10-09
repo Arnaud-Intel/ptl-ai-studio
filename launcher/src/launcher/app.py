@@ -62,6 +62,7 @@ from pantherlake_ai_core.engine import (
 from pydantic import BaseModel, Field
 from pantherlake_ai_core import sample_videos
 from smart_city_monitor import sources as smart_city_sources
+from smart_city_monitor.types import COUNTING as SMART_CITY_COUNTING
 from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
 from voice_clone_studio import engine_factory as voice_clone_models
 
@@ -692,6 +693,9 @@ class SmartCityFeedInput(BaseModel):
     # YOLO11s, another on the CPU with DETR, at the same time.
     engine: str | None = None
     model_path: str | None = None
+    # What to count in it: "street", "line" or "herd". Unset, one of the
+    # sample videos is counted for what it shows and anything else as a street.
+    counting: str | None = None
 
 
 class SmartCityMonitorStartRequest(BaseModel):
@@ -727,6 +731,7 @@ def _smart_city_feed_json(feed: SmartCityFeedSpec) -> dict[str, Any]:
         "model_path": feed.model_path,
         "path": feed.path,
         "source_type": "url" if smart_city_sources.is_url(feed.path) else "file",
+        "counting": feed.counting,
     }
 
 
@@ -745,6 +750,10 @@ async def start_smart_city_monitor(req: SmartCityMonitorStartRequest) -> JSONRes
             feed_engine, feed_device = resolve(
                 f.engine or req.engine, f.compute_device or req.compute_device, realtime_vision=True
             )
+            known = sample_videos.for_path(f.path.strip())
+            counting = f.counting or (known.counts if known else "street")
+            if counting not in SMART_CITY_COUNTING:
+                raise ValueError(f"feed {i}: unknown kind of counting '{counting}' -- one of {', '.join(SMART_CITY_COUNTING)}")
             feeds.append(
                 SmartCityFeedSpec(
                     feed_id=f"feed-{i}",
@@ -753,6 +762,7 @@ async def start_smart_city_monitor(req: SmartCityMonitorStartRequest) -> JSONRes
                     name=smart_city_sources.display_name(f.path.strip()),
                     engine=feed_engine,
                     model_path=f.model_path or None,
+                    counting=counting,
                 )
             )
         missing = [
@@ -1727,7 +1737,10 @@ def autodemo_start(req: AutoDemoRequest) -> JSONResponse:
 
 @app.post("/api/autodemo/stop")
 def autodemo_stop() -> JSONResponse:
-    return JSONResponse(autodemo_director.stop())
+    """Answers within a few seconds either way: "idle" if the loop has let
+    go of everything by then, "stopping" if the demo it was in is still
+    finishing -- the page shows that on the start screen, where it goes."""
+    return JSONResponse(autodemo_director.stop(wait=6.0))
 
 
 @app.post("/api/autodemo/pause")

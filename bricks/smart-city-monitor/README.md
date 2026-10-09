@@ -43,7 +43,14 @@ an LLM a third time. What it adds on top:
   ships public city cameras in two sections — YouTube, and Other (London's
   TfL JamCams) — so the demo has something real to count without you
   sourcing footage. See **Where the live cameras come from** below.
-- **Street videos on this machine** — four openly licensed clips, offered
+- **What a feed counts** ([`types.py`](src/smart_city_monitor/types.py),
+  `COUNTING`) — street traffic by default; a production line (bottles,
+  cups, fruit, workers) or a herd (cattle, sheep, horses, dogs, people) when
+  the feed says so: `--counting line` on the command line, the **Counts**
+  menu on a feed's card in the launcher. It is the same detector each
+  time, never trained on the factory or the herd in front of it. It names
+  everyday things and does not judge them: a defect is beyond it.
+- **Sample videos on this machine** — six openly licensed clips, offered
   first under "On this machine", and what the launcher's panel opens with
   (two of them, one per chip): a demo that needs the network to start does
   not start in a conference hall. They are not in the repository: the
@@ -55,7 +62,10 @@ an LLM a third time. What it adds on top:
   two it opens on, crossings in Toronto and Tyumen, are the two the
   detector does best on (a median of 11 and 9 boxes on screen, never none);
   in the Shibuya clip, a crowd seen from far above, it boxes a handful of
-  several hundred people.
+  several hundred people. Two are not streets: a bottle capping line and a
+  cattle drive ("A herd and a line, two chips"), where it holds a median of
+  3 and 8 boxes on screen. Its tallies run high: about 90 "cattle" for a
+  herd of a few dozen, an animal lost and found being counted again.
 - **N feeds, each on its own engine, model and device**
   ([`pipeline.py`](src/smart_city_monitor/pipeline.py)) — one detector per
   distinct `(engine, device, model)` among the feeds, shared by every feed

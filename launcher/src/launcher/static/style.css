@@ -942,6 +942,7 @@ body.screen-stage > .modal-overlay { display: none !important; }
   transition: border-color 0.15s ease, transform 0.15s ease;
 }
 .landing-choice:hover { border-color: var(--accent-hover); transform: translateY(-2px); }
+.landing-choice:disabled { opacity: 0.45; cursor: default; transform: none; }
 #landing-auto { border-color: var(--accent-hover); background: linear-gradient(160deg, rgba(0, 104, 181, 0.55), rgba(0, 104, 181, 0.12)); }
 .landing-choice .choice-title { font-size: clamp(22px, 2.4vw, 42px); font-weight: 700; letter-spacing: -0.01em; }
 .landing-choice .choice-title::after { content: " \2192"; color: var(--accent-hover); }
