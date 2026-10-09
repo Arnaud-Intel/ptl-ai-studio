@@ -42,7 +42,10 @@ SAMPLES = {
         {"name": "Cattle on the road", "group": "On this machine", "kind": "file", "ready": True, "counting": ["herd"], "feeds": "C:/v/cattle.webm"},
         {"name": "Bottle capping line", "group": "On this machine", "kind": "file", "ready": True, "counting": ["line"], "feeds": "C:/v/bottles.webm"},
     ],
-    "doc-qa": [{"name": "Can the pilot launch?", "folder": "C:/docs", "question": "Is it approved?"}],
+    "doc-qa": [{"name": "Can the pilot launch?", "folder": "C:/samples/meridian-rollout-2026", "question": "Is it approved?", "assets": [
+        {"name": "00-company-brief.md", "url": "/demo-assets/meridian-rollout-2026/00-company-brief.md", "image": False},
+        {"name": "03-release-decision-log.md", "url": "/demo-assets/meridian-rollout-2026/03-release-decision-log.md", "image": False},
+    ]}],
     "video-commentary": [
         {"name": "Cattle on the road", "path": "C:/v/cattle.webm", "ready": True},
         {"name": "Bottle capping line", "path": "C:/v/bottles.webm", "ready": True},
@@ -149,9 +152,9 @@ def test_the_scene_in_hand_comes_with_its_story_and_what_its_view_needs():
     assert (state["state"], scene["id"], scene["demo"], scene["view"]) == ("playing", "page", "page", "page")
     # The story, a moment at a time, each with when it is due: at once, when a stage is seen at work, when the work is done.
     assert scene["beats"] == [
-        {"text": "page begins.", "after": 0.0, "stage": "", "result": False, "figure": False},
-        {"text": "The small model is at work.", "after": 0.0, "stage": "plan", "result": False, "figure": False},
-        {"text": "Done.", "after": 0.0, "stage": "", "result": True, "figure": False},
+        {"text": "page begins.", "after": 0.0, "stage": "", "result": False, "figure": False, "answer": ""},
+        {"text": "The small model is at work.", "after": 0.0, "stage": "plan", "result": False, "figure": False, "answer": ""},
+        {"text": "Done.", "after": 0.0, "stage": "", "result": True, "figure": False, "answer": ""},
     ]
     assert scene["chips"] == [{"chip": "NPU", "label": "Plans · a small model", "demo": "page", "stages": ("plan",)}]
     assert scene["props"] == {"request": "page"} and scene["result_ready"] is False and director.result() is None
@@ -167,7 +170,7 @@ def test_the_scene_in_hand_comes_with_its_story_and_what_its_view_needs():
     # The answer is kept for the page to draw, and stays on screen for the scene's hold.
     stage.slow["/b/ask"].set()
     assert _until(lambda: (director.snapshot()["scene"] or {}).get("phase") == "showing")
-    assert director.result() == {"scene": "page", "data": {"html": "<html></html>"}}
+    assert director.result() == {"scene": "page", "data": {"html": "<html></html>"}, "answers": {}}
     assert director.snapshot()["scene"]["result_ready"] is True
     director.stop()
 
@@ -398,8 +401,44 @@ def test_an_answer_on_the_way_to_the_one_that_matters_is_not_the_scenes_result()
     assert director.result() is None and director.snapshot()["scene"]["result_ready"] is False  # indexed, not answered
     stage.slow["/docs/ask"].set()
     assert _until(lambda: director.result() is not None)
-    assert director.result() == {"scene": "docs", "data": {"text": "Not yet approved."}}
+    assert director.result() == {"scene": "docs", "data": {"text": "Not yet approved."}, "answers": {}}
     director.stop()
+
+
+def test_a_scene_that_asks_twice_keeps_each_answer_by_name_and_says_when_each_is_in():
+    stage = Stage()
+    stage.slow["/docs/index"] = threading.Event()
+    stage.slow["/docs/ask"] = threading.Event()
+    stage.answers["/docs/alone"] = {"text": "The team's captain."}
+    stage.answers["/docs/index"] = {"chunks": 12}
+    stage.answers["/docs/ask"] = {"text": "Priya Desai, on September 17."}
+    scene = lambda stand, loop: _scene(  # noqa: E731
+        "docs", Ask("/docs/alone", keep=False, name="alone"), Ask("/docs/index", keep=False, name="read"),
+        Ask("/docs/ask", name="with"), hold=0.3)
+    director = _director(stage, [scene])
+    director.start()
+    # Asked alone: its answer is there for the page and for the story, and it is not the scene's result.
+    assert _until(lambda: (director.snapshot()["scene"] or {}).get("answered") == ["alone"])
+    now = director.snapshot()["scene"]
+    assert now["result_ready"] is False and now["phase"] == "working"
+    assert director.result() == {"scene": "docs", "data": None, "answers": {"alone": {"text": "The team's captain."}}}
+    stage.slow["/docs/index"].set()
+    assert _until(lambda: (director.snapshot()["scene"] or {}).get("answered") == ["alone", "read"])
+    assert director.snapshot()["scene"]["result_ready"] is False
+    stage.slow["/docs/ask"].set()
+    assert _until(lambda: (director.snapshot()["scene"] or {}).get("result_ready") is True)
+    result = director.result()
+    assert result["data"] == {"text": "Priya Desai, on September 17."} and list(result["answers"]) == ["alone", "read", "with"]
+    assert director.snapshot()["scene"]["answered"] == ["alone", "read", "with"]
+    director.stop()
+    # The next scene starts with nothing answered: one scene's answers are not the next one's.
+    stage.slow["/docs/index"].clear()
+    again = _director(stage, [scene])
+    again.start()
+    assert _until(lambda: (again.snapshot()["scene"] or {}).get("answered") == ["alone"])
+    assert list(again.result()["answers"]) == ["alone"]
+    stage.slow["/docs/index"].set()
+    again.stop()
 
 
 # --- the playlist, on the stands it will meet -------------------------------------------
@@ -491,39 +530,68 @@ def test_a_scene_written_before_its_demo_is_ready_is_held_back_by_its_key(monkey
 def test_the_playlist_names_its_scenes_for_the_start_screen_and_holds_none_back():
     director = Director(Stage(), autodemo_scenes.PLAYLIST, online=lambda: True)
     assert director.keys() == [
-        "page-agent", "expense-extraction", "smart-city", "herd-and-line", "video-commentary", "seeing-and-answering"]
+        "page-agent", "camera", "expense-extraction", "smart-city", "herd-and-line", "documents", "video-commentary"]
     assert autodemo_scenes.HELD_BACK == {}
     listed = director.check()["playlist"]
     # A scene's key is the id it plays under: what the start screen ticks is what the stage shows.
     assert [(entry["key"], entry["id"]) for entry in listed if entry["playable"]] == [(key, key) for key in director.keys()]
-    assert [entry["turns_with"] for entry in listed[2:4]] == [["herd-and-line"], ["smart-city"]]
-    assert [entry["plays"] for entry in listed] == [True, True, True, False, True, True]  # the streets on the first turn
+    assert [entry["turns_with"] for entry in listed[3:5]] == [["herd-and-line"], ["smart-city"]]
+    assert [entry["plays"] for entry in listed] == [True, True, True, True, False, True, True]  # the streets on the first turn
 
 
-def test_seeing_and_answering_watches_the_camera_or_a_video_and_keeps_only_the_answer():
+def test_the_documents_scene_asks_the_same_question_without_the_files_and_then_with_them():
     stage = Stage()
-    scene = autodemo_scenes.seeing_and_answering(_stand(stage), 1)
-    # "webcam", as the brick names it: the scene was written with "camera", which the brick refuses.
-    assert scene.steps[0].body == {"source": "webcam", "camera_index": 0, "engine": "openvino", "compute_device": "GPU.0"}
-    assert "Nothing it sees is recorded" in scene.beats[0].text and scene.props["camera"] is True
-    asked = [step for step in scene.steps if not isinstance(step, Wait)]
-    assert [step.path for step in asked] == ["/api/object-detection/start", "/api/doc-qa/ingest", "/api/doc-qa/ask"]
-    assert isinstance(scene.steps[1], Wait)  # the picture first, alone: the answer takes seconds, the detector's first frame more
-    assert [step.keep for step in asked[1:]] == [False, True]  # indexing the folder is not the answer
-    assert asked[1].body["compute_device"] == "NPU"
-    assert scene.stop == ("/api/object-detection/stop", "/api/bricks/doc-qa/stop")  # nothing left running, nothing left loaded
-    assert scene.view == "answer" and scene.props["question"] == "Is it approved?"
-    # No camera, or one left out when the loop was started: a video kept on the machine, never the screen.
-    for stand in (_stand(Stage(cameras=[])), _stand(stage, camera="off")):
-        video = autodemo_scenes.seeing_and_answering(stand, 1)
-        assert video.steps[0].body == {"source": "file", "path": "C:/v/toronto.webm", "engine": "openvino", "compute_device": "GPU.0"}
-        assert "recorded" not in video.beats[0].text and video.props == {
-            "question": "Is it approved?", "camera": False, "watching": "Toronto"}
-    bare = _stand(Stage(cameras=[]))
-    bare.samples = lambda demo: [] if demo == "object-detection" else SAMPLES.get(demo, [])
-    skipped = autodemo_scenes.seeing_and_answering(bare, 1)
-    assert isinstance(skipped, Skip) and "camera" in skipped.reason and "Prepare models" in skipped.reason
-    assert isinstance(autodemo_scenes.seeing_and_answering(_stand(Stage(devices=["CPU", "GPU.0"])), 1), Skip)  # no NPU
+    scene = autodemo_scenes.documents(_stand(stage), 1)
+    question = "Who makes the final go/no-go decision on the Lyon pilot, and on which date?"
+    asked = [step for step in scene.steps if isinstance(step, Ask)]
+    assert [(step.path, step.name, step.keep) for step in asked] == [
+        ("/api/doc-qa/ask", "alone", False), ("/api/doc-qa/ingest", "read", False), ("/api/doc-qa/ask", "with", True)]
+    # First the model alone: nothing is indexed for it, the models are only loaded, on the NPU.
+    assert asked[0].body == {"question": question, "alone": True, "engine": "openvino", "compute_device": "NPU"}
+    # Then the folder, read again each time: "now the folder is read" is said of something happening.
+    assert asked[1].body == {"folder": "C:/samples/meridian-rollout-2026", "engine": "openvino", "compute_device": "NPU", "reindex": True}
+    assert asked[2].body == {"question": question}  # the same question, word for word
+    assert [type(step) for step in scene.steps] == [Ask, Wait, Ask, Wait, Ask]  # time to read each before the next
+    # The story waits for each of the three: alone, read, and the answer.
+    assert [(beat.answer, beat.result) for beat in scene.beats] == [("", False), ("alone", False), ("read", False), ("", True)]
+    assert "made up" in scene.beats[1].text and "Same question, same model" in scene.beats[3].text
+    assert scene.view == "documents" and scene.props == {
+        "question": question, "folder": "meridian-rollout-2026",
+        "files": ["00-company-brief.md", "03-release-decision-log.md"]}  # the files, shown before they are read
+    assert scene.stop == ("/api/bricks/doc-qa/stop",)  # nothing left loaded on the NPU
+    # Another question the next turn; without an NPU, on the GPU; with neither chip or without its folder, not at all.
+    assert "Dock C" in autodemo_scenes.documents(_stand(stage), 2).props["question"]
+    shared = autodemo_scenes.documents(_stand(Stage(devices=["CPU", "GPU.0"])), 1)
+    assert shared.steps[0].body["compute_device"] == "GPU.0" and shared.chips[0].chip == "Integrated GPU"
+    assert isinstance(autodemo_scenes.documents(_stand(Stage(gpus=[], devices=["CPU"])), 1), Skip)
+    elsewhere = _stand(stage)
+    elsewhere.samples = lambda demo: [{"name": "Notes", "folder": "C:/samples/other-notes", "question": "?"}]
+    assert isinstance(autodemo_scenes.documents(elsewhere, 1), Skip)  # its questions are about its own folder
+
+
+def test_the_camera_scene_boxes_the_visitor_and_says_what_is_going_on_or_does_not_play():
+    stage = Stage()
+    scene = autodemo_scenes.camera(_stand(stage), 1)
+    detect, wait, comment = scene.steps[:3]
+    assert detect.path == "/api/object-detection/start" and detect.body == {
+        "source": "webcam", "camera_index": 0, "engine": "openvino", "compute_device": "NPU"}
+    # One of the two opens the camera; the other waits for its picture and watches what it watches.
+    assert isinstance(wait, Until) and (wait.path, wait.key, wait.equals) == ("/api/object-detection/detections", "watching", True)
+    assert comment.path == "/api/video-commentary/start" and comment.body == {
+        "source": "detector", "people": True, "mood": "plain", "voice": "", "vision_device": "GPU.0", "mood_device": "NPU"}
+    assert scene.stop == ("/api/video-commentary/stop", "/api/object-detection/stop")
+    assert scene.view == "camera" and scene.demo == "object-detection" and scene.props == {"chip": "NPU"}
+    assert [(chip.chip, chip.demo, chip.stages) for chip in scene.chips] == [
+        ("NPU", "object-detection", ("default",)), ("Integrated GPU", "video-commentary", ("vision",))]
+    assert "Nothing is recorded" in scene.beats[0].text and "never what they look like" in scene.beats[2].text
+    # Without an NPU the detector takes the processor: the GPU is the vision model's.
+    plain = autodemo_scenes.camera(_stand(Stage(devices=["CPU", "GPU.0"])), 1)
+    assert plain.steps[0].body["compute_device"] == "CPU" and plain.chips[0].chip == "CPU" and "no NPU" in plain.beats[1].text
+    # No camera, or one left out when the loop was started: the scene is about the camera, and does not play.
+    left_out = autodemo_scenes.camera(_stand(stage, camera="off"), 1)
+    assert isinstance(left_out, Skip) and "Use the camera" in left_out.reason
+    none = autodemo_scenes.camera(_stand(Stage(cameras=[])), 1)
+    assert isinstance(none, Skip) and none.reason == "needs a camera"
 
 
 def test_the_commentator_scene_waits_for_its_first_line_then_changes_voice_and_stays_silent():
@@ -558,6 +626,9 @@ def test_every_scene_tells_its_story_a_sentence_or_two_at_a_time_in_both_languag
         english, french = _stand(stage, **options), _stand(stage, lang="fr", **options)
         for build in _builders():
             scene, scène = build(english, 1), build(french, 1)
+            if build is autodemo_scenes.camera and options.get("camera") == "off":
+                assert isinstance(scene, Skip) and scène.title != scene.title  # it is about the camera: it does not play
+                continue
             assert isinstance(scene, Scene) and isinstance(scène, Scene)
             assert len(scene.beats) >= 3 and scene.beats[0].stage == "" and scene.beats[0].after == 0  # it opens at once
             assert len(scène.beats) == len(scene.beats) and scène.title != scene.title

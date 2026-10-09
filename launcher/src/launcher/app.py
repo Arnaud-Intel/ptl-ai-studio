@@ -635,16 +635,32 @@ def doc_qa_status() -> JSONResponse:
 class DocQAAskRequest(BaseModel):
     question: str
     top_k: int = 4
+    # The question put to the language model with no document in the
+    # conversation: what the documents change is what it answers then. No
+    # folder need be indexed for it; `engine` and `compute_device` say what
+    # to load when nothing is loaded yet.
+    alone: bool = False
+    engine: str | None = None
+    compute_device: str | None = None
 
 
 @app.post("/api/doc-qa/ask")
 async def doc_qa_ask(req: DocQAAskRequest) -> JSONResponse:
     try:
-        answer = await run_in_threadpool(doc_qa_runner.ask, question=req.question, top_k=req.top_k)
+        if not req.question.strip():
+            raise ValueError("Ask a question.")
+        engine = device = None
+        if req.alone and (req.engine or req.compute_device):
+            resolved, device = resolve(req.engine, req.compute_device)
+            engine = resolved.value
+        answer = await run_in_threadpool(
+            doc_qa_runner.ask, question=req.question, top_k=req.top_k, alone=req.alone, engine=engine, device=device,
+        )
     except Exception as exc:
         return error_response(exc)
     return JSONResponse(
         {
+            "alone": req.alone,
             "text": answer.text,
             "sources": [
                 {"source": r.chunk.source, "chunk_index": r.chunk.chunk_index, "score": r.score}
@@ -714,6 +730,8 @@ def object_detection_detections() -> JSONResponse:
         # How many of each kind are in the picture now, most first.
         "counts": dict(sorted(counts.items(), key=lambda item: -item[1])),
         "running": object_detection_runner.running,
+        # Whether it has a picture yet: what a demo that watches the same thing waits for.
+        "watching": object_detection_runner.running and object_detection_runner.latest_jpeg() is not None,
         "error": object_detection_runner.error,
     })
 
@@ -895,7 +913,14 @@ def _video_commentary_devices(vision: str | None, mood: str | None) -> tuple[str
 
 
 class VideoCommentaryStartRequest(BaseModel):
-    source: str = "file"  # "file", "webcam" or "screen"
+    # "file", "webcam", "screen" -- or "detector": what Object Detection is
+    # watching, which has to be running. A camera can be opened by one demo
+    # only; this is how the two watch the same one.
+    source: str = "file"
+    # Whether people are likely in the picture: the vision model is then
+    # asked what they are doing and never what they look like. Not said:
+    # yes for a camera, no for the rest.
+    people: bool | None = None
     path: str = ""
     camera_index: int = 0
     screen_index: int = 1
@@ -920,8 +945,14 @@ class VideoCommentaryVoiceRequest(BaseModel):
 @app.post("/api/video-commentary/start")
 async def start_video_commentary(req: VideoCommentaryStartRequest) -> JSONResponse:
     try:
-        if req.source not in ("file", "webcam", "screen"):
-            raise ValueError(f"unknown source '{req.source}': one of file, webcam, screen")
+        if req.source not in ("file", "webcam", "screen", "detector"):
+            raise ValueError(f"unknown source '{req.source}': one of file, webcam, screen, detector")
+        frames, watched = None, req.source
+        if req.source == "detector":
+            if not object_detection_runner.running:
+                raise Conflict("Object Detection is not running: start it first, and the commentator watches what it watches.")
+            frames, watched = object_detection_runner.frames, object_detection_runner.source
+        people = req.people if req.people is not None else watched == "webcam"
         sees, says = _video_commentary_devices(req.vision_device, req.mood_device)
         path = req.path.strip()
         video_file = sample_videos.for_path(path) if req.source == "file" and path else None
@@ -930,7 +961,7 @@ async def start_video_commentary(req: VideoCommentaryStartRequest) -> JSONRespon
         video_commentary_runner.start(
             source=req.source, path=path, camera_index=req.camera_index, screen_index=req.screen_index, loop=req.loop,
             vision_device=sees, mood_device=says, mood=req.mood or video_commentary_runner.mood,
-            every=min(max(req.every, 2.0), 30.0), voice=req.voice,
+            every=min(max(req.every, 2.0), 30.0), voice=req.voice, frames=frames, people=people,
         )
     except Exception as exc:
         return error_response(exc)

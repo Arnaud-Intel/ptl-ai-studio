@@ -39,6 +39,16 @@ NOTHING_CLOSE = (
 )
 
 
+# What the model is told when it is asked without the documents: the same
+# model, the same question, and nothing to read. It is there to show what
+# the documents change. Measured on the sample folder (2026-10-11, the 1.5B
+# model on the NPU): of three questions about the fictional company it said
+# of two that it did not have the information, and of the third -- who
+# decides on the Lyon pilot, and when -- that it was "the team's captain",
+# "on September 16, 2023". Nothing here asks it to invent, or not to.
+ALONE_PROMPT = "Answer the question in two or three sentences. If you do not have the information, say so."
+
+
 class DocQASession:
     """Holds one loaded embedder + LLM + index. Ingest once, ask many times."""
 
@@ -103,6 +113,13 @@ class DocQASession:
         self.store.save(cache_dir, fingerprint=holds)
         self.folder = folder
         return self.store.size
+
+    def ask_alone(self, question: str, *, max_tokens: int = 160, control=None) -> Answer:
+        """The question put to the language model with no document in the
+        conversation: what it answers from what it learned, which is not
+        the user's files. No index is needed, and none is touched."""
+        text = self.llm.answer(ALONE_PROMPT, question, max_tokens=max_tokens, control=control)
+        return Answer(text=text, stats=getattr(self.llm, "last_stats", None))
 
     def ask(self, question: str, *, top_k: int = 4, max_tokens: int = 512, control=None) -> Answer:
         if self.store.size == 0:

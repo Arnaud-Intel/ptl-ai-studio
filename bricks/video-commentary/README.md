@@ -78,6 +78,34 @@ real.
 - **The voice is English.** So are the comments, whatever language the Auto
   Demo tells its story in.
 
+## People in the picture
+
+In front of a camera (the webcam as a source, or what Object Detection is
+watching when that is a webcam) the vision model is asked what people are
+doing and never what they look like -- and since asking was not enough, what
+it answers goes through `about_what_they_do`
+([`pipeline.py`](src/video_commentary/pipeline.py)). Tried on the laptop's
+own camera on 2026-10-11, it called its one subject "a person" every time
+and wrote "wearing glasses" every time: three lines of three with glasses
+left out of the instruction, five of five with glasses named in it. The
+rule takes out what somebody wears, what is on their face, and whether they
+are a man or a woman, young or old ("A young man in a blue shirt waves"
+becomes "A person waves"); a sentence that still speaks of looks after that
+is not said at all. The next run gave four sentences and none about looks.
+It is a list of words: it will miss some.
+
+A camera somebody stands in front of is also looked at again sooner when
+nothing moves (ten seconds, not twenty), and the Auto Demo's camera scene
+keeps to the plain sentence: a mood would be the small model embroidering
+about a visitor.
+
+The launcher can point the commentator at **what Object Detection is
+watching** (`source: "detector"` on `POST /api/video-commentary/start`,
+with the detector running): a camera can be opened by one demo only, and
+this is how the two watch the same one -- boxes from one, a sentence from
+the other. It is what the Auto Demo's camera scene does; the panel does not
+offer it yet.
+
 ## What it does not do on purpose
 
 No mood passes judgement on the people in the picture -- how they look, what

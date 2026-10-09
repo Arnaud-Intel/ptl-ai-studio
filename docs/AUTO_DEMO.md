@@ -11,9 +11,9 @@ stand has and what one turn of the loop will play, and takes four choices:
 the language the story is told in (English or French), whether to use the
 discrete GPU, larger text for a big display, and full screen.
 
-## Where it stands (2026-10-10)
+## Where it stands (2026-10-11)
 
-Decided with the user, 2026-10-08 to -10:
+Decided with the user, 2026-10-08 to -11:
 
 | Question | Answer |
 | --- | --- |
@@ -24,7 +24,7 @@ Decided with the user, 2026-10-08 to -10:
 | The discrete GPU? | Not always there: looked for when the loop starts, and the person starting it can leave it out |
 | A large display? | Sometimes: a setting of the loop, not a different build |
 | Somebody touches the machine? | A popup asks: keep playing, pause, or stop. Stop goes back to the start screen |
-| Which scenes? | Page Agent, Expense extraction on the worn receipts, the two counting scenes in turn, the Video Commentator, and Detection with Q&A now that both bricks have had a proofing pass. **Which of them play is ticked when the loop is started** (asked for on 2026-10-10), and remembered |
+| Which scenes? | Page Agent, Expense extraction on the worn receipts, the camera, the two counting scenes in turn, the documents, and the Video Commentator. **Which of them play is ticked when the loop is started** (asked for on 2026-10-10), and remembered. "Detection with Q&A" played for a day and was taken apart on 2026-10-11: nobody watching could tell what its Q&A half showed |
 
 Three things were put to the user as changes to what was asked, and built
 that way:
@@ -142,25 +142,67 @@ loaded after the stop.
   rest of the loop; its comments are in English in either language, and
   its last sentence says that the small model embroiders -- on this run it
   put the herd "under a starry night sky" at midday.
-- **Seeing and answering at once** (55 s). The detector on a video (or the
-  camera) for fourteen seconds alone, then the folder indexed and the
-  question asked on the NPU. The first version started both together: the
-  answer was written before the detector had shown a frame, and the story
-  about one not slowing the other was over before it could be seen. The
-  frame rate held at 24 while the answer was written (41 tok/s); it dipped
-  to 14 for a second and a half earlier, when the NPU's models were being
-  loaded, which is the CPU's work.
+- **Seeing and answering at once** (55 s) -- retired the next day, below.
+  The detector on a video (or the camera) for fourteen seconds alone, then
+  the folder indexed and the question asked on the NPU. The frame rate held
+  at 24 while the answer was written (41 tok/s); it dipped to 14 for a
+  second and a half earlier, when the NPU's models were being loaded, which
+  is the CPU's work.
 
 What the Object Detection pass found and changed is in that brick's README.
+
+**"Seeing and answering" taken apart (2026-10-11).** The user, having
+watched it: "the mixed one with vision and Q&A isn't very convincing. We
+can't really understand the principle behind the Q&A part" -- and of the
+vision half, "it feels potentially engaging for people to be interacting
+with the demo camera". An answer beside a picture it has nothing to do with
+shows neither. Its halves are two scenes now, each watched in English at
+1920x1080 and in French at 1280x680 (on battery, without the B60): nothing
+overflowed, nothing failed, nothing was left running or loaded.
+
+- **The same question, without the files and with them** (55 s, all on the
+  NPU). One question about the bundled folder is put to the 1.5B model
+  alone, with no document in the conversation; then the folder is read (6
+  files, 12 passages, in a second); then the same question is asked again.
+  The stage shows the files down the left -- "not shown to the model",
+  then "read", then "used for the answer" on those the answer came from --
+  and the two answers one above the other. Alone, to "who makes the final
+  go/no-go decision on the Lyon pilot, and on which date?", the model
+  answers "the team's captain, on September 16, 2023", word for word the
+  same every time: made up. With the files: Priya Desai, September 17,
+  which is what the decision log says. The other question it takes in
+  turn ("what happened near Dock C?") it declines alone; the caption holds
+  for both. A third candidate was dropped: with the files, the model wrote
+  that the customer "will receive" the balance it still owes.
+- **The camera sees you** (55 s). The detector on the laptop's camera, on
+  the NPU, at 31 frames a second throughout; the 7B vision model on the
+  integrated GPU says what is going on, a sentence every ten seconds or so
+  for somebody sitting still, sooner when something moves. The camera is
+  opened by the detector, and the commentator watches what it watches. It
+  is the plain sentence, with no mood: the mood model embroiders, and here
+  that would be about a visitor.
+  **What it says of people is kept to what they do.** Asked for that and
+  nothing else, the vision model called its one subject "a person" every
+  time, and said every time that they were "wearing glasses" -- with
+  glasses left out of what it was told not to mention, and again with
+  glasses named in it. So what it writes goes through a rule in code that
+  takes out what somebody wears, what is on their face, and whether they
+  are a man or a woman, young or old; a sentence that still speaks of
+  looks after that is not said. On the next run: four sentences, none
+  about looks ("A person sits in a chair, looking up"). The rule is a list
+  of words and will miss some; it is there because asking was not enough.
+  The scene does not play without the camera, or with it left out.
 
 Not built yet, most useful first:
 
 - **A run of several hours** on the real machine, watched through the
   activity log. The loop has been round a few times, not a day.
-- **A whole turn with all six scenes**, and the camera: the two new scenes
-  were watched on their own, with a video in the camera's place. The
-  webcam was run once through the detector for its frame rate (30), and
-  its picture was not looked at.
+- **A whole turn with all six scenes.** Each of the newer ones was watched
+  on its own or in a pair, not the loop from end to end.
+- **The camera scene in front of somebody else**: a visitor holding things
+  up, two people, a crowd at a stand. It was watched with one person
+  sitting at the laptop, and its picture was not looked at -- only what
+  the two models said of it.
 - **French comments** in the commentator scene: the two models answer in
   English.
 - "Count whatever passes" -- a cattle drive and a bottle capping line through

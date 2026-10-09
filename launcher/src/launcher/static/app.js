@@ -2288,8 +2288,11 @@ const PANELS = {
         const question = el("docqa-question").value.trim();
         if (!question) return;
         const box = el("docqa-transcript");
-        appendLine(box, "line-question", `Q: ${question}`);
-        el("docqa-question").value = "";
+        // The same model with nothing to read: ask twice, once each way, and
+        // what the documents change is on screen.
+        const alone = el("docqa-alone").checked;
+        appendLine(box, "line-question", `Q: ${question}` + (alone ? "  (without the documents)" : ""));
+        el("docqa-question").value = alone ? question : ""; // kept, to be asked again with them
         this.setBusy(true);
         // The answer appears here as it is written, then gives way to the
         // finished one.
@@ -2302,11 +2305,15 @@ const PANELS = {
           },
         });
         try {
-          const answer = await postJSON("/api/doc-qa/ask", { question });
+          const answer = await postJSON("/api/doc-qa/ask", { question, alone });
           stopFollowing();
           writing.remove();
           appendLine(box, "line-answer", answer.text);
           if (answer.cancelled) appendLine(box, "line-note", "Stopped -- this answer is incomplete.");
+          if (alone) {
+            appendLine(box, "line-note", "The model alone: no document was in the conversation. Untick the box and ask again to see what they change.");
+            el("docqa-alone").checked = false;
+          }
           if (answer.sources && answer.sources.length) {
             // By file, with how many passages of each: what the answer was
             // written from, in a form that can be checked against the folder.
@@ -3784,14 +3791,21 @@ const STAGE_TEXT = {
     toSee: (seconds) => `${seconds} s to see`,
     toSay: (seconds) => `${seconds} s to say`,
     camera: "This laptop's camera",
-    startingDetector: "Starting the detector…",
+    startingDetector: "Starting the camera…",
     inPicture: "In the picture now",
     nothingSeen: "nothing right now",
-    question: "The question",
-    answer: "The answer",
-    searching: "Searching the documents…",
-    answered: "written on this machine",
-    foundIn: "Found in",
+    saidOfIt: "What the vision model says",
+    folder: "The folder",
+    notShown: "On this laptop's disk. Not in the conversation.",
+    nowRead: "Read on this laptop. The passages closest to a question go into the conversation with it.",
+    fileStates: { out: "not shown to the model", read: "read", used: "used for the answer" },
+    askedAlone: "1 · Asked of the model alone",
+    askedWith: "2 · Asked again, with the files",
+    asking: "Asking…",
+    notYet: "Once the folder has been read.",
+    noFiles: "no file in the conversation",
+    fromFiles: "written from the files",
+    filesRead: (count, passages) => `↓  ${count} files read: ${passages} passages`,
   },
   fr: {
     tag: "Démo automatique",
@@ -3854,14 +3868,21 @@ const STAGE_TEXT = {
     toSee: (seconds) => `${seconds} s pour voir`,
     toSay: (seconds) => `${seconds} s pour dire`,
     camera: "La caméra de ce portable",
-    startingDetector: "Démarrage du détecteur…",
+    startingDetector: "Démarrage de la caméra…",
     inPicture: "À l'image en ce moment",
     nothingSeen: "rien pour l'instant",
-    question: "La question",
-    answer: "La réponse",
-    searching: "Recherche dans les documents…",
-    answered: "rédigée sur cette machine",
-    foundIn: "Trouvé dans",
+    saidOfIt: "Ce qu'en dit le modèle de vision",
+    folder: "Le dossier",
+    notShown: "Sur le disque de ce portable. Pas dans la conversation.",
+    nowRead: "Lu sur ce portable. Les passages les plus proches d'une question entrent avec elle dans la conversation.",
+    fileStates: { out: "pas montré au modèle", read: "lu", used: "utilisé pour la réponse" },
+    askedAlone: "1 · Posée au modèle seul",
+    askedWith: "2 · Posée à nouveau, avec les fichiers",
+    asking: "Question en cours…",
+    notYet: "Quand le dossier aura été lu.",
+    noFiles: "aucun fichier dans la conversation",
+    fromFiles: "rédigée à partir des fichiers",
+    filesRead: (count, passages) => `↓  ${count} fichiers lus : ${passages} passages`,
   },
 };
 
@@ -4201,6 +4222,8 @@ function stageFitBeat() {
 // that is what the sentence points at -- the result being in.
 function stageBeatDue(beat, scene, state) {
   if (beat.result && !(scene.result_ready || scene.phase === "showing")) return false;
+  // One of the scene's requests, by name, has been answered.
+  if (beat.answer && !(scene.answered || []).includes(beat.answer)) return false;
   if (beat.after && state.now - scene.started_at < beat.after) return false;
   if (beat.figure && !STAGE.figured.has(beat.stage)) return false;
   return !beat.stage || STAGE.seen.has(beat.stage);
@@ -4705,49 +4728,141 @@ function stageCommentaryView(scene, root) {
   };
 }
 
-// Seeing and answering: the detector's picture with what it finds and how
-// fast, beside a question and the answer as it is written from the documents.
-function stageAnswerView(scene, root) {
+// The documents: the folder's files down the left, and the same question
+// asked twice down the right -- of the model alone, then with the files
+// read. What changes between the two is what the scene is about.
+function stageDocumentsView(scene, root) {
+  const t = stageText();
+  const files = scene.props.files || [];
+  const ask = (which, title) =>
+    `<div class="sv-ask" data-ask="${which}"><h3>${escapeHtml(title)} <span class="sv-note"></span></h3>` +
+    `<p class="sv-question">${escapeHtml(scene.props.question || "")}</p>` +
+    `<div class="sv-answer"><p class="sv-wait"></p></div></div>`;
+  root.innerHTML =
+    `<section class="sv-card sv-folder"><h3>${escapeHtml(t.folder)} <span class="sv-note">${escapeHtml(scene.props.folder || "")}</span></h3>` +
+    `<ul class="sv-files">` +
+    files.map((name) => `<li data-file="${escapeHtml(name)}"><span class="sv-file-name">${escapeHtml(name)}</span><span class="sv-file-state"></span></li>`).join("") +
+    `</ul><p class="sv-folder-note">${escapeHtml(t.notShown)}</p></section>` +
+    `<section class="sv-card sv-asks">${ask("alone", t.askedAlone)}<p class="sv-read"></p>${ask("with", t.askedWith)}</section>`;
+  const block = (which) => root.querySelector(`.sv-ask[data-ask="${which}"]`);
+  const rows = [...root.querySelectorAll(".sv-files li")];
+  let ended = false;
+  let fetching = false;
+  const shown = new Set(); // the answers that are up, whole
+
+  const put = (which, words, note) => {
+    const box = block(which).querySelector(".sv-answer");
+    if (!box.querySelector(".sv-answer-text")) box.innerHTML = `<p class="sv-answer-text"></p>`;
+    box.querySelector(".sv-answer-text").textContent = words;
+    block(which).querySelector(".sv-note").textContent = note;
+    block(which).classList.add("on");
+  };
+  const wait = (which, words) => {
+    const node = block(which).querySelector(".sv-wait");
+    if (node) node.textContent = words;
+  };
+  const mark = (state, only) => {
+    for (const row of rows) {
+      const on = !only || only.has(row.dataset.file);
+      row.className = on ? state : "read";
+      row.querySelector(".sv-file-state").textContent = on ? t.fileStates[state] : t.fileStates.read;
+    }
+  };
+  mark("out");
+  wait("alone", t.asking);
+  wait("with", t.notYet);
+
+  // The answer as it is written, in whichever of the two is being asked.
+  const writing = async () => {
+    try {
+      const data = await fetchJSON("/api/bricks/doc-qa/partial");
+      if (ended || !data.active || !data.text) return;
+      const which = shown.has("alone") ? "with" : "alone";
+      if (which === "with" && !shown.has("read")) return;
+      if (!shown.has(which)) put(which, data.text, t.writing);
+    } catch {
+      // A missed look.
+    }
+  };
+
+  const collect = async (answered) => {
+    if (fetching) return;
+    fetching = true;
+    try {
+      const result = await fetchJSON("/api/autodemo/result");
+      if (ended || result.scene !== scene.id) return;
+      const answers = result.answers || {};
+      if (answered.includes("alone") && !shown.has("alone") && answers.alone) {
+        shown.add("alone");
+        put("alone", answers.alone.text, t.noFiles);
+      }
+      if (answered.includes("read") && !shown.has("read") && answers.read) {
+        shown.add("read");
+        mark("read");
+        root.querySelector(".sv-read").textContent = t.filesRead((answers.read.files || files).length, answers.read.chunks);
+        root.querySelector(".sv-folder-note").textContent = t.nowRead;
+        wait("with", t.asking);
+      }
+      if (answered.includes("with") && !shown.has("with") && answers.with) {
+        shown.add("with");
+        put("with", answers.with.text, t.fromFiles);
+        const used = new Set((answers.with.sources || []).map((source) => String(source.source).split(/[\\/]/).pop()));
+        if (used.size) mark("used", used);
+      }
+    } catch {
+      // Tried again at the next look.
+    } finally {
+      fetching = false;
+    }
+  };
+
+  const timer = setInterval(writing, 400);
+  return {
+    update(now) {
+      const answered = now.answered || [];
+      if (answered.some((name) => !shown.has(name))) collect(answered);
+    },
+    stop() {
+      ended = true;
+      clearInterval(timer);
+    },
+  };
+}
+
+// The camera: whoever is in front of it, boxed by the detector, with what the
+// vision model makes of the picture on it as a subtitle; what is in the
+// picture now, how fast, and the sentences so far.
+function stageCameraView(scene, root) {
   const t = stageText();
   root.innerHTML =
-    `<article class="sv-card sv-camera">` +
-    `<div class="sv-camera-head"><strong>${escapeHtml(scene.props.camera ? t.camera : scene.props.watching || "")}</strong>` +
-    `<span class="sv-camera-chip">${escapeHtml(t.chips["Integrated GPU"] || "Integrated GPU")}</span><span class="sv-camera-rate"></span></div>` +
-    `<div class="sv-camera-picture"><p class="sv-wait">${escapeHtml(t.startingDetector)}</p></div>` +
+    `<article class="sv-card sv-camera sv-watch">` +
+    `<div class="sv-camera-head"><strong>${escapeHtml(t.camera)}</strong>` +
+    `<span class="sv-camera-chip">${escapeHtml(t.chips[scene.props.chip] || scene.props.chip || "")}</span><span class="sv-camera-rate"></span></div>` +
+    `<div class="sv-camera-picture"><p class="sv-wait">${escapeHtml(t.startingDetector)}</p><p class="sv-subtitle" hidden></p></div>` +
     `<p class="sv-camera-counts"><span>${escapeHtml(t.inPicture)}</span> <b>${escapeHtml(t.nothingSeen)}</b></p></article>` +
-    `<section class="sv-card sv-qa"><h3>${escapeHtml(t.question)}</h3><p class="sv-question">${escapeHtml(scene.props.question || "")}</p>` +
-    `<h3>${escapeHtml(t.answer)} <span class="sv-note"></span></h3>` +
-    `<div class="sv-answer"><p class="sv-wait">${escapeHtml(t.searching)}</p></div><p class="sv-sources"></p></section>`;
+    `<section class="sv-card sv-said"><h3>${escapeHtml(t.saidOfIt)}</h3><div class="sv-lines"><p class="sv-wait">${escapeHtml(t.firstLine)}</p></div></section>`;
   const picture = root.querySelector(".sv-camera-picture");
-  const answer = root.querySelector(".sv-answer");
-  const note = root.querySelector(".sv-note");
+  const subtitle = root.querySelector(".sv-subtitle");
+  const lines = root.querySelector(".sv-lines");
   let ended = false;
-  let written = false; // the whole answer is up
-  let asked = false;
-
-  const put = (words) => {
-    if (!answer.querySelector(".sv-answer-text")) answer.innerHTML = `<p class="sv-answer-text"></p>`;
-    const node = answer.querySelector(".sv-answer-text");
-    node.textContent = words;
-    answer.scrollTop = answer.scrollHeight;
-  };
+  let last = 0;
 
   const watch = async () => {
     try {
       const data = await fetchJSON("/api/object-detection/detections");
       if (ended) return;
-      if (data.running && !picture.querySelector("img")) {
+      if (data.watching && !picture.querySelector("img")) {
         const image = document.createElement("img");
         image.alt = "";
+        // The stream ends if the camera is not up yet: asked again at the next look.
         image.addEventListener("error", () => image.remove());
         image.addEventListener("load", () => picture.querySelector(".sv-wait")?.remove(), { once: true });
         image.src = `/api/object-detection/stream?at=${Date.now()}`;
-        picture.append(image);
+        picture.prepend(image);
       }
       const seen = Object.entries(data.counts || {})
-        .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
-        .map(([kind, count]) => `${kind} ${count}`)
+        .map(([kind, count]) => `${kind.replace(/_/g, " ")} ${count}`)
         .join(" · ");
       root.querySelector(".sv-camera-counts b").textContent = seen || t.nothingSeen;
       const rate = (STATUS.metrics || []).find((metric) => metric.demo_id === "object-detection" && !metric.sticky);
@@ -4757,45 +4872,33 @@ function stageAnswerView(scene, root) {
     }
   };
 
-  const writing = async () => {
-    if (written) return;
+  const listen = async () => {
     try {
-      const data = await fetchJSON("/api/bricks/doc-qa/partial");
-      if (ended || written || !data.active || !data.text) return;
-      note.textContent = t.writing;
-      put(data.text);
+      const data = await fetchJSON(`/api/video-commentary/comments?after=${last}`);
+      if (ended) return;
+      for (const comment of data.comments || []) {
+        if (!last) lines.replaceChildren();
+        last = comment.number;
+        subtitle.textContent = comment.said;
+        subtitle.hidden = false;
+        const entry = document.createElement("div");
+        entry.className = "sv-line";
+        entry.innerHTML = `<span>${escapeHtml(t.toSee(comment.seeing_seconds.toFixed(1)))}</span><p>${escapeHtml(comment.said)}</p>`;
+        lines.prepend(entry);
+        while (lines.children.length > 6) lines.lastChild.remove();
+      }
     } catch {
       // A missed look.
     }
   };
 
-  const showAnswer = async () => {
-    try {
-      const result = await fetchJSON("/api/autodemo/result");
-      if (ended || result.scene !== scene.id || !result.data || !result.data.text) return;
-      written = true;
-      note.textContent = t.answered;
-      put(result.data.text);
-      answer.scrollTop = 0;
-      const files = [...new Set((result.data.sources || []).map((source) => String(source.source).split(/[\\/]/).pop()))];
-      root.querySelector(".sv-sources").textContent = files.length ? `${t.foundIn}: ${files.join(" · ")}` : "";
-    } catch {
-      asked = false; // tried again at the next look
-    }
-  };
-
-  const timers = [setInterval(watch, 1000), setInterval(writing, 400)];
+  const timers = [setInterval(watch, 1000), setInterval(listen, 700)];
   watch();
   return {
-    update(now) {
-      if (now.result_ready && !asked) {
-        asked = true;
-        showAnswer();
-      }
-    },
     stop() {
       ended = true;
       timers.forEach(clearInterval);
+      // An <img> on a stream holds its connection open until told otherwise.
       for (const image of picture.querySelectorAll("img")) image.src = "";
     },
   };
@@ -4806,7 +4909,8 @@ const STAGE_VIEWS = {
   receipts: stageReceiptsView,
   cameras: stageCamerasView,
   commentary: stageCommentaryView,
-  answer: stageAnswerView,
+  documents: stageDocumentsView,
+  camera: stageCameraView,
 };
 
 // ---- somebody at the machine

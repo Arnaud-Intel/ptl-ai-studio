@@ -42,13 +42,16 @@ class Beat:
     work, `result` once the scene's work is done. With `figure`, the stage
     must have a figure to show as well: a stage is "at work" from the moment
     its model starts loading, and a sentence about what it puts out is early
-    until it puts something out."""
+    until it puts something out. `answer` names one of the scene's requests
+    (`Ask.name`): the sentence waits for that request to have been answered
+    -- a scene that asks twice has something to say between the two."""
 
     text: str
     after: float = 0.0
     stage: str = ""
     result: bool = False
     figure: bool = False
+    answer: str = ""
 
 
 @dataclass(frozen=True)
@@ -78,13 +81,16 @@ class Ask:
     kept for the page to draw. `cancel` is the route that stops it part-way,
     for when the scene is interrupted. `keep=False` for a request on the way
     to the one that matters -- a folder indexed before the question is asked
-    -- whose answer is not the scene's result."""
+    -- whose answer is not the scene's result. With a `name`, the answer is
+    kept under it as well, for the page to draw and for the story to wait
+    on (`Beat.answer`), result or not."""
 
     path: str
     body: dict = field(default_factory=dict)
     cancel: str = ""
     timeout: float = 900.0
     keep: bool = True
+    name: str = ""
 
 
 @dataclass(frozen=True)
@@ -276,7 +282,8 @@ class Director:
 
     def result(self) -> dict | None:
         """What the scene in hand was answered, for the page to draw:
-        `{"scene": id, "data": the route's answer}`."""
+        `{"scene": id, "data": the answer that is its result, "answers":
+        those it kept by name}`."""
         with self._lock:
             return self._result
 
@@ -543,7 +550,7 @@ class Director:
                     "id": scene.id, "title": scene.title, "demo": scene.demo, "view": scene.view,
                     "beats": [asdict(beat) for beat in scene.beats], "chips": [asdict(chip) for chip in scene.chips],
                     "props": scene.props, "phase": "working", "started_at": now, "ends_by": now + scene.at_most,
-                    "result_ready": False,
+                    "result_ready": False, "answered": [],
                 },
             )
         deadline = time.monotonic() + scene.at_most
@@ -637,8 +644,18 @@ class Director:
                 raise SceneFailed(f"{scene.title}: no answer after {scene.at_most:.0f} s")
         if "error" in box:
             raise SceneFailed(f"{scene.title}: {box['error']}")
-        if not step.keep:
+        if not (step.keep or step.name):
             return
         with self._lock:
-            self._result = {"scene": scene.id, "data": box.get("answer")}
-        self._phase("answered", result_ready=True)
+            kept = self._result if self._result and self._result.get("scene") == scene.id else {"scene": scene.id, "data": None, "answers": {}}
+            kept = {**kept, "answers": dict(kept["answers"])}
+            if step.name:
+                kept["answers"][step.name] = box.get("answer")
+            if step.keep:
+                kept["data"] = box.get("answer")
+            self._result = kept
+            answered = list(kept["answers"])
+        if step.keep:
+            self._phase("answered", result_ready=True, answered=answered)
+        else:
+            self._phase("working", answered=answered)

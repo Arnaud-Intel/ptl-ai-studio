@@ -14,10 +14,12 @@ What goes in was decided with the user on 2026-10-08 and -09:
 - The story is told in English unless French is chosen when the loop is
   started. Every sentence here is written in both.
 - Smart City plays only when the internet is reachable.
-- "Seeing and answering" (object detection with document Q&A) waited for
-  both bricks to have a proofing pass. Document Q&A had its own on
-  2026-10-09 and Object Detection on 2026-10-10, so it plays. `HELD_BACK`
-  stays for the next scene that is written before its demo is ready.
+- "Seeing and answering" (object detection beside document Q&A) played
+  for a day and was taken apart on 2026-10-11: the user found that nobody
+  could tell what the Q&A half was showing. Its two halves are scenes of
+  their own now -- the documents, asked without the files and then with
+  them; and the camera, with the visitor boxed and put into a sentence.
+  `HELD_BACK` stays for the next scene written before its demo is ready.
 - Which scenes play is chosen when the loop is started (asked for by the
   user on 2026-10-10): every scene has a key the start screen ticks, and a
   camera is only switched on if the person starting the loop left it in.
@@ -370,79 +372,160 @@ def herd_and_line(stand: Stand, loop: int) -> Scene | Skip:
     )
 
 
-def seeing_and_answering(stand: Stand, loop: int) -> Scene | Skip:
+# What the documents scene asks. Short enough to be read standing up, about
+# the bundled folder, and checked on 2026-10-11 with the 1.5B model on the
+# NPU: with the folder, both get the answer that is in the files; alone, the
+# first is answered "the team's captain, on September 16, 2023" -- made up,
+# word for word the same each time -- and the second "I don't have that
+# information". The scene's story holds for either.
+_DOCUMENT_QUESTIONS = (
+    "Who makes the final go/no-go decision on the Lyon pilot, and on which date?",
+    "What happened near Dock C during the Lyon workshop?",
+)
+_DOCUMENT_FOLDER = "meridian-rollout-2026"
+
+
+def documents(stand: Stand, loop: int) -> Scene | Skip:
+    """One question, asked twice of the same model: without the files, then
+    with them. Asked for by the user on 2026-10-11, in place of a scene that
+    answered a question beside a camera picture: "we can't really understand
+    the principle behind the Q&A part"."""
     say = lambda english, french: _say(stand, english, french)  # noqa: E731
-    title = say("Seeing and answering at once", "Voir et répondre en même temps")
-    if "seeing-and-answering" in HELD_BACK:
-        return Skip(title, HELD_BACK["seeing-and-answering"])
-    if not (stand.igpu and stand.npu):
-        return Skip(title, "needs a GPU and an NPU")
-    sample = _sample(stand, "doc-qa", loop - 1, lambda s: s.get("folder") and s.get("question"))
+    title = say("The same question, without the files and with them", "La même question, sans les fichiers puis avec")
+    if not (stand.npu or stand.igpu):
+        return Skip(title, "needs an NPU or a GPU")
+    sample = _sample(stand, "doc-qa", 0, lambda s: str(s.get("folder", "")).replace("\\", "/").rstrip("/").endswith(_DOCUMENT_FOLDER))
     if sample is None:
         return Skip(title, "its sample documents could not be found")
-    camera = bool(stand.cameras)
-    # Without a camera, a video kept on this machine -- never the screen: on
-    # the stage the screen is this scene, and a detector pointed at its own
-    # picture finds one "tv" and nothing else.
-    clip = None if camera else next(
-        (s for s in stand.samples("object-detection") if s.get("kind") == "file" and s.get("ready") and s.get("path")), None)
-    if not camera and clip is None:
-        return Skip(title, "needs a camera, or its sample video fetched (Prepare models)")
-    source = {"source": "webcam", "camera_index": stand.cameras[0]} if camera else {"source": "file", "path": clip["path"]}
+    files = [asset["name"] for asset in sample.get("assets") or [] if not asset.get("image")]
+    question = _DOCUMENT_QUESTIONS[(loop - 1) % len(_DOCUMENT_QUESTIONS)]
+    device = "NPU" if stand.npu else stand.igpu
+    cancel = "/api/bricks/doc-qa/stop"
     return Scene(
-        id="seeing-and-answering",
+        id="documents",
         title=title,
         demo="doc-qa",
-        view="answer",
+        view="documents",
         beats=(
             Beat(say(
-                ("The camera of this laptop is watched by an object detector: that is you, in the picture. "
-                 "Nothing it sees is recorded or sent anywhere. " if camera else
-                 "A street video plays from this laptop's disk, and an object detector watches it. ")
-                + "It runs on the integrated GPU, on every frame.",
-                ("La caméra de ce portable est surveillée par un détecteur d'objets : c'est vous, à l'image. "
-                 "Rien de ce qu'elle voit n'est enregistré ni envoyé. " if camera else
-                 "Une vidéo de rue est lue depuis le disque de ce portable, et un détecteur d'objets la surveille. ")
-                + "Il tourne sur le GPU intégré, à chaque image.",
+                "A question about a company's own files, the kind no model was trained on. First it is put to a small "
+                "language model alone: nothing but the question is in the conversation.",
+                "Une question sur les dossiers d'une entreprise, de ceux qu'aucun modèle n'a appris. Elle est d'abord "
+                "posée à un petit modèle de langage seul : il n'y a que la question dans la conversation.",
             )),
             Beat(say(
-                "Meanwhile, on the NPU, a language model searches a folder of business documents and answers a question "
-                "about them. Two unrelated jobs, two chips, at the same time.",
-                "Pendant ce temps, sur le NPU, un modèle de langage fouille un dossier de documents professionnels et "
-                "répond à une question à leur sujet. Deux tâches sans rapport, deux puces, en même temps.",
-            ), stage="default", after=10.0),
+                "That is the model alone. It has nothing to go on: it either says so or, worse, answers anyway with "
+                "something it made up. The files on the left were never shown to it.",
+                "Voilà le modèle seul. Il n'a rien sur quoi s'appuyer : soit il le dit, soit, pire, il répond quand "
+                "même en inventant. Les fichiers à gauche ne lui ont jamais été montrés.",
+            ), answer="alone"),
             Beat(say(
-                # Measured on the stage (2026-10-10): 24 frames a second
-                # before the answer, while it was written and after. The one
-                # dip, to 14 for a second and a half, is earlier: when the
-                # NPU's models load, which the CPU does.
-                "The answer is in, written from the documents, with the files it came from listed under it. "
-                "And look at the frame rate above the picture: it did not drop while the NPU was writing.",
-                "La réponse est là, rédigée à partir des documents, avec dessous les fichiers dont elle vient. "
-                "Et regardez la cadence au-dessus de l'image : elle n'a pas baissé pendant que le NPU écrivait.",
+                "Now the folder is read, here on this laptop: each file is cut into passages, and each passage turned "
+                "into numbers that say what it is about. " + ("All of it on the NPU, and the files go nowhere."
+                                                              if stand.npu else "The files go nowhere."),
+                "Le dossier est maintenant lu, ici, sur ce portable : chaque fichier est découpé en passages, et chaque "
+                "passage traduit en nombres qui disent de quoi il parle. " + ("Tout cela sur le NPU, et les fichiers ne vont nulle part."
+                                                                              if stand.npu else "Les fichiers ne vont nulle part."),
+            ), answer="read"),
+            Beat(say(
+                "Same question, same model. This time the passages closest to it were put into the conversation, and "
+                "the answer is written from them: the files it came from are marked on the left.",
+                "Même question, même modèle. Cette fois, les passages les plus proches ont été glissés dans la "
+                "conversation, et la réponse en est tirée : les fichiers dont elle vient sont marqués à gauche.",
             ), result=True),
         ),
         chips=(
-            Chip(_IGPU, say("Detects objects · YOLO11s detector", "Détecte les objets · détecteur YOLO11s"), "object-detection"),
-            Chip(_NPU, say("Answers from documents · Qwen2.5 1.5B", "Répond d'après les documents · Qwen2.5 1.5B"), "doc-qa"),
+            Chip(_NPU if stand.npu else _IGPU,
+                 say("Reads the files and answers · two small models", "Lit les fichiers et répond · deux petits modèles"), "doc-qa"),
         ),
-        props={"question": sample["question"], "camera": camera, "watching": "" if camera else clip["name"]},
+        props={"question": question, "files": files, "folder": _DOCUMENT_FOLDER},
         steps=(
-            Start("/api/object-detection/start", {**source, "engine": "openvino", "compute_device": stand.igpu}),
-            # The picture first, alone, with its frame rate: the answer takes
-            # a few seconds, and came before the detector's first frame when
-            # the two were started together.
-            Wait(14.0),
-            # Its answer is not the scene's: only what the question gets is kept for the stage.
-            Ask("/api/doc-qa/ingest", {"folder": sample["folder"], "engine": "openvino", "compute_device": "NPU"}, keep=False),
-            Wait(5.0),
-            Ask("/api/doc-qa/ask", {"question": sample["question"]}, cancel="/api/bricks/doc-qa/stop"),
+            # Alone: no folder is indexed for it, only the models loaded.
+            Ask("/api/doc-qa/ask", {"question": question, "alone": True, "engine": "openvino", "compute_device": device},
+                cancel=cancel, keep=False, name="alone"),
+            Wait(10.0),
+            # Read again each time, a second's work: "now the folder is read"
+            # is said of something that is happening.
+            Ask("/api/doc-qa/ingest", {"folder": sample["folder"], "engine": "openvino", "compute_device": device, "reindex": True},
+                keep=False, name="read"),
+            Wait(10.0),
+            Ask("/api/doc-qa/ask", {"question": question}, cancel=cancel, name="with"),
         ),
-        # The detector is stopped, and the language model taken off the NPU:
-        # left loaded, it sat there through every other scene of the loop.
-        stop=("/api/object-detection/stop", "/api/bricks/doc-qa/stop"),
-        hold=25.0,
-        at_most=240.0,
+        # The two models are taken off their chip: left loaded, they sat
+        # there through every other scene of the loop.
+        stop=(cancel,),
+        hold=22.0,
+        at_most=200.0,
+    )
+
+
+def camera(stand: Stand, loop: int) -> Scene | Skip:
+    """Whoever stands in front of the laptop, boxed by the detector and put
+    into a sentence by the vision model. Kept at the user's wish on
+    2026-10-11 ("it feels potentially engaging for people to be interacting
+    with the demo camera"), with the commentary added to it.
+
+    The sentence is plain, with no mood: the small model that gives a mood
+    embroiders, and what it embroiders here would be about a visitor. And
+    the vision model is asked what people do, never what they look like."""
+    say = lambda english, french: _say(stand, english, french)  # noqa: E731
+    title = say("The camera sees you", "La caméra vous voit")
+    if not stand.igpu:
+        return Skip(title, "needs a GPU for the vision model")
+    if not stand.cameras:
+        return Skip(title, "the camera was left out (tick “Use the camera”)" if stand.cameras_found else "needs a camera")
+    watcher, watcher_chip = ("NPU", _NPU) if stand.npu else ("CPU", _CPU)
+    return Scene(
+        id="camera",
+        title=title,
+        demo="object-detection",
+        view="camera",
+        beats=(
+            Beat(say(
+                "That is this laptop's camera, and that is you. An object detector draws a box round everything it "
+                "recognises, in every frame. Nothing is recorded, and the picture never leaves this machine.",
+                "Voici la caméra de ce portable, et vous voici. Un détecteur d'objets encadre tout ce qu'il reconnaît, "
+                "à chaque image. Rien n'est enregistré, et l'image ne quitte jamais cette machine.",
+            )),
+            Beat(say(
+                "Move, or hold something up: a cup, a phone, a book. It knows eighty everyday things, and it runs on "
+                + ("the NPU, one small model at a few watts." if stand.npu else "the processor: this machine has no NPU."),
+                "Bougez, ou montrez un objet : une tasse, un téléphone, un livre. Il connaît quatre-vingts objets du "
+                "quotidien, et tourne sur " + ("le NPU, un petit modèle à quelques watts." if stand.npu
+                                               else "le processeur : cette machine n'a pas de NPU."),
+            ), stage="default", after=9.0),
+            Beat(say(
+                "Meanwhile a much larger model, on the integrated GPU, is shown a frame every few seconds and says in "
+                "a sentence what is going on. It is asked what people do, never what they look like.",
+                "Pendant ce temps, un modèle bien plus gros, sur le GPU intégré, reçoit une image toutes les quelques "
+                "secondes et dit en une phrase ce qui se passe. On lui demande ce que font les gens, jamais leur apparence.",
+            ), stage="default", after=24.0),
+            Beat(say(
+                "Two models on two chips, watching the same camera: one fast and narrow, one slow and able to put it "
+                "into words. Both run on this laptop, with no connection needed.",
+                "Deux modèles sur deux puces, devant la même caméra : l'un rapide et étroit, l'autre lent mais capable "
+                "de le dire avec des mots. Les deux tournent sur ce portable, sans aucune connexion.",
+            ), stage="default", after=40.0),
+        ),
+        chips=(
+            Chip(watcher_chip, say("Boxes what it sees · YOLO11s detector", "Encadre ce qu'il voit · détecteur YOLO11s"), "object-detection"),
+            Chip(_IGPU, say("Says what is going on · Qwen2.5-VL 7B", "Dit ce qui se passe · Qwen2.5-VL 7B"), "video-commentary", ("vision",)),
+        ),
+        props={"chip": watcher_chip},
+        steps=(
+            Start("/api/object-detection/start", {
+                "source": "webcam", "camera_index": stand.cameras[0], "engine": "openvino", "compute_device": watcher}),
+            # One of the two opens the camera, and the other watches what it watches.
+            Until("/api/object-detection/detections", "watching", True, timeout=60.0),
+            Start("/api/video-commentary/start", {
+                "source": "detector", "people": True, "mood": "plain", "voice": "",
+                "vision_device": stand.igpu, "mood_device": "NPU" if stand.npu else stand.igpu,
+            }),
+            Wait(52.0),
+        ),
+        stop=("/api/video-commentary/stop", "/api/object-detection/stop"),
+        hold=0.0,
+        at_most=150.0,
     )
 
 
@@ -542,10 +625,15 @@ def video_commentary(stand: Stand, loop: int) -> Scene | Skip:
 # the user on 2026-10-09): the streets on the first turn of the loop, the
 # herd and the line on the second, never both in one turn. If one of them
 # cannot play here, or was not chosen, the other plays every turn.
+#
+# The camera comes early: it is the scene a passer-by can play with. The two
+# scenes that load the 7B vision model (the camera, the commentator) are
+# kept apart, and so are the two that put boxes on a picture.
 PLAYLIST: list[Slot] = [
     Entry("page-agent", page_agent),
+    Entry("camera", camera),
     Entry("expense-extraction", expense_extraction),
     (Entry("smart-city", smart_city), Entry("herd-and-line", herd_and_line)),
+    Entry("documents", documents),
     Entry("video-commentary", video_commentary),
-    Entry("seeing-and-answering", seeing_and_answering),
 ]

@@ -150,6 +150,21 @@ a new one or the deferred list, and moves its original wording to
   "Seeing and answering" plays, on a view of its own, with nothing held
   back. Watched in both languages on their own; not yet a whole turn of
   six scenes, nor a run of several hours.
+  *2026-10-11:* the user, having watched "Seeing and answering": "not very
+  convincing -- we can't really understand the principle behind the Q&A
+  part", and of the camera, "potentially engaging for people to be
+  interacting with". It is two scenes now. **Documents**: one question
+  asked of the model alone, then the folder read, then the same question
+  again, with the files marked as they are read and used (alone, the model
+  answers "the team's captain, on September 16, 2023"; with the files,
+  Priya Desai on September 17). **The camera**: the detector on the NPU
+  boxes the visitor at 31 frames a second while the vision model says in a
+  plain sentence what is going on -- and what it says of people is kept to
+  what they do, by a rule in code, the model having said "wearing glasses"
+  in every line whatever it was asked. Document Q&A's panel gained a
+  "Without the documents" tick for the same contrast by hand. Left: the
+  camera scene in front of visitors (it was tried on one person sitting at
+  the laptop), a whole turn of six, and the run of several hours.
 - [ ] **Street videos on disk for the city monitor, and what the detector makes of them.**
   Asked for by the user on 2026-10-09: a local video as the demo's default,
   for a stand and for manual use, retrieved by the installer from where it

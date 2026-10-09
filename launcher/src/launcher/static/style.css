@@ -1192,13 +1192,40 @@ body.stage-big .stage { --beat: clamp(22px, 2.25vw, 46px); }
 .sv-line p { margin: 2px 0 0; font-size: clamp(12.5px, 1vw, 20px); line-height: 1.35; color: var(--text-dim); }
 .sv-line:first-child p { color: var(--text); font-weight: 600; }
 
-/* Seeing and answering: the detector's picture beside the question and its answer. */
-.view-answer { grid-template-columns: minmax(0, 60fr) minmax(0, 40fr); gap: clamp(10px, 1.2vw, 20px); }
-.sv-qa > h3:not(:first-child) { margin-top: clamp(8px, 1.4vh, 18px); }
-.sv-question { margin: 0; font-size: clamp(13px, 1.05vw, 21px); line-height: 1.4; font-weight: 600; color: var(--text); }
+/* The camera: the same picture-and-lines layout as the commentator. */
+.view-camera { grid-template-columns: minmax(0, 66fr) minmax(0, 34fr); gap: clamp(10px, 1.2vw, 20px); }
+
+/* The documents: the folder's files, and one question asked twice. */
+.view-documents { grid-template-columns: minmax(0, 34fr) minmax(0, 66fr); gap: clamp(10px, 1.2vw, 20px); }
+.sv-files { flex: 1 1 0; min-height: 0; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: clamp(5px, 0.9vh, 12px); overflow: hidden; }
+.sv-files li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: clamp(6px, 1vh, 12px) clamp(8px, 0.8vw, 14px);
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  opacity: 0.55;
+  transition: opacity 0.5s ease, border-color 0.5s ease, background 0.5s ease;
+}
+.sv-file-name { font-size: clamp(12px, 0.95vw, 18px); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.sv-file-state { font-size: clamp(10.5px, 0.78vw, 14px); color: var(--text-faint); }
+.sv-files li.read { opacity: 0.85; border-style: solid; border-color: var(--border-strong); }
+.sv-files li.read .sv-file-state { color: var(--text-dim); }
+.sv-files li.used { opacity: 1; border-style: solid; border-color: var(--success); background: rgba(74, 222, 128, 0.08); }
+.sv-files li.used .sv-file-state { color: var(--success); font-weight: 600; }
+.sv-folder-note { margin: 8px 0 0; min-height: 2.7em; font-size: clamp(11px, 0.82vw, 15px); line-height: 1.35; color: var(--text-faint); }
+.sv-asks { gap: clamp(4px, 0.8vh, 10px); }
+.sv-ask { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; opacity: 0.6; transition: opacity 0.5s ease; }
+.sv-ask.on, .sv-ask[data-ask="alone"] { opacity: 1; }
+.sv-ask > h3 { display: flex; justify-content: space-between; gap: 10px; margin: 0 0 6px; font-size: clamp(11px, 0.85vw, 15px); font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-faint); }
+.sv-ask .sv-wait { margin: 4px 0 0; text-align: left; }
+.sv-read { margin: 0; min-height: 1.6em; padding: 2px 0; text-align: center; font-size: clamp(12px, 0.95vw, 18px); font-weight: 600; color: var(--accent-hover); }
+.sv-question { margin: 0 0 6px; font-size: clamp(13px, 1.05vw, 21px); line-height: 1.35; font-weight: 600; color: var(--text); }
 .sv-answer { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-.sv-answer-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: clamp(12.5px, 0.98vw, 19px); line-height: 1.45; color: var(--text); }
-.sv-sources { margin: 8px 0 0; min-height: 1.3em; font-size: clamp(11px, 0.82vw, 15px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint); }
+.sv-answer-text { margin: 0; padding-left: clamp(8px, 0.8vw, 14px); border-left: 3px solid var(--border-strong); white-space: pre-wrap; overflow-wrap: anywhere; font-size: clamp(12.5px, 1vw, 20px); line-height: 1.45; color: var(--text); }
+.sv-ask[data-ask="alone"] .sv-answer-text { border-left-color: var(--warning); }
+.sv-ask[data-ask="with"].on .sv-answer-text { border-left-color: var(--success); }
 
 /* The loop is on hold, and says so in the caption: over nothing the demo shows. */
 .stage-pill {

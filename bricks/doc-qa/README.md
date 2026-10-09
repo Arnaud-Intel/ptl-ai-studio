@@ -53,6 +53,17 @@ Run on Intel NPU via OpenVINO:
 uv run doc-qa ./my-notes --engine openvino --compute-device NPU
 ```
 
+**What the documents change.** In the launcher, tick "Without the
+documents" beside Ask and the question goes to the language model alone,
+with nothing to read; untick it and ask again. On the sample folder, "who
+makes the final go/no-go decision on the Lyon pilot, and on which date?"
+gets "the team's captain, on September 16, 2023" from the model alone --
+invented, and the same every time -- and "Priya Desai, on September 17"
+with the documents, which is what the decision log says. Other questions
+it declines alone ("I don't have that information"). The Auto Demo's
+"documents" scene is this contrast, played by itself.
+(`DocQASession.ask_alone`; `POST /api/doc-qa/ask` with `alone: true`.)
+
 Force a full rebuild of the index (a changed folder is noticed without it):
 
 ```bash

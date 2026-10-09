@@ -7,7 +7,9 @@ which an MJPEG stream reads from at its own pace.
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import asdict
+from typing import Iterator
 
 import cv2
 import numpy as np
@@ -17,6 +19,7 @@ from object_detection.types import Detection
 from pantherlake_ai_core.engine import Engine
 
 from . import activity, events, metrics, worker
+from .errors import Conflict
 
 _DEMO_ID = "object-detection"
 _JPEG_QUALITY = 80
@@ -28,7 +31,10 @@ class ObjectDetectionRunner:
         self._stop_event: threading.Event | None = None
         self._frame_lock = threading.Lock()
         self._latest_jpeg: bytes | None = None
+        self._latest_frame: np.ndarray | None = None  # as captured, without the boxes
+        self._frame_number = 0
         self._latest_detections: list[dict] = []
+        self.source: str | None = None  # what it is watching, while it runs
         self.error: str | None = None
 
     @property
@@ -52,8 +58,10 @@ class ObjectDetectionRunner:
         pipeline.frames_from(source, camera_index=camera_index, screen_index=screen_index, path=path, loop=loop).close()
 
         self.error = None
+        self.source = source
         with self._frame_lock:
             self._latest_jpeg = None
+            self._latest_frame = None
             self._latest_detections = []
         self._stop_event = threading.Event()
         stop_event = self._stop_event
@@ -68,6 +76,8 @@ class ObjectDetectionRunner:
                 return
             with self._frame_lock:
                 self._latest_jpeg = buf.tobytes()
+                self._latest_frame = frame
+                self._frame_number += 1
                 self._latest_detections = [asdict(d) for d in detections]
 
         def on_ready() -> None:
@@ -110,7 +120,24 @@ class ObjectDetectionRunner:
         self._thread = None
         with self._frame_lock:
             self._latest_jpeg = None
+            self._latest_frame = None
             self._latest_detections = []
+
+    def frames(self, stop_event: threading.Event | None = None, *, every: float = 0.1) -> Iterator[np.ndarray]:
+        """What it is watching, for a demo that watches the same thing (the
+        Video Commentator beside it on a camera, which only one of them can
+        open): the newest frame as captured, without the boxes, a few times
+        a second, until it stops or `stop_event` is set."""
+        if not self.running:
+            raise Conflict("Object Detection is not running: start it first, and this watches what it watches.")
+        seen = -1
+        while self.running and not (stop_event is not None and stop_event.is_set()):
+            with self._frame_lock:
+                frame, number = self._latest_frame, self._frame_number
+            if frame is not None and number != seen:
+                seen = number
+                yield frame
+            time.sleep(every)
 
     def latest_jpeg(self) -> bytes | None:
         with self._frame_lock:

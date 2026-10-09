@@ -400,3 +400,67 @@ def test_the_voice_clone_studio_lends_its_voice_without_claiming_the_work(monkey
     runner._engine = "openvino"
     assert runner.device == "NPU"
     assert not [entry for entry in activity.snapshot() if entry["demo_id"] == "voice-clone-studio"]  # the borrower shows it
+
+
+def test_it_watches_what_the_detector_watches_and_is_told_when_people_are_in_the_picture(running, monkeypatch):
+    web, run, said = running
+
+    class Detector:
+        running, source = False, None
+
+        def frames(self, stop_event=None):
+            yield np.zeros((720, 1280, 3), np.uint8)
+
+    detector = Detector()
+    monkeypatch.setattr(launcher_app, "object_detection_runner", detector)
+    refused = web.post("/api/video-commentary/start", json={"source": "detector"})
+    assert refused.status_code == 409 and "Object Detection is not running" in refused.json()["error"]
+    detector.running, detector.source = True, "webcam"
+    assert web.post("/api/video-commentary/start", json={"source": "detector", "mood": "plain", "voice": ""}).status_code == 200
+    assert said.wait(3)
+    # The detector's own frames, and -- it is a camera -- what people do, never what they look like.
+    assert run.settings["frames"] == detector.frames and run.settings["people"] is True
+    web.post("/api/video-commentary/stop")
+    # A video through the detector is not a camera, unless it is said to show people; a webcam of its own is one.
+    for body, people in (
+        ({"source": "detector"}, False), ({"source": "detector", "people": True}, True),
+        ({"source": "webcam"}, True), ({"source": "webcam", "people": False}, False),
+        ({"source": "file", "path": "x.mp4"}, False),
+    ):
+        detector.source = "file"
+        said.clear()
+        assert web.post("/api/video-commentary/start", json=body).status_code == 200
+        assert said.wait(3) and run.settings["people"] is people
+        web.post("/api/video-commentary/stop")
+
+
+def test_asked_about_people_the_vision_model_is_told_to_say_what_they_do_not_what_they_look_like():
+    assert "Do not describe them" in pipeline.SEE_PEOPLE_PROMPT and "what they are doing" in pipeline.SEE_PEOPLE_PROMPT
+    for word in ("age", "gender", "face", "glasses", "body", "clothes", "wear"):  # what is not named is fair game to it
+        assert word in pipeline.SEE_PEOPLE_PROMPT
+    assert pipeline.PEOPLE_STILL_SECONDS < pipeline.STILL_SECONDS  # somebody standing still is waiting to see what it says
+    assert pipeline.SEE_PROMPT in pipeline.SEE_PEOPLE_PROMPT  # the same question, with that added
+
+
+def test_what_people_look_like_is_taken_out_of_what_is_said_of_them():
+    """Asked not to, the vision model still said "wearing glasses" in every
+    line about the one person in front of the camera (2026-10-11). What it
+    says is cleaned of looks, or not said."""
+    clean = pipeline.about_what_they_do
+    # The lines it actually wrote, and what is said of them now.
+    assert clean("A person wearing glasses is taking a selfie indoors.") == "A person is taking a selfie indoors."
+    assert clean("A person wearing glasses stands indoors, looking up.") == "A person stands indoors, looking up."
+    assert clean("A person wearing glasses looks up while holding a camera.") == "A person looks up while holding a camera."
+    # Other ways of saying what somebody looks like.
+    assert clean("A young man in a blue shirt and a cap waves at the camera.") == "A person waves at the camera."
+    assert clean("An elderly woman with long grey hair holds up a red cup.") == "A person holds up a red cup."
+    assert clean("Two women dressed in dark suits, wearing lanyards, talk near a laptop.") == "Two people talk near a laptop."
+    assert clean("A man with a beard and a girl look at a phone.") == "A person and a person look at a phone."
+    assert clean("The bald man smiles.") == "The person smiles."
+    # What they do, hold or stand beside is left alone.
+    for line in ("A person holds up a book.", "People are crossing the street while cars wait at the traffic light.",
+                 "A person with a backpack walks across a snowy street.", "Two people shake hands in front of a stand."):
+        assert clean(line) == line
+    # A look that slipped through every rule: nothing is said, rather than that.
+    assert clean("A person, their hair tied back, reads a screen.") == ""
+    assert clean("A person adjusts their glasses.") == ""

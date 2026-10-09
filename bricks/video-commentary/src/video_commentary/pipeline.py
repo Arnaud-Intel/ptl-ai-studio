@@ -30,6 +30,7 @@ behind it.
 """
 from __future__ import annotations
 
+import re
 import threading
 import time
 from dataclasses import dataclass, replace
@@ -42,6 +43,55 @@ from pantherlake_ai_core import video
 from . import moods, voices
 
 SEE_PROMPT = "In one short sentence of at most 20 words, say what is happening in this picture. Only what can be seen."
+# For a camera that people stand in front of. A commentator says what
+# somebody is doing; what they look like is not its business, and a model
+# guessing at an age or a gender in front of the person is how a stand gets
+# remembered for the wrong thing (see the README: no mood judges anybody).
+#
+# Tried on the laptop's own camera (2026-10-11). It called its one subject
+# "a person" every time, and said every time that they were "wearing
+# glasses" -- three lines of three with glasses left out of the list, five
+# of five with glasses in it. Asking is not enough: `about_what_they_do`
+# takes out of the answer what the question did not keep out.
+SEE_PEOPLE_PROMPT = (
+    "In one short sentence of at most 20 words, say what is happening in this picture. Only what can be seen. "
+    "Call anyone in it 'a person' or 'people' and say only what they are doing or holding. "
+    "Do not describe them: nothing about their age, gender, face, hair, glasses, body, skin, clothes or anything they wear."
+)
+_WORN = (r"(?:sun)?glasses|spectacles|hat|cap|beanie|hood|shirt|t-shirt|tee|jacket|coat|dress|sweater|jumper|hoodie|suit|scarf|"
+         r"headphones|headset|earbuds|mask|jeans|trousers|pants|shorts|skirt|uniform|vest|blouse|clothes|clothing|outfit|"
+         r"necklace|earrings|lanyard|badge")
+# "wearing glasses", "dressed in a dark suit", "in a blue shirt and a cap", "with a beard", "with long hair"
+_WEARING = re.compile(
+    rf"(?P<lead>,)?\s+(?:who\s+(?:is|are)\s+)?(?:wearing|dressed\s+in|in)\s+(?:(?:a|an|the|some|his|her|their)\s+)?(?:[\w-]+\s+){{0,2}}?(?:{_WORN})(?:e?s)?"
+    # A clause taken out from between two commas takes both with it.
+    rf"(?:\s+and\s+(?:(?:a|an)\s+)?(?:[\w-]+\s+){{0,2}}?(?:{_WORN})(?:e?s)?)?\b(?(lead),?)", re.IGNORECASE)
+_WITH = re.compile(
+    rf"(?P<lead>,)?\s+with\s+(?:(?:a|an|his|her|their)\s+)?(?:[\w-]+\s+){{0,2}}?(?:(?:{_WORN})(?:e?s)?|beard|moustache|mustache|hair|ponytail|tattoos?)\b(?(lead),?)",
+    re.IGNORECASE)
+_SOMEBODY = r"(?:(?:young|old|older|elderly|middle-aged|bald|bearded|tall|short|little|blonde?)\s+)*"
+_ONE = re.compile(rf"\b(?:(an?)\s+)?{_SOMEBODY}(?:man|woman|boy|girl|lady|guy|gentleman|male|female)\b", re.IGNORECASE)
+_SEVERAL = re.compile(rf"\b{_SOMEBODY}(?:men|women|boys|girls|ladies|guys|gentlemen|males|females)\b", re.IGNORECASE)
+_LOOKS = re.compile(r"\b(?:wearing|wears|worn|dressed|hair|haired|beard|bearded|bald|skin|skinned|glasses|blonde?|brunette)\b", re.IGNORECASE)
+
+
+def about_what_they_do(line: str) -> str:
+    """A sentence about people, with what they look like taken out: what
+    they wear, what is on their face, whether they are a man or a woman,
+    young or old. What they are doing stays. A sentence that still speaks
+    of looks after that is not said at all ("" is returned): better a
+    camera that says nothing for four seconds than one that remarks on
+    somebody standing in front of it."""
+    text = _WITH.sub("", _WEARING.sub("", line))
+    text = _SEVERAL.sub("people", text)
+    text = _ONE.sub(lambda found: ("A person" if found.group(1)[0].isupper() else "a person") if found.group(1) else "person", text)
+    text = re.sub(r"\s{2,}", " ", text).replace(" ,", ",").replace(" .", ".").strip()
+    return "" if _LOOKS.search(text) else text
+
+
+# In front of a camera, somebody who has not moved is looked at again sooner
+# than a video that has not: they are waiting to see what it says of them.
+PEOPLE_STILL_SECONDS = 10.0
 # The frame as the vision model is shown it. Wider reads no better for this
 # question and costs time: 0.8 s at 448, 0.9 at 672, 1.3 at 1280.
 PICTURE_WIDTH = 672
@@ -222,6 +272,8 @@ def run(
     vision_device: str,
     mood_device: str,
     mood: Callable[[], str],
+    frames: Callable[[threading.Event], Iterator[np.ndarray]] | None = None,
+    people: bool = False,
     voice: Callable[[], str] = lambda: voices.OFF,
     clone: Callable[[str], voices.Speech] | None = None,
     every: float = EVERY_SECONDS,
@@ -240,6 +292,12 @@ def run(
     model ("vision"), the language model ("mood") and the voice ("voice")
     start and finish a piece of work, with how fast the finished one went.
 
+    `frames(stop)`, if given, is where the pictures come from instead of
+    `source`: another demo's camera, which only one of them can open. With
+    `people`, the vision model is asked what people are doing and never
+    what they look like (`SEE_PEOPLE_PROMPT`): for a camera somebody stands
+    in front of.
+
     `voice()` is asked for every line: "" and the line is only written,
     `voices.STUDIO` or `voices.CLONED` and `on_comment` is handed its speech
     with it -- the samples and their rate, for whoever is listening to play.
@@ -255,19 +313,25 @@ def run(
     # leaves, so that a video is never left playing to nobody.
     stop = threading.Event()
     moods.get(mood())  # an unknown mood is refused before anything loads
-    frames = frames_from(source, path=path, camera_index=camera_index, screen_index=screen_index, loop=loop, stop_event=stop)
+    if frames is not None:
+        pictures = frames(stop)
+    else:
+        pictures = frames_from(source, path=path, camera_index=camera_index, screen_index=screen_index, loop=loop, stop_event=stop)
     eyes = OpenVINOExtractor(device=vision_device, on_downloading=on_downloading)
-    wording = create_llm(Engine.OPENVINO, device=mood_device, on_downloading=on_downloading)
+    # The small model is loaded the first time a mood asks for it: a
+    # commentary kept plain from end to end never needs it.
+    wording: list = []
+    question = SEE_PEOPLE_PROMPT if people else SEE_PROMPT
 
     def see(picture: np.ndarray) -> str:
         on_work("vision", True, None)
         try:
-            text, stats = eyes.ask(picture, SEE_PROMPT, max_new_tokens=40)
+            text, stats = eyes.ask(picture, question, max_new_tokens=40)
         except Exception:
             on_work("vision", False, None)
             raise
         on_work("vision", False, stats)
-        return text
+        return about_what_they_do(text) if people else text
 
     def say(instruction: str, line: str) -> str:
         on_work("mood", True, None)
@@ -275,14 +339,16 @@ def run(
             # The likeliest words, not drawn ones: drawn, the same model put a
             # herd under a clear sky "at night", called its rider Buffalo Bill
             # and had stars twinkle above. It still embroiders; less.
-            text = wording.answer(instruction, line, max_tokens=48, sample=False)
+            if not wording:
+                wording.append(create_llm(Engine.OPENVINO, device=mood_device, on_downloading=on_downloading))
+            text = wording[0].answer(instruction, line, max_tokens=48, sample=False)
         except Exception:
             on_work("mood", False, None)
             raise
-        on_work("mood", False, getattr(wording, "last_stats", None))
+        on_work("mood", False, getattr(wording[0], "last_stats", None))
         return text
 
-    commentator = Commentator(see, say)
+    commentator = Commentator(see, say, still_seconds=PEOPLE_STILL_SECONDS if people else STILL_SECONDS)
     voiced = Voicing(
         voices.Speaker(clone=clone, on_downloading=on_downloading), voice, on_work=on_work, on_failed=on_voice_failed,
     )
@@ -292,7 +358,7 @@ def run(
 
     def play() -> None:
         try:
-            for frame in frames:
+            for frame in pictures:
                 if stop.is_set():
                     break
                 newest[0] = frame

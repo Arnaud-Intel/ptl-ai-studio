@@ -23,21 +23,26 @@ class DocQARunner:
         self._device: str | None = None
         self._lock = threading.Lock()
 
+    def _load(self, engine: str, device: str) -> None:
+        """The models, the first time or when the engine or the chip changes."""
+        if self._session is not None and self._engine == engine and self._device == device:
+            return
+        events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
+
+        def on_downloading() -> None:
+            events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine})...")
+
+        self._session = DocQASession(Engine(engine), device=device, on_downloading=on_downloading)
+        self._engine = engine
+        self._device = device
+
     def ingest(self, *, folder: str, engine: str, device: str, reindex: bool) -> tuple[int, str]:
         """Blocking -- loads the embedder/LLM the first time or when the
         engine/device changes, then (re)builds or loads the cached index."""
         with self._lock:
             activity.set_active(_DEMO_ID, engine=engine, device=device)
             try:
-                if self._session is None or self._engine != engine or self._device != device:
-                    events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
-
-                    def on_downloading() -> None:
-                        events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine})...")
-
-                    self._session = DocQASession(Engine(engine), device=device, on_downloading=on_downloading)
-                    self._engine = engine
-                    self._device = device
+                self._load(engine, device)
                 events.set_phase(_DEMO_ID, "running", "Indexing documents...")
                 count = self._session.ingest(folder, force=reindex)
                 events.clear_phase(_DEMO_ID)
@@ -61,16 +66,35 @@ class DocQARunner:
             "files": session.store.sources,
         }
 
-    def ask(self, *, question: str, top_k: int) -> Answer:
-        """Blocking."""
+    def ask(
+        self, *, question: str, top_k: int, alone: bool = False, engine: str | None = None, device: str | None = None,
+    ) -> Answer:
+        """Blocking. `alone`: the question is put to the language model with
+        no document in the conversation -- no folder need be indexed for
+        that, only the models loaded, which `engine` and `device` allow
+        when nothing is loaded yet."""
         with self._lock:
+            if alone and engine and device and self._session is None:
+                activity.set_active(_DEMO_ID, engine=engine, device=device)
+                try:
+                    self._load(engine, device)
+                except Exception as exc:
+                    events.set_phase(_DEMO_ID, "error", str(exc))
+                    activity.clear_active(_DEMO_ID)
+                    raise
             if self._session is None:
                 raise Conflict("Ingest a folder first.")
+            if not alone and self._session.store.size == 0:
+                # The models are there -- a question was asked of them alone -- and no folder is.
+                raise Conflict("Index a folder first: there are no documents to answer from yet.")
             activity.set_active(_DEMO_ID, engine=self._engine, device=self._device)
-            events.set_phase(_DEMO_ID, "running", "Answering...")
+            events.set_phase(_DEMO_ID, "running", "Answering without the documents..." if alone else "Answering...")
             live = generation.get(_DEMO_ID)
             try:
-                answer = self._session.ask(question, top_k=top_k, control=live.begin())
+                if alone:
+                    answer = self._session.ask_alone(question, control=live.begin())
+                else:
+                    answer = self._session.ask(question, top_k=top_k, control=live.begin())
             except Exception as exc:
                 events.set_phase(_DEMO_ID, "error", str(exc))
                 raise

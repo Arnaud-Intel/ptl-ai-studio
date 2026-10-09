@@ -160,3 +160,24 @@ def test_the_panel_is_offered_the_sample_videos(monkeypatch):
     told = TestClient(launcher_app.app).get("/api/object-detection/devices").json()
     assert told["samples"][0]["name"] == sample_videos.TORONTO.name and told["samples"][0]["default"] is True
     assert all(sample["kind"] == "file" and "ready" in sample for sample in told["samples"])
+
+
+def test_another_demo_can_watch_what_the_detector_watches_without_the_boxes(web, tmp_path):
+    """A camera is opened by one demo only: the Video Commentator beside the
+    detector is handed the detector's frames, as captured."""
+    client, _run, shown = web
+    runner = launcher_app.object_detection_runner
+    with pytest.raises(Exception, match="not running"):
+        next(runner.frames())
+    assert client.get("/api/object-detection/detections").json()["watching"] is False
+    clip = tmp_path / "street.mp4"
+    clip.write_bytes(b"not really a video")
+    client.post("/api/object-detection/start", json={"source": "file", "path": str(clip), "engine": "portable", "compute_device": "cpu"})
+    assert shown.wait(3) and runner.source == "file"
+    assert client.get("/api/object-detection/detections").json()["watching"] is True
+    stop = threading.Event()
+    frames = runner.frames(stop, every=0.01)
+    first = next(frames)
+    assert first.shape == (720, 1280, 3) and not first.any()  # the picture as captured: no box was drawn on it
+    stop.set()
+    assert list(frames) == []  # and it ends when it is told to, or when the detector stops

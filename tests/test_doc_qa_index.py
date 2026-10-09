@@ -190,3 +190,45 @@ def test_a_question_nothing_in_the_folder_is_close_to_is_not_given_to_the_model(
     answer = session.ask("What is the hotel limit?")
     assert answer.text == "Seen." and [hit.chunk.source for hit in answer.sources] == ["policy.md"]
     assert "Alex went to Lyon." not in session.llm.prompts[-1]
+
+
+def test_asked_alone_the_model_is_given_the_question_and_nothing_else(tmp_path, session):
+    """What the documents change is shown by asking without them: the same
+    model, the same question, no excerpt -- and no index needed for it."""
+    told = []
+    session.llm.answer = lambda system, prompt, **kwargs: told.append((system, prompt)) or "I do not have that information."
+    answer = session.ask_alone("Who decides on the Lyon pilot?")
+    assert told == [(pipeline.ALONE_PROMPT, "Who decides on the Lyon pilot?")]  # the question as asked, and nothing to read
+    assert answer.text == "I do not have that information." and answer.sources == []
+    # Asked with the documents afterwards, it is given the passages as before: one does not change the other.
+    session.ingest(_folder(tmp_path, **{"decision.md": "Priya Desai decides on September 17."}))
+    session.ask("Who decides on the Lyon pilot?")
+    assert "Priya Desai decides" in told[-1][1] and told[-1][0] != pipeline.ALONE_PROMPT
+
+
+def test_the_launcher_asks_alone_without_a_folder_and_says_which_way_it_answered(tmp_path, session, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from launcher import app as launcher_app
+    from launcher.doc_qa_runner import DocQARunner
+
+    monkeypatch.setattr(pipeline, "DocQASession", lambda *args, **kwargs: session, raising=False)
+    import launcher.doc_qa_runner as runner_module
+
+    monkeypatch.setattr(runner_module, "DocQASession", lambda *args, **kwargs: session)
+    monkeypatch.setattr(launcher_app, "doc_qa_runner", DocQARunner())
+    monkeypatch.setattr(launcher_app, "resolve", lambda engine, device, **kwargs: (Engine.OPENVINO, device or "CPU"))
+    web = TestClient(launcher_app.app)
+    # Nothing loaded, and nothing said about what to load: there is nobody to ask.
+    assert web.post("/api/doc-qa/ask", json={"question": "Who decides?", "alone": True}).status_code == 409
+    assert web.post("/api/doc-qa/ask", json={"question": "  ", "alone": True}).status_code == 400
+    alone = web.post("/api/doc-qa/ask", json={"question": "Who decides?", "alone": True, "engine": "openvino", "compute_device": "NPU"})
+    assert alone.status_code == 200 and alone.json()["alone"] is True and alone.json()["sources"] == []
+    assert session.llm.prompts == ["Who decides?"] and web.get("/api/doc-qa/status").json()["indexed"] is False
+    # With the documents, a folder is still needed first.
+    refused = web.post("/api/doc-qa/ask", json={"question": "Who decides?"})
+    assert refused.status_code == 409 and "Index a folder first" in refused.json()["error"]
+    folder = _folder(tmp_path, **{"decision.md": "Priya Desai decides on September 17."})
+    assert web.post("/api/doc-qa/ingest", json={"folder": str(folder), "engine": "openvino", "compute_device": "NPU"}).status_code == 200
+    answered = web.post("/api/doc-qa/ask", json={"question": "Who decides?"}).json()
+    assert answered["alone"] is False and [source["source"] for source in answered["sources"]] == ["decision.md"]

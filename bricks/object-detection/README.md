@@ -110,7 +110,9 @@ Press `Ctrl+C` to stop.
 ## What its proofing pass found (2026-10-10)
 
 The Auto Demo's "Seeing and answering" scene waited for this brick to be
-gone over. On the XPS 14, YOLO11s, through the launcher:
+gone over (the scene has since become "The camera sees you": the detector
+on the camera, with the Video Commentator watching the same frames, which
+the launcher's runner hands over as captured). On the XPS 14, YOLO11s, through the launcher:
 
 | Source | Integrated GPU | NPU | CPU |
 | --- | --- | --- | --- |
