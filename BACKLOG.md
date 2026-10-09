@@ -149,6 +149,35 @@ a new one or the deferred list, and moves its original wording to
   Also: the two Commons files are Commons' own 1080p encodes, which it may
   redo one day -- the checksum would then refuse them; a mirror the user
   hosts, added to `urls`, is the remedy. (filed 2026-10-09, user request)
+- [ ] **A second pair of videos for counting: a factory line, a herd.**
+  Asked for by the user on 2026-10-09, after the street pair: "a
+  manufacturing duo -- recognise items, count them, defects -- or sheep
+  counting or alike". Four openly licensed clips were fetched to a scratch
+  folder (not into the project) and put through the city monitor's detector
+  and tracker, one pass each:
+
+  | Clip | About | Boxes on screen | Frames with none | Counted | Mistaken for |
+  | --- | --- | --- | --- | --- | --- |
+  | Bottle capping machine (Commons, CC BY 3.0, 21 s, 1080p, 7.1 MB) | bottles | median 3 | 14% | 15 bottles | nothing |
+  | Cattle on a road (Commons, public domain, 28 s, 720p, 20.7 MB) | cows | median 8 | 9% | 90 cows, and the rider, horses, a dog | 1 elephant |
+  | Fruit on a conveyor (Intel sample-videos, CC BY 4.0, 61 s, 17.8 MB) | fruit | median 0 | 60% | 35 apples, 10 oranges, 9 bananas, 7 broccoli | vase, ball, bird, teddy bear |
+  | Sheep filing past (Commons, CC BY 3.0, 47 s, 640x480, 13.2 MB) | sheep | median 0 | 77% | 113 sheep | 122 "cows" |
+
+  The bottles and the cattle are good demos; the fruit comes one at a time
+  with an empty belt between, is counted several times over and plays at 60
+  frames a second, more than the NPU detects (49); the sheep clip is
+  hand-held and blurred, and half its sheep are called cows. Counts run
+  high everywhere (a track lost and found is counted twice): the herd is a
+  few dozen animals, not 90.
+  Not built: the brick counts street things only (`RELEVANT_LABELS`), so
+  playing these needs a notion of what a feed is counting -- a person on a
+  line is a worker, not a pedestrian. **Defects are out of this detector's
+  reach**: it names everyday objects, it does not judge them; Intel's bolt
+  clip is for a model trained for it (and MVTec, the usual defect set, is
+  non-commercial). Where each file is and its checksum, for the day this is
+  built: capping machine `upload.wikimedia.org/wikipedia/commons/a/ae/Capping_machine_in_action.webm`
+  (sha256 `eb8fc5e9...9ab2088`), cattle `.../commons/1/1a/Moving_cows_to_the_summer_range_%2842877666722%29.webm`
+  (sha256 `acc17d3a...8c8c1f`). (filed 2026-10-09, user request)
 - [ ] **Document Q&A was answering from passages drawn nearly by lot.**
   Found while replaying the stale-index report (R06). The embedding model,
   Qwen3-Embedding, is trained to be read at its last token; the pipeline
