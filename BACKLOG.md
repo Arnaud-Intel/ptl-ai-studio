@@ -133,11 +133,19 @@ a new one or the deferred list, and moves its original wording to
   a threshold of 0.25 the median person count rises from 1 to 5); Intel's
   own sample clip is an empty street most of the time (nothing in 63 frames
   of 108) and plays at 12 frames a second. So one of the three is a strong
-  demo, and the default pair shows it beside a crowd the detector mostly
-  cannot box. To settle: a second clip as good as the first (two candidates
-  on Wikimedia Commons were looked at but not fetched: "Traffic on
-  Slovenska street", CC BY 3.0, and a crossing in Tyumen, CC BY-SA 4.0),
-  or a detector that sees small people (a larger input, or tiles).
+  demo, and the default pair showed it beside a crowd the detector mostly
+  cannot box.
+  *Same day, settled:* two more clips from Wikimedia Commons were fetched
+  and measured with the brick's detector and tracker over one pass each. A
+  crossing in Tyumen (CC BY-SA 4.0, 31 s): a median of 9 boxes on screen,
+  never none, 80 things crossing the picture a minute. Slovenska street in
+  Ljubljana (CC BY 3.0, 54 s): 7, none in 1% of frames, 32 a minute, with
+  more kinds of thing (buses, cyclists). Toronto: 11, never none, 122.
+  Shibuya: 3, none in 28%, 27. Tyumen took Shibuya's place in the default
+  pair and in the Auto Demo; Shibuya stays in the list as an extra;
+  Slovenska was not kept. Tyumen is short: it plays twice and a bit in the
+  Auto Demo's seventy seconds, so its counts are of the same cars again.
+  Left: a detector that sees small people (a larger input, or tiles).
   Also: the two Commons files are Commons' own 1080p encodes, which it may
   redo one day -- the checksum would then refuse them; a mirror the user
   hosts, added to `urls`, is the remedy. (filed 2026-10-09, user request)

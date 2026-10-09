@@ -161,10 +161,13 @@ def _from_disk(video: sample_videos.SampleVideo) -> Sample:
 SAMPLES: list[Sample] = [
     Sample(
         name="Two streets, two chips",
-        description="Toronto on the GPU and Tokyo on the NPU at once, both played from this machine: "
-                    "no network needed, and both gauges light up.",
-        feeds=f"{sample_videos.TORONTO.path}|GPU\n{sample_videos.SHIBUYA.path}|NPU",
-        group=LOCAL, kind="file", videos=(sample_videos.TORONTO.key, sample_videos.SHIBUYA.key), default=True,
+        description="A crossing in Toronto on the NPU and one in Tyumen on the GPU at once, both played from "
+                    "this machine: no network needed, and both gauges light up.",
+        # Which on which was measured: the Tyumen clip is 30 frames a second,
+        # and in the whole pipeline the NPU held 27 of them; Toronto's 24 it
+        # holds in full, and the GPU has room for either.
+        feeds=f"{sample_videos.TORONTO.path}|NPU\n{sample_videos.TYUMEN.path}|GPU",
+        group=LOCAL, kind="file", videos=(sample_videos.TORONTO.key, sample_videos.TYUMEN.key), default=True,
     ),
     *[_from_disk(video) for video in sample_videos.VIDEOS],
 ] + [

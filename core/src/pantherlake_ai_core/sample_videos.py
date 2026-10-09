@@ -12,7 +12,7 @@ Each entry says under which licence its video may be passed on and whom to
 credit; `sample-data/videos/README.md` says the same beside the files.
 
 A file is used only if it is, byte for byte, the one that was looked at when
-it was chosen (size and SHA-256). Two of the three come from Wikimedia
+it was chosen (size and SHA-256). Two of the four come from Wikimedia
 Commons as its own 1080p version of the upload, which Commons is free to
 encode again one day: the checksum would then stop matching, and the remedy
 is a second address in `urls` -- they are tried in order -- for a copy that
@@ -67,10 +67,26 @@ TORONTO = SampleVideo(
     credit="Raysonho @ Open Grid Scheduler / Grid Engine, via Wikimedia Commons",
     source_page="https://commons.wikimedia.org/wiki/File:DiagonalCrosswalkYongeDundas.webm",
 )
+TYUMEN = SampleVideo(
+    key="tyumen-crossing",
+    name="Respubliki-Ordzhonikidze crossing, Tyumen",
+    description="A city crossing at street level in winter sun: a steady stream of cars, pedestrians waiting and crossing. 31 seconds, 1080p.",
+    filename="tyumen-crossing.webm",
+    # The upload itself, not a version made of it: this one cannot change.
+    urls=("https://upload.wikimedia.org/wikipedia/commons/8/8f/"
+          "Kruci%C4%9Do_de_stratoj_Respubliko_kaj_Or%C4%9Donikidze_%28Tjumeno%29.webm",),
+    size_bytes=10_360_605,
+    sha256="a9aa8b656a5cc0881f653cc4ca6ee21bc8060dcda0a96dc1a0cc5769b66aedea",
+    licence="CC BY-SA 4.0",
+    credit="RG72, via Wikimedia Commons",
+    source_page="https://commons.wikimedia.org/wiki/File:Kruci%C4%9Do_de_stratoj_Respubliko_kaj_Or%C4%9Donikidze_(Tjumeno).webm",
+)
+# Kept for what it shows of the detector's limits, not played by default: of
+# several hundred people seen from far above it boxes a handful (see below).
 SHIBUYA = SampleVideo(
     key="shibuya-crossing",
     name="Shibuya Crossing, Tokyo",
-    description="The scramble crossing from above, as a city camera sees it: a few hundred people at once, buses and vans. 59 seconds, 1080p.",
+    description="The scramble crossing from above: a few hundred people at once, of whom the detector boxes a handful. 59 seconds, 1080p.",
     filename="tokyo-shibuya-crossing.webm",
     urls=("https://upload.wikimedia.org/wikipedia/commons/transcoded/5/53/Shibuya_Crossing%2C_Tokyo%2C_Japan_%28video%29.webm/"
           "Shibuya_Crossing%2C_Tokyo%2C_Japan_%28video%29.webm.1080p.vp9.webm",),
@@ -95,7 +111,17 @@ INTEL_STREET = SampleVideo(
     source_page="https://github.com/intel-iot-devkit/sample-videos",
 )
 
-VIDEOS: tuple[SampleVideo, ...] = (TORONTO, SHIBUYA, INTEL_STREET)
+# In the order they are offered. The first two are what the city monitor
+# opens on and what the Auto Demo plays, chosen by measurement (2026-10-09,
+# the brick's own detector and tracker over one pass of each clip):
+#
+#                boxes on screen   frames with none   crossing the picture
+#   Toronto        median 11            0%               122 a minute
+#   Tyumen         median  9            0%                80 a minute
+#   (Ljubljana)    median  7            1%                32 a minute   <- looked at, not kept
+#   Shibuya        median  3           28%                27 a minute
+#   Intel sample   median  0           58%                 --
+VIDEOS: tuple[SampleVideo, ...] = (TORONTO, TYUMEN, SHIBUYA, INTEL_STREET)
 BY_KEY = {video.key: video for video in VIDEOS}
 
 

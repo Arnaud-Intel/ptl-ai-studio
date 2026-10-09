@@ -135,7 +135,7 @@ def test_a_stop_keeps_what_was_fetched_for_next_time(there):
 
 def test_every_video_says_where_it_comes_from_and_under_which_licence():
     readme = (Path(sample_videos.SAMPLE_ROOT) / "videos" / "README.md").read_text(encoding="utf-8")
-    assert len({video.key for video in sample_videos.VIDEOS}) == len(sample_videos.VIDEOS) == 3
+    assert len({video.key for video in sample_videos.VIDEOS}) == len(sample_videos.VIDEOS) == 4
     for video in sample_videos.VIDEOS:
         assert video.urls and all(url.startswith("https://") for url in video.urls)
         assert re.fullmatch(r"[0-9a-f]{64}", video.sha256) and video.size_bytes > 1_000_000
@@ -167,12 +167,15 @@ def test_the_videos_are_fetched_with_the_models_and_weigh_what_they_weigh(monkey
 def test_the_city_monitor_offers_its_own_videos_first_and_opens_on_two_of_them():
     usual = samples.SAMPLES[0]
     assert usual.default and usual.kind == "file" and usual.group == samples.LOCAL
-    assert usual.feeds == f"{sample_videos.TORONTO.path}|GPU\n{sample_videos.SHIBUYA.path}|NPU"
+    # The two the detector does best on, by measurement (the table in sample_videos): and they come first.
+    assert usual.feeds == f"{sample_videos.TORONTO.path}|NPU\n{sample_videos.TYUMEN.path}|GPU"
+    assert sample_videos.VIDEOS[:2] == (sample_videos.TORONTO, sample_videos.TYUMEN)
     assert [sample.default for sample in samples.SAMPLES].count(True) == 1
     alone = [sample for sample in samples.SAMPLES if sample.kind == "file" and len(sample.videos) == 1]
     assert [sample.videos[0] for sample in alone] == [video.key for video in sample_videos.VIDEOS]
     # Whoever is credited is credited where the sample is chosen.
-    assert "Basile Morin" in alone[1].description and "CC BY-SA 4.0" in alone[1].description
+    assert "RG72" in alone[1].description and "CC BY-SA 4.0" in alone[1].description
+    assert "Basile Morin" in alone[2].description
     # A feed playing one of them is called by its name, not by a file name.
     assert sources.display_name(str(sample_videos.SHIBUYA.path)) == "Shibuya Crossing, Tokyo"
     assert sources.display_name(r"C:\videos\crossing.mp4") == "crossing.mp4"
@@ -184,6 +187,7 @@ def test_the_page_is_told_which_videos_are_still_to_be_fetched(monkeypatch):
     by_name = {sample["name"]: sample for sample in listed}
     assert by_name["Yonge-Dundas crossing, Toronto"]["ready"] is True
     assert by_name["Shibuya Crossing, Tokyo"]["ready"] is False and by_name["Two streets, two chips"]["ready"] is False
+    assert by_name["Respubliki-Ordzhonikidze crossing, Tyumen"]["ready"] is False
     assert "ready" not in by_name["Westminster Bridge, London"]  # a camera on the network has nothing to fetch
 
 
