@@ -205,6 +205,67 @@
         </div>
       </section>
 
+      <!-- video-commentary -->
+      <section id="vidcom-panel" class="brick-panel" hidden>
+        <div class="controls">
+          <label class="field">
+            <span>Watch</span>
+            <select id="vidcom-source">
+              <option value="file">A video file</option>
+              <option value="webcam">Webcam</option>
+              <option value="screen">Screen capture</option>
+            </select>
+          </label>
+          <label class="field" id="vidcom-device-field" hidden>
+            <span>Source device</span>
+            <select id="vidcom-source-device"></select>
+          </label>
+          <label class="field" id="vidcom-sample-field">
+            <span>Sample video</span>
+            <select id="vidcom-sample" class="sample-picker">
+              <option value="">Pick one, or type a path...</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Mood</span>
+            <select id="vidcom-mood" title="The voice of the comments. It can be changed while the video plays."></select>
+          </label>
+          <label class="field">
+            <span>Sees on</span>
+            <select id="vidcom-vision-device" title="Where the vision model reads the picture."></select>
+          </label>
+          <label class="field">
+            <span>Says on</span>
+            <select id="vidcom-mood-device" title="Where the small language model gives the line its mood."></select>
+          </label>
+          <label class="field field-wide" id="vidcom-path-field">
+            <span>Video file on this machine</span>
+            <input id="vidcom-path" type="text" placeholder="C:\videos\street.mp4" autocomplete="off" />
+          </label>
+        </div>
+        <div class="run-row">
+          <button id="vidcom-start" class="btn btn-primary" type="button">Start</button>
+          <button id="vidcom-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
+          <span id="vidcom-status" class="run-status" role="status" aria-live="polite">Idle</span>
+        </div>
+        <p class="field-help">The mood can be changed while the video plays. Under each line in a mood is what was actually seen.</p>
+        <div class="media-layout">
+          <div class="vidcom-stage">
+            <div class="video-frame">
+              <img id="vidcom-video" alt="The video being watched" />
+              <p class="placeholder">Press Start to watch the video here, with its commentary under it.</p>
+            </div>
+            <div id="vidcom-caption" class="vidcom-caption" aria-live="polite" hidden>
+              <p id="vidcom-said" class="vidcom-said"></p>
+              <p id="vidcom-seen" class="vidcom-seen"></p>
+            </div>
+          </div>
+          <div id="vidcom-log" class="output">
+            <p class="placeholder">The comments will be listed here as they come.</p>
+          </div>
+        </div>
+      </section>
+
       <!-- smart-city-monitor -->
       <section id="smartcity-panel" class="brick-panel" hidden>
         <fieldset id="smartcity-feed-set" class="feed-set">

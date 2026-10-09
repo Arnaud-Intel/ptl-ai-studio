@@ -900,6 +900,28 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
   line-height: 1.7;
 }
 
+/* --- Video commentator: the line under the picture, and the list of them ------- */
+/* The line sits on the picture, as a subtitle does: what is said and what
+   is shown are read in one look. */
+.vidcom-stage { position: relative; min-width: 0; }
+.vidcom-caption {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent-hover);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.78);
+}
+.vidcom-said { margin: 0; font-size: 18px; line-height: 1.4; font-weight: 600; color: var(--text); }
+.vidcom-seen { margin: 5px 0 0; font-size: 12px; line-height: 1.4; color: var(--text-dim); }
+.vidcom-seen:empty { display: none; }
+.vidcom-entry { padding: 9px 0; border-top: 1px solid var(--border); }
+.vidcom-entry:first-child { border-top: none; padding-top: 0; }
+.vidcom-entry-said { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--text); }
+.vidcom-entry-meta { margin: 3px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--text-faint); }
+
 /* --- Start screen, and the Auto Demo's stage ------------------------------------ */
 /* Both take the whole window: the studio's header, footer and hardware panel
    belong to the demos one drives. */

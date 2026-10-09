@@ -1782,6 +1782,132 @@ const PANELS = {
     },
   }),
 
+  // A model watches a video and says what is happening; another gives the
+  // line a mood. The mood is the one control left alive while it runs.
+  "video-commentary": new StreamPanel({
+    id: "video-commentary",
+    prefix: "vidcom",
+    transport: "mjpeg",
+    video: "vidcom-video",
+    statusKey: "video-commentary",
+    controls: ["vidcom-source", "vidcom-source-device", "vidcom-sample", "vidcom-path", "vidcom-vision-device", "vidcom-mood-device"],
+    lastComment: 0,
+    moodNames: {},
+    populate(data) {
+      const devices = data.openvino_devices || [];
+      const auto = data.auto_devices || {};
+      const fill = (id, key, allowed) =>
+        fillSelect(el(id), [
+          { value: "AUTO", label: auto[key] ? `Auto (${autoDeviceName(auto[key])})` : deviceLabel("AUTO") },
+          ...devices.filter(allowed).map((d) => ({ value: d, label: deviceLabel(d) })),
+        ]);
+      // The vision model does not compile for the NPU on this hardware.
+      fill("vidcom-vision-device", "vision", (d) => !d.toUpperCase().startsWith("NPU"));
+      fill("vidcom-mood-device", "mood", () => true);
+      fillSelect(el("vidcom-mood"), (data.moods || []).map((mood) => ({ value: mood.key, label: mood.name })));
+      this.moodNames = Object.fromEntries((data.moods || []).map((mood) => [mood.key, mood.name]));
+      if (data.default_mood) el("vidcom-mood").value = data.default_mood;
+      el("vidcom-mood").addEventListener("change", () => {
+        // While it runs, the next comment is in the new voice; before, it is just the choice Start will send.
+        if (this.running) postJSON("/api/video-commentary/mood", { mood: el("vidcom-mood").value }).catch(() => {});
+      });
+
+      const source = el("vidcom-source");
+      const showSource = () => {
+        const file = source.value === "file";
+        el("vidcom-path-field").hidden = !file;
+        el("vidcom-sample-field").hidden = !file;
+        el("vidcom-device-field").hidden = file;
+        if (file) return;
+        const items =
+          source.value === "webcam"
+            ? (data.cameras || []).map((index) => ({ value: String(index), label: `Camera ${index}` }))
+            : (data.screens || []).map((s) => ({ value: String(s.index), label: `Screen ${s.index} (${s.width}x${s.height})` }));
+        fillSelect(el("vidcom-source-device"), items.length ? items : [{ value: "", label: source.value === "webcam" ? "No camera found" : "No screen found" }]);
+      };
+      source.addEventListener("change", showSource);
+      showSource();
+
+      const samples = data.samples || [];
+      const picker = el("vidcom-sample");
+      for (const sample of samples) {
+        picker.appendChild(option(sample.name, sample.name + (sample.ready === false ? " (fetched the first time it is started)" : "")));
+      }
+      picker.title = samples.map((sample) => `${sample.name}: ${sample.description}`).join("\n");
+      picker.addEventListener("change", () => {
+        const sample = samples.find((entry) => entry.name === picker.value);
+        if (sample) el("vidcom-path").value = sample.path;
+      });
+      // The panel opens ready to run, on a video kept on this machine.
+      const usual = samples.find((sample) => sample.default);
+      if (usual && !el("vidcom-path").value) {
+        el("vidcom-path").value = usual.path;
+        picker.value = usual.name;
+      }
+      if (!devices.length) {
+        el("vidcom-start").disabled = true;
+        this.setStatus("The commentator needs the OpenVINO engine, which is not installed here.", "error");
+      }
+    },
+    body() {
+      const source = el("vidcom-source").value;
+      const device = el("vidcom-source-device").value;
+      const path = el("vidcom-path").value.trim();
+      if (source === "file" && !path) throw new Error("Choose a sample video, or give the path of a video file.");
+      return {
+        source,
+        path,
+        camera_index: source === "webcam" ? Number(device || 0) : 0,
+        screen_index: source === "screen" ? Number(device || 1) : 1,
+        vision_device: el("vidcom-vision-device").value,
+        mood_device: el("vidcom-mood-device").value,
+        mood: el("vidcom-mood").value,
+      };
+    },
+    onRunning(isRunning) {
+      const log = el("vidcom-log");
+      const caption = el("vidcom-caption");
+      if (!isRunning) {
+        caption.hidden = true;
+        return; // the list stays: what was said is still worth reading once it has stopped
+      }
+      this.lastComment = 0;
+      showPlaceholder(log, "The comments will be listed here as they come.");
+      this.every(700, async () => {
+        try {
+          const data = await fetchJSON(`/api/video-commentary/comments?after=${this.lastComment}`);
+          if (data.error) {
+            this.setStatus(`Error: ${data.error}`, "error");
+            this.setRunning(false);
+            return;
+          }
+          // A mood changed from another page, or kept from before a reload.
+          if (data.mood && document.activeElement !== el("vidcom-mood")) el("vidcom-mood").value = data.mood;
+          for (const comment of data.comments || []) {
+            if (!this.lastComment) log.replaceChildren();
+            this.lastComment = comment.number;
+            const plain = comment.said === comment.seen;
+            el("vidcom-said").textContent = comment.said;
+            el("vidcom-seen").textContent = plain ? "" : `Seen: ${comment.seen}`;
+            caption.hidden = false;
+            const took = `${comment.seeing_seconds.toFixed(1)} s to see` + (plain ? "" : ` + ${comment.saying_seconds.toFixed(1)} s to say`);
+            const entry = document.createElement("div");
+            entry.className = "vidcom-entry";
+            entry.innerHTML =
+              `<p class="vidcom-entry-said">${escapeHtml(comment.said)}</p>` +
+              `<p class="vidcom-entry-meta">${escapeHtml(this.moodNames[comment.mood] || comment.mood)} · ${escapeHtml(took)}` +
+              (plain ? "" : `<br />Seen: ${escapeHtml(comment.seen)}`) +
+              `</p>`;
+            log.prepend(entry);
+            while (log.children.length > 30) log.lastChild.remove();
+          }
+        } catch {
+          // Best-effort -- a missed look shouldn't interrupt the video.
+        }
+      });
+    },
+  }),
+
   "smart-city-monitor": new StreamPanel({
     id: "smart-city-monitor",
     prefix: "smartcity",

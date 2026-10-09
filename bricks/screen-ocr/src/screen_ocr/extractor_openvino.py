@@ -76,24 +76,30 @@ class OpenVINOExtractor:
         with npu.guard(self.device):
             self.pipeline = ov_genai.VLMPipeline(resolved_dir, self.device, **ov_config_for(self.device))
 
-    def extract(
-        self, image: np.ndarray, translate: bool = False, control: GenerationControl | None = None
-    ) -> ExtractionResult:
+    def ask(
+        self, image: np.ndarray, prompt: str, *, max_new_tokens: int = 512, control: GenerationControl | None = None
+    ) -> tuple[str, GenerationStats | None]:
+        """What the model answers when shown `image` (BGR, as OpenCV has it)
+        and asked `prompt`. Reading text is one question among others: a
+        brick that wants the picture described asks through here rather
+        than load the same 7B model a second time (video-commentary does)."""
         import openvino as ov
 
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         tensor = ov.Tensor(np.ascontiguousarray(rgb))
-
-        prompt = _TRANSLATE_PROMPT if translate else _EXTRACT_PROMPT
         streaming, was_cancelled = {}, lambda: False
         if control is not None:
             import openvino_genai as ov_genai
 
             streaming["streamer"], was_cancelled = openvino_streamer(control, ov_genai, self.pipeline.get_tokenizer())
         with npu.guard(self.device):
-            result = self.pipeline.generate(prompt, images=[tensor], max_new_tokens=512, **streaming)
-        text = result.texts[0].strip()
-        stats = GenerationStats.from_openvino(result, self.device, cancelled=was_cancelled())
+            result = self.pipeline.generate(prompt, images=[tensor], max_new_tokens=max_new_tokens, **streaming)
+        return result.texts[0].strip(), GenerationStats.from_openvino(result, self.device, cancelled=was_cancelled())
+
+    def extract(
+        self, image: np.ndarray, translate: bool = False, control: GenerationControl | None = None
+    ) -> ExtractionResult:
+        text, stats = self.ask(image, _TRANSLATE_PROMPT if translate else _EXTRACT_PROMPT, control=control)
 
         if translate:
             return ExtractionResult(text="", regions=[], translated_text=text, stats=stats)

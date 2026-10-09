@@ -287,6 +287,25 @@ REGISTRY: list[Demo] = [
         experimental=True,
     ),
     Demo(
+        id="video-commentary",
+        name="Video Commentator",
+        category="Vision",
+        tagline="A model watches a video and says what is happening -- in the mood you pick.",
+        description=(
+            "Experimental. A vision-language model looks at a video every few seconds and says in one "
+            "plain sentence what is happening; a small language model says it again in the mood you "
+            "choose -- upbeat, a sports commentator, a nature documentary, deadpan. Two models on two "
+            "chips: the picture is read on a GPU, the voice is given on the NPU, and the mood can "
+            "change while the video plays. What was actually seen stays on screen beside what is "
+            "said: the small model embroiders."
+        ),
+        engines=["openvino"],
+        status="available",
+        devices=("cameras", "screens"),
+        samples="video_commentary.samples",
+        experimental=True,
+    ),
+    Demo(
         id="smart-recall",
         name="Local Screen Memory",
         category="Productivity",

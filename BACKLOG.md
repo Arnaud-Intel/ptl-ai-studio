@@ -149,6 +149,34 @@ a new one or the deferred list, and moves its original wording to
   Also: the two Commons files are Commons' own 1080p encodes, which it may
   redo one day -- the checksum would then refuse them; a mirror the user
   hosts, added to `urls`, is the remedy. (filed 2026-10-09, user request)
+- [ ] **Video Commentator, experimental: a video watched and commented on in a mood.**
+  Asked for by the user on 2026-10-09 ("video commentary with a gentle
+  twist of mood... maybe a fashion judgment one too"). Measured first, on
+  the XPS 14: the vision model the studio already has (Qwen2.5-VL 7B) says
+  what is happening in a frame in 0.8 to 1.0 s on the integrated GPU (25
+  tok/s, first word after 0.2 s, a frame 672 wide; no better read at 1280,
+  and 1.3 s), and Qwen2.5-1.5B gives the line a mood in 0.5 to 0.8 s on the
+  NPU. Asked for the mood directly, the vision model writes the same plain
+  sentence with "bustling" in it, which is why there are two models.
+  Built: the brick (`bricks/video-commentary`, composing screen-ocr and
+  doc-qa, no model of its own), five moods, the studio's sample videos, a
+  webcam or the screen, the mood changed while it plays, a line every four
+  seconds, quiet while nothing changes. In the app: first line 14 s after
+  Start, then 0.9 s to see and 0.7 s to say, both chips on their own rows.
+  What it does not do well yet: the small model embroiders in a mood (a
+  rider becomes "brave cowboys", a herd goes "to market") -- the plain line
+  is shown under each for that reason; "deadpan" is barely a voice; a line
+  is about a second and a half behind the picture.
+  **Not built, and not to be built as one more mood: the fashion judge.**
+  A machine passing judgement on how real people look, at a company's
+  stand, goes wrong in ways a bottle counter does not (it drifts from
+  clothes to bodies, age, dress worn for faith; and a camera that judges
+  visitors is not one that counts them -- worth a word with legal first).
+  A version that could be shown: asked for by the person, one still, about
+  the clothes and colours only, kind only, nothing kept; or on outfits and
+  not on people. Also open: speaking the line (the voice brick exists), a
+  scene on the Auto Demo's stage, and Qwen3-8B on the NPU for a voice that
+  keeps to the facts. (filed 2026-10-09, user request)
 - [ ] **A second pair of videos for counting: a factory line, a herd.**
   Asked for by the user on 2026-10-09, after the street pair: "a
   manufacturing duo -- recognise items, count them, defects -- or sheep

@@ -85,6 +85,7 @@ from .smart_recall_runner import SmartRecallRunner
 from .telemetry_poller import TelemetryPoller
 from .voice_assistant_runner import VoiceAssistantRunner
 from .voice_clone_studio_runner import VoiceCloneStudioRunner
+from .video_commentary_runner import VideoCommentaryRunner
 from .webcam_effects_runner import WebcamEffectsRunner
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -291,6 +292,7 @@ smart_city_monitor_runner = SmartCityMonitorRunner()
 screen_ocr_runner = ScreenOcrRunner()
 meeting_notes_runner = MeetingNotesRunner()
 webcam_effects_runner = WebcamEffectsRunner()
+video_commentary_runner = VideoCommentaryRunner()
 voice_clone_studio_runner = VoiceCloneStudioRunner()
 voice_assistant_runner = VoiceAssistantRunner()
 expense_extract_runner = ExpenseExtractRunner()
@@ -398,6 +400,7 @@ _STOPPABLE = {
     "voice-assistant": voice_assistant_runner,
     "expense-extract": expense_extract_runner,
     "smart-recall": smart_recall_runner,
+    "video-commentary": video_commentary_runner,
 }
 _UNLOADABLE = {
     "doc-qa": doc_qa_runner,
@@ -506,6 +509,14 @@ def demo_devices(demo_id: str) -> JSONResponse:
         if payload["openvino_devices"]:
             # What "Auto" means for these two, so the menu can say it: the NPU when there is one.
             payload["auto_device"] = resolve(Engine.OPENVINO.value, None, prefer_npu=True)[1]
+    if demo_id == "video-commentary":
+        from video_commentary import moods as commentary_moods
+
+        payload["moods"] = [{"key": mood.key, "name": mood.name} for mood in commentary_moods.MOODS]
+        payload["default_mood"] = commentary_moods.DEFAULT
+        if payload["openvino_devices"]:
+            # What "Auto" means for each of its two models, so the menus can say it.
+            payload["auto_devices"] = dict(zip(("vision", "mood"), _video_commentary_devices(None, None)))
     if demo_id == "page-agent" and payload["openvino_devices"]:
         # Who does what when every chip is left to the conductor, so the menus can say it.
         payload["auto_assignment"] = asdict(_page_agent_assignment(None, None, None))
@@ -705,19 +716,17 @@ class SmartCityMonitorStartRequest(BaseModel):
     loop: bool = True
 
 
-def _fetch_street_videos(wanted: list[tuple[str, sample_videos.SampleVideo]]) -> None:
-    """A feed set to one of the sample videos, on a machine that has not
+def _fetch_sample_videos(demo_id: str, wanted: list[tuple[str | None, sample_videos.SampleVideo]]) -> None:
+    """A demo pointed at one of the sample videos, on a machine that has not
     fetched it yet: fetched now, the way a model is at its first use, and
-    said on the feed that waits for it."""
-    for feed_id, video in wanted:
+    said on the stage that waits for it (a feed, or the demo itself)."""
+    for stage, video in wanted:
         megabytes = video.size_bytes / 1e6
-        events.set_phase(
-            "smart-city-monitor", "loading", f"Downloading {video.name} (first use only, {megabytes:.0f} MB)...", stage=feed_id
-        )
+        events.set_phase(demo_id, "loading", f"Downloading {video.name} (first use only, {megabytes:.0f} MB)...", stage=stage)
         try:
             sample_videos.download(video)
         finally:
-            events.clear_phase("smart-city-monitor", stage=feed_id)
+            events.clear_phase(demo_id, stage=stage)
 
 
 def _smart_city_feed_json(feed: SmartCityFeedSpec) -> dict[str, Any]:
@@ -770,7 +779,7 @@ async def start_smart_city_monitor(req: SmartCityMonitorStartRequest) -> JSONRes
             if (video := sample_videos.for_path(feed.path)) is not None and not sample_videos.present(video)
         ]
         if missing:
-            await run_in_threadpool(_fetch_street_videos, missing)
+            await run_in_threadpool(_fetch_sample_videos, "smart-city-monitor", missing)
         smart_city_monitor_runner.start(feeds=feeds, engine=default_engine, loop=req.loop)
     except Exception as exc:
         return error_response(exc)
@@ -832,6 +841,82 @@ def smart_city_monitor_counts() -> JSONResponse:
 @app.get("/api/smart-city-monitor/stream")
 def smart_city_monitor_stream(feed: str) -> Response:
     return mjpeg_stream(lambda: smart_city_monitor_runner.latest_jpeg(feed), lambda: smart_city_monitor_runner.running)
+
+
+# --- video-commentary -------------------------------------------------------------
+
+
+def _video_commentary_devices(vision: str | None, mood: str | None) -> tuple[str, str]:
+    """Where its two models run: the vision model on a GPU -- the integrated
+    one unless another is asked for, which is where a line was measured at
+    0.9 s -- and the language model on the NPU when there is one. The vision
+    model does not compile for the NPU on this hardware (screen-ocr's README)."""
+    _, sees = resolve(Engine.OPENVINO.value, vision if vision and vision.upper() != "AUTO" else None)
+    if npu.is_npu(sees):
+        raise ValueError("The vision model does not run on the NPU: choose a GPU, or the CPU, for it.")
+    _, says = resolve(Engine.OPENVINO.value, mood if mood and mood.upper() != "AUTO" else None, prefer_npu=True)
+    return sees, says
+
+
+class VideoCommentaryStartRequest(BaseModel):
+    source: str = "file"  # "file", "webcam" or "screen"
+    path: str = ""
+    camera_index: int = 0
+    screen_index: int = 1
+    loop: bool = True
+    vision_device: str | None = None
+    mood_device: str | None = None
+    mood: str | None = None
+    every: float = 4.0  # seconds between two looks at the picture
+
+
+class VideoCommentaryMoodRequest(BaseModel):
+    mood: str
+
+
+@app.post("/api/video-commentary/start")
+async def start_video_commentary(req: VideoCommentaryStartRequest) -> JSONResponse:
+    try:
+        if req.source not in ("file", "webcam", "screen"):
+            raise ValueError(f"unknown source '{req.source}': one of file, webcam, screen")
+        sees, says = _video_commentary_devices(req.vision_device, req.mood_device)
+        path = req.path.strip()
+        video_file = sample_videos.for_path(path) if req.source == "file" and path else None
+        if video_file is not None and not sample_videos.present(video_file) and not video_commentary_runner.running:
+            await run_in_threadpool(_fetch_sample_videos, "video-commentary", [(None, video_file)])
+        video_commentary_runner.start(
+            source=req.source, path=path, camera_index=req.camera_index, screen_index=req.screen_index, loop=req.loop,
+            vision_device=sees, mood_device=says, mood=req.mood or video_commentary_runner.mood,
+            every=min(max(req.every, 2.0), 30.0),
+        )
+    except Exception as exc:
+        return error_response(exc)
+    return JSONResponse({"status": "started", "devices": {"vision": sees, "mood": says}, "mood": video_commentary_runner.mood})
+
+
+@app.post("/api/video-commentary/stop")
+async def stop_video_commentary() -> JSONResponse:
+    await run_in_threadpool(video_commentary_runner.stop)
+    return JSONResponse({"status": "stopped"})
+
+
+@app.post("/api/video-commentary/mood")
+def video_commentary_mood(req: VideoCommentaryMoodRequest) -> JSONResponse:
+    """The voice of the next comment on: it can change while the video plays."""
+    try:
+        return JSONResponse({"mood": video_commentary_runner.set_mood(req.mood)})
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/api/video-commentary/comments")
+def video_commentary_comments(after: int = 0) -> JSONResponse:
+    return JSONResponse({"comments": video_commentary_runner.comments(after), **video_commentary_runner.state()})
+
+
+@app.get("/api/video-commentary/stream")
+def video_commentary_stream() -> Response:
+    return mjpeg_stream(video_commentary_runner.latest_jpeg, lambda: video_commentary_runner.running)
 
 
 # --- screen-ocr -------------------------------------------------------------------

@@ -658,7 +658,9 @@ def client(monkeypatch, tmp_path):
 def test_the_card_says_experimental_and_the_menus_are_told_what_auto_means(client):
     demo = next(d for d in client.get("/api/demos").json() if d["id"] == "page-agent")
     assert demo["experimental"] is True and demo["status"] == "available" and demo["engines"] == ["openvino"]
-    assert all(d["experimental"] is False for d in client.get("/api/demos").json() if d["id"] != "page-agent")
+    # The two bricks still finding their shape say so; nothing else does.
+    experimental = {d["id"] for d in client.get("/api/demos").json() if d["experimental"]}
+    assert experimental == {"page-agent", "video-commentary"}
     devices = client.get("/api/page-agent/devices").json()
     assert devices["auto_assignment"] == {"planner": "NPU", "images": "GPU.0", "page": "GPU.1", "together": True}
     assert len(devices["samples"]) >= 3 and all(sample["prompt"] for sample in devices["samples"])

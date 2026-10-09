@@ -88,6 +88,13 @@ local_demo/
         checks.py / repeats.py    <- what is verified about the page, and how a repeated or missing picture is mended
         runaway.py                <- stops a page that has started writing the same rules over and over
         cli.py
+    video-commentary/          <- EXPERIMENTAL: a video watched and commented on (two-bricks-asked-a-new-question template)
+      pyproject.toml
+      src/video_commentary/
+        pipeline.py               <- when there is something new to say, and saying it: screen-ocr's vision model
+                                     asked what is happening, doc-qa's language model asked to say it in a mood
+        moods.py                  <- the voices, and why none of them judges the people in the picture
+        cli.py
     <next-brick>/
       pyproject.toml
       src/<next_brick>/
