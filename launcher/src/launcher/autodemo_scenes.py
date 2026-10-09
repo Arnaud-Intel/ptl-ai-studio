@@ -212,17 +212,27 @@ def expense_extraction(stand: Stand, loop: int) -> Scene | Skip:
 def smart_city(stand: Stand, loop: int) -> Scene | Skip:
     say = lambda english, french: _say(stand, english, french)  # noqa: E731
     title = say("Street cameras, one per chip", "Des caméras de rue, une par puce")
-    if not stand.internet:
-        return Skip(title, "needs the internet for its live street cameras")
     if not stand.igpu:
         return Skip(title, "needs a GPU")
-    # The traffic-camera clips: plain video files, where the live streams
-    # need a video site to let the laptop in.
-    clips = [s for s in stand.samples("smart-city-monitor")
-             if s.get("group") != "YouTube" and "|" not in str(s.get("feeds", "")) and "\n" not in str(s.get("feeds", ""))]
-    if len(clips) < 2:
-        return Skip(title, "fewer than two street-camera sources to choose from")
-    first, second = clips[(loop - 1) % len(clips)], clips[loop % len(clips)]
+    single = [s for s in stand.samples("smart-city-monitor")
+              if "|" not in str(s.get("feeds", "")) and "\n" not in str(s.get("feeds", ""))]
+    # The street videos kept on this machine, when they have been fetched:
+    # full pictures, people as well as cars, and no network to depend on.
+    # The first two, which are the two in high definition; each turn of the
+    # loop they change chips.
+    on_disk = [s for s in single if s.get("kind") == "file" and s.get("ready")][:2]
+    from_disk = len(on_disk) == 2
+    if from_disk:
+        first, second = on_disk if loop % 2 else reversed(on_disk)
+    else:
+        if not stand.internet:
+            return Skip(title, "needs its street videos fetched (Prepare models), or the internet for live cameras")
+        # The traffic-camera clips: plain video files, where the live streams
+        # need a video site to let the laptop in.
+        clips = [s for s in single if s.get("kind") != "file" and s.get("group") != "YouTube"]
+        if len(clips) < 2:
+            return Skip(title, "fewer than two street-camera sources to choose from")
+        first, second = clips[(loop - 1) % len(clips)], clips[loop % len(clips)]
     other = "NPU" if stand.npu else "CPU"
     other_chip = _NPU if stand.npu else _CPU
     return Scene(
@@ -232,16 +242,24 @@ def smart_city(stand: Stand, loop: int) -> Scene | Skip:
         view="cameras",
         beats=(
             Beat(say(
+                "Two street scenes, watched at the same time the way a city watches its cameras. "
+                "The videos play from this laptop's disk: nothing here needs a network.",
+                "Deux scènes de rue, surveillées en même temps, comme une ville surveille ses caméras. "
+                "Les vidéos sont lues depuis le disque de ce portable : rien ici n'a besoin du réseau.",
+            ) if from_disk else say(
                 "Two traffic cameras in London, watched at the same time. The pictures come from the city; "
                 "everything that happens to them happens on this laptop.",
                 "Deux caméras de circulation à Londres, surveillées en même temps. Les images viennent de la ville ; "
                 "tout ce qui leur arrive ensuite se passe sur ce portable.",
             )),
             Beat(say(
-                "A detector finds every person and every vehicle in every frame. For the first camera it runs on the "
-                "integrated GPU, the fastest chip for many small jobs a second.",
-                "Un détecteur repère chaque personne et chaque véhicule dans chaque image. Pour la première caméra, "
-                "il tourne sur le GPU intégré, la puce la plus rapide pour beaucoup de petites tâches par seconde.",
+                # "Looks for", not "finds every": in a crowd seen from far
+                # above, this detector boxes a handful of several hundred.
+                "A detector looks for people and vehicles in every frame, and follows each one it finds. For the "
+                "first camera it runs on the integrated GPU, the fastest chip for many small jobs a second.",
+                "Un détecteur cherche les personnes et les véhicules dans chaque image, et suit chacun de ceux qu'il "
+                "trouve. Pour la première caméra, il tourne sur le GPU intégré, la puce la plus rapide pour "
+                "beaucoup de petites tâches par seconde.",
             ), stage="feed-1", after=8.0),
             Beat(say(
                 f"The second camera has its own chip: the {other_chip}. " + (

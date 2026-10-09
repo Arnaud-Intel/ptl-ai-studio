@@ -1824,23 +1824,38 @@ const PANELS = {
       // two chips" arrives as two cards already pinned to their chips.
       const picker = el("smartcity-sample");
       const samples = data.samples || [];
-      fillGroupedSelect(picker, samples, (entry) => entry.name, (entry) => `${entry.name} -- ${entry.description}`);
+      fillGroupedSelect(
+        picker,
+        samples,
+        (entry) => entry.name,
+        // A video still to be fetched says so: starting it is what fetches it.
+        (entry) => `${entry.name} -- ${entry.description}` + (entry.ready === false ? " Fetched the first time it is started." : ""),
+      );
       picker.disabled = !samples.length;
-      picker.onchange = () => {
-        const sample = samples.find((entry) => entry.name === picker.value);
-        picker.value = "";
-        if (!sample) return;
+      const addSample = (sample) => {
         for (const line of sample.feeds.split("\n").map((l) => l.trim()).filter(Boolean)) {
           const pipe = line.lastIndexOf("|");
           addFeedCard({
-            type: "url",
+            type: sample.kind === "file" ? "file" : "url",
             path: pipe === -1 ? line : line.slice(0, pipe),
             device: pipe === -1 ? null : line.slice(pipe + 1).trim(),
           });
         }
       };
+      picker.onchange = () => {
+        const sample = samples.find((entry) => entry.name === picker.value);
+        picker.value = "";
+        if (sample) addSample(sample);
+      };
 
-      if (!feedCards().length) addFeedCard({ type: "url" });  // start with one to fill in
+      // The panel opens ready to run: the street videos kept on this machine,
+      // one per chip. A demo that needs the network to start does not start
+      // in a conference hall. Failing that, one empty card to fill in.
+      if (!feedCards().length) {
+        const usual = samples.find((entry) => entry.default);
+        if (usual) addSample(usual);
+        else addFeedCard({ type: "url" });
+      }
       renumberFeeds();
     },
     async rehydrate() {
@@ -4790,7 +4805,9 @@ function renderModels() {
     const name = cell(entry.label);
     if (entry.note) name.title = entry.note;
     const demos = entry.demos.map((id) => (demoById(id) || {}).name || id).join(", ");
-    const size = cell(entry.repo_id ? formatBytes(entry.size_bytes) : "a few MB", "models-size");
+    // A size somebody stated, the Hub's, or -- for the two small models a
+    // library fetches by itself -- no figure at all.
+    const size = cell(entry.size_bytes || entry.repo_id ? formatBytes(entry.size_bytes) : "a few MB", "models-size");
     const status = cell(modelStateText(entry), `models-state models-state-${entry.state}`);
     if (entry.error) status.title = entry.error;
     row.append(name, cell(demos, "models-demos"), size, status);

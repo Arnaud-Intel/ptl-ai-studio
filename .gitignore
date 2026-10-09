@@ -30,5 +30,10 @@ logs/expense-reports.sqlite3*
 # never commit one, even if it lands in the repo by mistake.
 *cookies*.txt
 
+# The street videos the city monitor plays from disk: fetched from where
+# their authors published them (core's sample_videos), not kept here.
+sample-data/videos/*
+!sample-data/videos/README.md
+
 # What the in-app upgrade last did (see launcher/updates.py); its log is *.log.
 logs/upgrade-result.json

@@ -317,6 +317,7 @@ def test_the_other_scenes_fit_the_stand_or_say_why_they_cannot_play():
     assert [feed["compute_device"] for feed in feeds] == ["GPU.0", "NPU"] and city.stop == ("/api/smart-city-monitor/stop",)
     assert city.view == "cameras" and city.props["feeds"] == [
         {"id": "feed-1", "name": "Tower Bridge", "chip": "Integrated GPU"}, {"id": "feed-2", "name": "Westminster Bridge", "chip": "NPU"}]
+    # With neither its videos on disk nor the internet, it cannot play (tests/test_sample_videos.py has the rest).
     offline = autodemo_scenes.smart_city(_stand(stage, internet=False), 1)
     assert isinstance(offline, Skip) and "internet" in offline.reason
 

@@ -63,7 +63,14 @@ def test_every_sample_lists_sources_the_pipeline_can_open():
     for sample in samples.SAMPLES:
         lines = [line for line in sample.feeds.splitlines() if line.strip()]
         assert lines, f"{sample.name} has no feed"
-        assert all(sources.is_url(line) for line in lines)
+        if sample.kind == "file":
+            # A video kept on this machine: one the app knows how to fetch.
+            from pantherlake_ai_core import sample_videos
+
+            assert all(sample_videos.for_path(line.rsplit("|", 1)[0]) for line in lines)
+            assert len(sample.videos) == len(lines)
+        else:
+            assert all(sources.is_url(line) for line in lines)
 
 
 def test_the_biggest_stream_within_the_cap_wins(monkeypatch):

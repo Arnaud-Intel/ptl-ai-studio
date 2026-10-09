@@ -117,6 +117,30 @@ a new one or the deferred list, and moves its original wording to
   whole turn in English and most of one in French. The receipts scene plays
   the five worn receipts, as asked. Next: a run of several hours, and the
   proofing pass on Object Detection for the fourth scene.
+- [ ] **Street videos on disk for the city monitor, and what the detector makes of them.**
+  Asked for by the user on 2026-10-09: a local video as the demo's default,
+  for a stand and for manual use, retrieved by the installer from where it
+  was published. Three were chosen from openly licensed footage and are
+  fetched, checksummed, into `sample-data/videos/` (not in git) by the
+  first-launch helper, by Prepare models, or at first use; the panel opens
+  on two of them, one per chip, and the Auto Demo plays them with no
+  network. Both play at their full 24 and 25 frames a second on the
+  integrated GPU and the NPU together.
+  Measured with the brick's own detector (YOLO11s, 0.5): the Toronto
+  crossing gives 9 to 23 things a frame and never none; **the Shibuya clip
+  gives a median of 4 among several hundred people, and nothing at all in
+  one frame of six** (its middle is a tight shot of a packed crossing; at
+  a threshold of 0.25 the median person count rises from 1 to 5); Intel's
+  own sample clip is an empty street most of the time (nothing in 63 frames
+  of 108) and plays at 12 frames a second. So one of the three is a strong
+  demo, and the default pair shows it beside a crowd the detector mostly
+  cannot box. To settle: a second clip as good as the first (two candidates
+  on Wikimedia Commons were looked at but not fetched: "Traffic on
+  Slovenska street", CC BY 3.0, and a crossing in Tyumen, CC BY-SA 4.0),
+  or a detector that sees small people (a larger input, or tiles).
+  Also: the two Commons files are Commons' own 1080p encodes, which it may
+  redo one day -- the checksum would then refuse them; a mirror the user
+  hosts, added to `urls`, is the remedy. (filed 2026-10-09, user request)
 - [ ] **Document Q&A was answering from passages drawn nearly by lot.**
   Found while replaying the stale-index report (R06). The embedding model,
   Qwen3-Embedding, is trained to be read at its last token; the pipeline

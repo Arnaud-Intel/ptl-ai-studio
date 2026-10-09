@@ -1,4 +1,12 @@
-"""The curated live city cameras behind the "pick a feed" control.
+"""What the "pick a feed" control offers: street videos kept on this machine,
+and curated live city cameras.
+
+The videos come first and are what the panel opens with: a demo that needs
+the network to start is a demo that does not start in a conference hall.
+They are fetched once, from where their authors published them (core's
+`sample_videos`), and play in a loop.
+
+The live cameras are the other half:
 
 These are public 24/7 street cameras -- real pedestrians, real traffic,
 at real scale, which a synthetic clip can't stand in for. They are also
@@ -17,6 +25,8 @@ Two caveats worth knowing, both stated in the UI as well:
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from pantherlake_ai_core import sample_videos
 
 
 @dataclass(frozen=True)
@@ -37,6 +47,14 @@ class Sample:
     description: str
     feeds: str  # what goes in the feeds box: one source per line
     group: str = "YouTube"
+    kind: str = "url"  # "file" for videos on this machine
+    # The sample videos it plays, by key: fetched the first time it is
+    # started if "Prepare models" has not fetched them already.
+    videos: tuple[str, ...] = ()
+    default: bool = False  # what the panel opens with
+
+
+LOCAL = "On this machine"
 
 
 SHINJUKU = LiveFeed(
@@ -132,7 +150,24 @@ LIVE_FEEDS: list[LiveFeed] = [
     PICCADILLY_CIRCUS,
 ]
 
+def _from_disk(video: sample_videos.SampleVideo) -> Sample:
+    return Sample(
+        name=video.name,
+        description=f"{video.description} Played in a loop from this machine. {video.licence}, {video.credit}.",
+        feeds=str(video.path), group=LOCAL, kind="file", videos=(video.key,),
+    )
+
+
 SAMPLES: list[Sample] = [
+    Sample(
+        name="Two streets, two chips",
+        description="Toronto on the GPU and Tokyo on the NPU at once, both played from this machine: "
+                    "no network needed, and both gauges light up.",
+        feeds=f"{sample_videos.TORONTO.path}|GPU\n{sample_videos.SHIBUYA.path}|NPU",
+        group=LOCAL, kind="file", videos=(sample_videos.TORONTO.key, sample_videos.SHIBUYA.key), default=True,
+    ),
+    *[_from_disk(video) for video in sample_videos.VIDEOS],
+] + [
     Sample(name=f.name, description=f.description, feeds=f.url, group=f.group) for f in LIVE_FEEDS
 ] + [
     Sample(
@@ -157,4 +192,8 @@ def label_for(source: str) -> str | None:
     called "www.youtube.com" -- and the per-feed counts are the whole
     point of running two.
     """
-    return next((f.name for f in LIVE_FEEDS if f.url == source), None)
+    curated = next((f.name for f in LIVE_FEEDS if f.url == source), None)
+    if curated or "://" in source:
+        return curated
+    video = sample_videos.for_path(source)
+    return video.name if video else None

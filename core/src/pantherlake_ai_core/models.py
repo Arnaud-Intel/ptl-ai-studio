@@ -20,6 +20,7 @@ from typing import Callable
 
 OPENVINO = "openvino"
 PORTABLE = "portable"
+SAMPLES = "samples"  # not a model: sample footage a demo plays, fetched the same way
 
 # Never part of "do we have this model": a repository's README and its
 # .gitattributes are documentation, no demo loads them, and treating them as
@@ -40,6 +41,11 @@ class ModelSpec:
     note: str = ""
     # For models that aren't plain Hub files (a library downloads them itself).
     fetch: Callable[[], None] | None = field(default=None, compare=False, repr=False)
+    # For what is not on the Hub at all and can say so itself: whether it is
+    # on disk, how many bytes of it are, and what the whole of it weighs.
+    present: Callable[[], bool] | None = field(default=None, compare=False, repr=False)
+    on_disk: Callable[[], int] | None = field(default=None, compare=False, repr=False)
+    weighs: int | None = None
 
 
 _SPEECH = ("live-translation", "meeting-notes", "voice-assistant")
@@ -59,6 +65,24 @@ def _fetch_silero_vad() -> None:
     import torch
 
     torch.hub.load(repo_or_dir="snakers4/silero-vad", model="silero_vad", trust_repo=True)
+
+
+def _fetch_street_videos() -> None:
+    from . import sample_videos
+
+    sample_videos.download_all()
+
+
+def _street_videos_spec() -> ModelSpec:
+    from . import sample_videos
+
+    return ModelSpec(
+        "street-videos", "Street videos (3 sample clips)", ("smart-city-monitor",), SAMPLES,
+        note="What the city monitor plays from disk, fetched from Wikimedia Commons and GitHub where their authors "
+             "published them. See sample-data/videos/README.md for licences and credits.",
+        fetch=_fetch_street_videos, present=sample_videos.all_present, on_disk=sample_videos.bytes_on_disk,
+        weighs=sample_videos.total_bytes(),
+    )
 
 
 MODELS: tuple[ModelSpec, ...] = (
@@ -105,6 +129,7 @@ MODELS: tuple[ModelSpec, ...] = (
               note="A few MB, fetched by openwakeword itself.", fetch=_fetch_wake_word),
     ModelSpec("silero-vad", "Silero voice detection", ("voice-clone-studio",), PORTABLE,
               note="A few MB, fetched through torch.hub.", fetch=_fetch_silero_vad),
+    _street_videos_spec(),
 )
 
 BY_KEY = {spec.key: spec for spec in MODELS}
@@ -131,6 +156,8 @@ def cached_bytes(spec: ModelSpec) -> int:
     `snapshots/` and have no `blobs/` at all. Counting only blobs, as this
     did at first, reported zero forever on a 1.x cache.
     """
+    if spec.on_disk is not None:
+        return spec.on_disk()
     folder = cache_folder(spec)
     if folder is None or not folder.exists():
         return 0
@@ -146,6 +173,8 @@ def cached_bytes(spec: ModelSpec) -> int:
 
 def is_cached(spec: ModelSpec) -> bool:
     """True when the demo could load this model with no network at all."""
+    if spec.present is not None:
+        return spec.present()
     if spec.repo_id is None:
         return cached_bytes(spec) > 0 or _library_model_present(spec)
     from huggingface_hub import snapshot_download
@@ -181,6 +210,8 @@ def _library_model_present(spec: ModelSpec) -> bool:
 def remote_size(spec: ModelSpec) -> int | None:
     """What this model would download, from the Hub. None when that can't be
     asked (no connection, or a model its own library fetches)."""
+    if spec.weighs is not None:
+        return spec.weighs
     if spec.repo_id is None:
         return None
     try:

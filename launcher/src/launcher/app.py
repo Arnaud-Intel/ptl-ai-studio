@@ -60,6 +60,7 @@ from pantherlake_ai_core.engine import (
     resolve_engine,
 )
 from pydantic import BaseModel, Field
+from pantherlake_ai_core import sample_videos
 from smart_city_monitor import sources as smart_city_sources
 from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
 from voice_clone_studio import engine_factory as voice_clone_models
@@ -511,6 +512,11 @@ def demo_devices(demo_id: str) -> JSONResponse:
         payload[kind] = _DEVICE_SOURCES[kind]()
     if demo.samples:
         payload["samples"] = [demo_assets.enrich_sample(asdict(s)) for s in importlib.import_module(demo.samples).SAMPLES]
+        for sample in payload["samples"]:
+            # Asked now, not when the brick was imported: a sample whose video
+            # is still to be fetched says so, until it has been.
+            if sample.get("videos"):
+                sample["ready"] = all(sample_videos.present(sample_videos.BY_KEY[key]) for key in sample["videos"])
     return JSONResponse(payload)
 
 
@@ -695,6 +701,21 @@ class SmartCityMonitorStartRequest(BaseModel):
     loop: bool = True
 
 
+def _fetch_street_videos(wanted: list[tuple[str, sample_videos.SampleVideo]]) -> None:
+    """A feed set to one of the sample videos, on a machine that has not
+    fetched it yet: fetched now, the way a model is at its first use, and
+    said on the feed that waits for it."""
+    for feed_id, video in wanted:
+        megabytes = video.size_bytes / 1e6
+        events.set_phase(
+            "smart-city-monitor", "loading", f"Downloading {video.name} (first use only, {megabytes:.0f} MB)...", stage=feed_id
+        )
+        try:
+            sample_videos.download(video)
+        finally:
+            events.clear_phase("smart-city-monitor", stage=feed_id)
+
+
 def _smart_city_feed_json(feed: SmartCityFeedSpec) -> dict[str, Any]:
     """What the UI needs to rebuild a feed's card after a reload: not just
     its name and chip, but the engine and source it was started with."""
@@ -734,6 +755,12 @@ async def start_smart_city_monitor(req: SmartCityMonitorStartRequest) -> JSONRes
                     model_path=f.model_path or None,
                 )
             )
+        missing = [
+            (feed.feed_id, video) for feed in feeds
+            if (video := sample_videos.for_path(feed.path)) is not None and not sample_videos.present(video)
+        ]
+        if missing:
+            await run_in_threadpool(_fetch_street_videos, missing)
         smart_city_monitor_runner.start(feeds=feeds, engine=default_engine, loop=req.loop)
     except Exception as exc:
         return error_response(exc)

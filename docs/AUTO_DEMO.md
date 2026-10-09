@@ -118,6 +118,10 @@ Not built yet, most useful first:
 - The proofing pass on Object Detection that lets the fourth scene through
   (Document Q&A had its own on 2026-10-09: see the backlog's R06), and an
   output view for it.
+- The street scene plays two videos kept on the machine when they have been
+  fetched (the live London cameras otherwise, which need the internet). One
+  of the two, Shibuya from above, is a crowd the detector boxes a handful
+  of: see the backlog's note on the street videos.
 - A camera clip that starts over takes its chip off the hardware panel for
   a second or two; the stage holds its "at work" for six seconds to cover
   it, the panel does not.

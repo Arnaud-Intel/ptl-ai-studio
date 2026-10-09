@@ -43,6 +43,18 @@ an LLM a third time. What it adds on top:
   ships public city cameras in two sections — YouTube, and Other (London's
   TfL JamCams) — so the demo has something real to count without you
   sourcing footage. See **Where the live cameras come from** below.
+- **Street videos on this machine** — three openly licensed clips, offered
+  first under "On this machine", and what the launcher's panel opens with
+  (two of them, one per chip): a demo that needs the network to start does
+  not start in a conference hall. They are not in the repository: the
+  first-launch helper, **Prepare models** or the first start of one fetches
+  them from where their authors published them, checksummed, into
+  `sample-data/videos/` — see that folder's
+  [README](../../sample-data/videos/README.md) for licences and credits, and
+  `uv run panther-lake-prefetch street-videos` to fetch them by hand. The
+  Toronto crossing is the one the detector does best on (9 to 23 things a
+  frame); in the Shibuya clip, a crowd seen from far above, it boxes a
+  handful of several hundred people.
 - **N feeds, each on its own engine, model and device**
   ([`pipeline.py`](src/smart_city_monitor/pipeline.py)) — one detector per
   distinct `(engine, device, model)` among the feeds, shared by every feed
@@ -76,6 +88,13 @@ Monitor one video file:
 
 ```bash
 uv run smart-city-monitor --source intersection.mp4 --engine openvino
+```
+
+Or one of the bundled street videos, once fetched:
+
+```bash
+uv run panther-lake-prefetch street-videos
+uv run smart-city-monitor --source sample-data/videos/toronto-yonge-dundas-crossing.webm --engine openvino
 ```
 
 Monitor a live camera — anything FFmpeg can open, including a YouTube
