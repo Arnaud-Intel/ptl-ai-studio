@@ -262,6 +262,9 @@ def running(monkeypatch):
     monkeypatch.setattr(launcher_app, "_video_commentary_devices", lambda vision, mood: ("GPU.0", "NPU"))
     monkeypatch.setattr(sample_videos, "present", lambda video: True)
     monkeypatch.setattr(launcher_app.video_commentary_runner, "_cloned", Enrolled(enrolled=False))
+    # Nothing here looks for a camera or a screen: the machine the tests run on may have neither.
+    monkeypatch.setattr(launcher_app, "_DEVICE_SOURCES", {**launcher_app._DEVICE_SOURCES, "cameras": lambda: [0], "screens": lambda: []})
+    monkeypatch.setattr(launcher_app, "list_openvino_devices", lambda: ["CPU", "GPU.0", "NPU"])
     monkeypatch.setattr(launcher_app.video_commentary_runner, "_voice", "")
     web = TestClient(launcher_app.app)
     yield web, run, said
