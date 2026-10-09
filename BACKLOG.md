@@ -106,6 +106,31 @@ a new one or the deferred list, and moves its original wording to
   on the real machine with no failure (three scenes, a pause, a stop). Next,
   in the note's order: a run of several hours, a caption that stays in view
   beside the result, and the proofing pass for the fourth scene.
+  *2026-10-09, later:* rebuilt on the user's feedback after watching it
+  ("a wall of text on top, the result is below the fold, scrolling pauses
+  it"). The app now opens on a start screen (Auto Demo / Manual demo), and
+  the Auto Demo has a stage of its own: a caption always on top that tells
+  the demo as a story, a sentence or two at a time, in English or French;
+  the demo's outputs only, made to fit without scrolling; the chips down the
+  right. A touch brings up a popup (keep playing, pause, stop) that answers
+  itself after fifteen seconds; a pause interrupts nothing. Watched for a
+  whole turn in English and most of one in French. The receipts scene plays
+  the five worn receipts, as asked. Next: a run of several hours, and the
+  proofing pass on Object Detection for the fourth scene.
+- [ ] **Expense lines: what the small model still gets wrong.** The Auto
+  Demo's stage puts each receipt beside its line, and the first watched run
+  showed the customer as the vendor of every receipt. Fixed the same day
+  (see the note in [docs/AUTO_DEMO.md](docs/AUTO_DEMO.md): vendor 5 to 13
+  right of 14, date 8 to 14, category 7 to 12, Qwen2.5-1.5B on the NPU).
+  What is left: a refund is filed "Other" and a credit note "Software"
+  (2 of 14 categories); one sample's banner line ("NOT FOR PAYMENT") is
+  taken for its vendor; and when a total is too faded for the vision model
+  to read, the language model invents one -- flagged ("Amount could not be
+  matched to the receipt text") and left out of the totals, but still shown
+  as a number. Worth trying: showing no amount at all when it cannot be
+  matched, and Qwen3-8B on the NPU for this step (it is already on disk for
+  the Page Agent; about 19 tok/s there against 50, for some sixty tokens a
+  receipt). (filed 2026-10-09, Auto Demo watched runs)
 - [ ] **A model picker for each brick: nine candidate models tried, and what
   each would take.** Asked for with Qwen3.8 27B for coding, an NPU
   alternative for summarising and Gemma 4 as examples. Tried on the XPS 14,

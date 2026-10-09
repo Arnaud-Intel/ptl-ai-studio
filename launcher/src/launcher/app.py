@@ -1661,6 +1661,7 @@ class AutoDemoRequest(BaseModel):
     # were not there -- for a stand that will lose it, or to rehearse one.
     dgpu: str = "auto"
     big_screen: bool = False
+    lang: str = "en"  # the language the story is told in: "en" or "fr"
 
 
 @app.get("/api/autodemo")
@@ -1671,10 +1672,10 @@ def autodemo_state() -> JSONResponse:
 
 
 @app.get("/api/autodemo/check")
-def autodemo_check(dgpu: str = "auto", big_screen: bool = False) -> JSONResponse:
+def autodemo_check(dgpu: str = "auto", big_screen: bool = False, lang: str = "en") -> JSONResponse:
     """What the loop would play on this stand, before starting it."""
     try:
-        return JSONResponse(autodemo_director.check(dgpu=dgpu, big_screen=big_screen))
+        return JSONResponse(autodemo_director.check(dgpu=dgpu, big_screen=big_screen, lang=lang))
     except Exception as exc:
         return error_response(exc)
 
@@ -1692,7 +1693,7 @@ def autodemo_result() -> JSONResponse:
 @app.post("/api/autodemo/start")
 def autodemo_start(req: AutoDemoRequest) -> JSONResponse:
     try:
-        return JSONResponse(autodemo_director.start(dgpu=req.dgpu, big_screen=req.big_screen))
+        return JSONResponse(autodemo_director.start(dgpu=req.dgpu, big_screen=req.big_screen, lang=req.lang))
     except Exception as exc:
         return error_response(exc)
 
@@ -1702,11 +1703,12 @@ def autodemo_stop() -> JSONResponse:
     return JSONResponse(autodemo_director.stop())
 
 
-@app.post("/api/autodemo/touch")
-def autodemo_touch() -> JSONResponse:
-    """Somebody is at the machine: the loop steps aside, and comes back
-    once nobody has touched anything for two minutes."""
-    return JSONResponse(autodemo_director.touch())
+@app.post("/api/autodemo/pause")
+def autodemo_pause() -> JSONResponse:
+    """Hold the loop where it is: the scene in hand finishes and stays on
+    screen, and the next one waits for a resume -- or for five minutes
+    with nobody asking for anything."""
+    return JSONResponse(autodemo_director.pause())
 
 
 @app.post("/api/autodemo/resume")

@@ -13,12 +13,12 @@
 
   <header class="topbar">
     <div class="topbar-inner">
-      <a class="brand" href="#/" aria-label="Panther Lake AI Studio -- all demos">
+      <a class="brand" href="#/demos" aria-label="Panther Lake AI Studio -- all demos">
         <img class="brand-logo" src="/static/panther_lake_ai_studio_darkbg.png" alt="Panther Lake AI Studio" />
       </a>
       <div class="topbar-side">
         <span id="device-summary" class="device-summary"></span>
-        <button id="autodemo-open" class="link-btn" type="button" title="The app runs itself in a loop, for a stand">Auto Demo</button>
+        <a class="link-btn" href="#/" title="Back to the choice between the Auto Demo and the demos to drive yourself">Start screen</a>
         <button id="log-open" class="link-btn" type="button">Activity Log</button>
       </div>
     </div>
@@ -38,7 +38,7 @@
        `hidden`, so it can transition -- see .compact-bar in style.css. -->
   <div id="compact-bar" class="compact-bar">
     <div class="compact-inner">
-      <a class="compact-brand" href="#/" aria-label="Panther Lake AI Studio -- all demos">
+      <a class="compact-brand" href="#/demos" aria-label="Panther Lake AI Studio -- all demos">
         <img class="compact-brand-logo" src="/static/panther_lake_ai_studio_darkbg.png" alt="Panther Lake AI Studio" />
       </a>
       <div class="compact-spacer"></div>
@@ -50,9 +50,6 @@
   </div>
 
   <main id="app" class="app">
-    <!-- Auto Demo: what the scene on screen is, said for somebody nobody is
-         there to talk to. Filled in and shown while the loop runs. -->
-    <section id="autodemo-caption" class="autodemo-caption" aria-live="polite" hidden></section>
     <section id="view-home" class="view">
       <div id="categories"></div>
     </section>
@@ -829,6 +826,80 @@
     </div>
   </footer>
 
+  <!-- The start screen: what the app opens on. Two ways in -- the Auto Demo,
+       where the studio presents itself, and the demos to drive yourself. -->
+  <section id="landing" class="landing" aria-label="Start" hidden>
+    <div class="landing-top">
+      <img class="landing-partner" src="/static/intel-logo.png" alt="Intel" />
+      <img class="landing-logo" src="/static/panther_lake_ai_studio_darkbg.png" alt="Panther Lake AI Studio" />
+      <img class="landing-partner landing-partner-dell" src="/static/dell-logo.png" alt="Dell Technologies" />
+    </div>
+    <div class="landing-middle">
+      <p class="landing-line">AI that runs on this laptop: on its CPU, its GPU and its NPU. Nothing leaves the machine.</p>
+      <div class="landing-choices">
+        <button id="landing-auto" class="landing-choice" type="button">
+          <span class="choice-title">Auto Demo</span>
+          <span class="choice-text">The studio presents itself: one demo after another, each told as it runs. For a stand, or a screen nobody is driving.</span>
+        </button>
+        <a id="landing-manual" class="landing-choice" href="#/demos">
+          <span class="choice-title">Manual demo</span>
+          <span class="choice-text">Every demo with its settings, to run yourself and show at your own pace.</span>
+        </a>
+      </div>
+      <p id="landing-notice" class="landing-notice" role="status" hidden></p>
+    </div>
+    <div class="landing-bottom">
+      <img class="landing-chip" src="/static/intel-core-ultra.png" alt="Intel Core Ultra" />
+    </div>
+  </section>
+
+  <!-- The Auto Demo's stage: a caption that tells the demo in hand as a
+       story, what that demo puts out, and the chips at work. Nothing to set
+       and nothing to scroll: it is watched, not driven. -->
+  <section id="stage" class="stage" aria-label="Auto Demo" hidden>
+    <header class="stage-top">
+      <img class="stage-partner" src="/static/intel-logo.png" alt="Intel" />
+      <div class="stage-caption">
+        <div class="stage-kicker-row">
+          <p id="stage-kicker" class="stage-kicker"></p>
+          <span id="stage-pill" class="stage-pill" role="status" hidden></span>
+          <span id="stage-dots" class="stage-dots" aria-hidden="true"></span>
+        </div>
+        <div id="stage-beat-box" class="stage-beat-box" aria-live="polite"><p id="stage-beat" class="stage-beat"></p></div>
+      </div>
+      <img class="stage-partner stage-partner-dell" src="/static/dell-logo.png" alt="Dell Technologies" />
+    </header>
+    <div class="stage-body">
+      <div id="stage-main" class="stage-main"></div>
+      <aside class="stage-side" aria-label="Hardware">
+        <div id="stage-power" class="stage-chip stage-power" hidden>
+          <div class="sc-head"><span id="stage-power-name" class="sc-name">Power</span><span id="stage-power-value" class="sc-load">--</span></div>
+          <div class="telemetry-bar"><div id="stage-power-fill" class="telemetry-bar-fill"></div></div>
+          <p id="stage-power-note" class="sc-model"></p>
+        </div>
+        <div id="stage-chips" class="stage-chips"></div>
+        <div class="stage-side-foot">
+          <img class="stage-brand" src="/static/panther_lake_ai_studio_darkbg.png" alt="Panther Lake AI Studio" />
+          <img class="stage-badge" src="/static/intel-core-ultra.png" alt="Intel Core Ultra" />
+        </div>
+      </aside>
+    </div>
+    <!-- Somebody touched the machine: the loop asks what they want, and
+         carries on by itself if nobody answers. -->
+    <div id="stage-popup" class="stage-popup" hidden>
+      <div class="stage-popup-card" role="dialog" aria-modal="true" aria-labelledby="stage-popup-title">
+        <h2 id="stage-popup-title"></h2>
+        <p id="stage-popup-text"></p>
+        <div class="stage-popup-actions">
+          <button class="btn btn-primary" type="button" data-stage-action="continue"></button>
+          <button class="btn btn-secondary" type="button" data-stage-action="pause"></button>
+          <button class="btn btn-danger" type="button" data-stage-action="stop"></button>
+        </div>
+        <button class="link-btn" type="button" data-stage-action="skip"></button>
+      </div>
+    </div>
+  </section>
+
   <!-- Power, then every chip -- how loaded it is and what is running on it,
        each brick with its own number and a way to stop it. One place and
        always in view: which chip does the work is the point of the showcase. -->
@@ -876,9 +947,9 @@
       </div>
       <div class="modal-body">
         <p class="modal-note">
-          The app runs itself in a loop, one demo on screen at a time, and says what is happening, on which chip and
-          why. Touching the mouse or the keyboard pauses it; it comes back after two idle minutes. The machine is
-          kept awake while it runs.
+          The studio presents itself in a loop: one demo on screen at a time, told as a short story -- what is
+          happening, on which chip and why. A click or a key brings up a choice: keep playing, pause or stop. Left
+          unanswered, it carries on. The machine is kept awake while it runs.
         </p>
         <div id="autodemo-check"><p class="placeholder">Looking at what this stand has...</p></div>
         <div class="run-row">

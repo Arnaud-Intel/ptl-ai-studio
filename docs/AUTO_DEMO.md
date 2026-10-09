@@ -1,90 +1,129 @@
-# Auto Demo: groundwork
+# Auto Demo
 
-Status: **it runs** (2026-10-09): the director, a first playlist of three
-scenes, and the page that follows it. The rest of this note is the design
-it was built from, written 2026-10-04. See "Where it stands" just below.
+Status: **it runs, on a stage of its own** (2026-10-09). The app opens on a
+start screen with two ways in, *Auto Demo* and *Manual demo*; the Auto Demo
+plays a playlist of three scenes in a loop, each told as a short story. The
+rest of this note, from "What a passer-by sees" down, is the design it was
+first built from, written 2026-10-04.
 
-To start it: **Auto Demo**, at the top of the page. The dialog says what the
-stand has and what one turn of the loop will play; the discrete GPU can be
-left out there, and the text made larger for a big display.
+To start it: open the app, choose **Auto Demo**. The dialog says what the
+stand has and what one turn of the loop will play, and takes four choices:
+the language the story is told in (English or French), whether to use the
+discrete GPU, larger text for a big display, and full screen.
 
 ## Where it stands (2026-10-09)
 
-Decided with the user that day:
+Decided with the user, 2026-10-08 and -09:
 
 | Question | Answer |
 | --- | --- |
 | Captions or a voice? | Captions only. A stand at a large event is too loud for sound |
-| One demo on screen, or a tiled stage? | One at a time, **with a real explanation**: what is happening, which chip and which engine, why that one, what to look at in the result |
+| Which language? | English unless French is chosen when the loop is started. Every sentence is written in both |
+| What is on screen? | A stage made for it and nothing else: **the caption on top, always**, telling the demo in hand as a story, a sentence or two at a time (what, why, how); **the demo's outputs** in the middle; **the chips** down the right. No settings, no options, no scrolling |
 | A camera on the stand? | Almost always; the screen is the fallback |
 | The discrete GPU? | Not always there: looked for when the loop starts, and the person starting it can leave it out |
 | A large display? | Sometimes: a setting of the loop, not a different build |
-| Does a visitor get to take over? | Yes: the loop steps aside at the first touch and comes back after two idle minutes |
-| Which scenes? | Page Agent, Expense extraction, Smart City when the internet is reachable, and Detection with Q&A once those two bricks have had a proofing pass |
+| Somebody touches the machine? | A popup asks: keep playing, pause, or stop. Stop goes back to the start screen |
+| Which scenes? | Page Agent, Expense extraction on the worn receipts, Smart City when the internet is reachable, and Detection with Q&A once those two bricks have had a proofing pass |
+
+Three things were put to the user as changes to what was asked, and built
+that way:
+
+- **The story follows the work, not a clock.** A sentence is due when the
+  step it talks about is seen at work (the planner, the pictures, the page),
+  and one that points at something on screen ("that is the code appearing")
+  when that step has a figure to show, which is after its model has loaded.
+  A model that takes forty seconds to load one day takes fifteen the next;
+  a timed script would talk about pictures nobody can see yet.
+- **The popup answers itself.** Left alone for fifteen seconds it closes and
+  the loop carries on (or stays paused, if it was). A pause nobody ends
+  ends after five minutes. A stand that waits for an answer from somebody
+  who has walked away has stopped for the day.
+- **A pause interrupts nothing.** The scene in hand runs to its end and its
+  result stays on screen for as long as the loop is paused; the next scene
+  does not start. Stopping a page build half-way to honour a pause would
+  throw away the thing the person stopped to look at.
 
 Built, and tested without a browser or a model (`tests/test_autodemo.py`):
 
-- **Scenes as data** (`launcher/autodemo.py`): the routes a scene calls,
-  what it waits for, and what it says -- `happening`, one `Chip` line per
-  chip (what runs there, on which engine, and why there), `look_at`.
+- **Scenes as data** (`launcher/autodemo.py`): the routes a scene calls and
+  what it waits for; its story as `Beat`s (the text, and when it is due:
+  seconds into the scene, a stage of the demo seen at work, that stage
+  having a figure, the result being in); one `Chip` line per chip (what it
+  does, with which model, and whose live figure goes on its line); which of
+  the stage's views draws it, and what that view needs.
 - **The director** (same file): a thread in the launcher that plays the
   playlist in a loop through the launcher's own routes, the way a person
   would. A scene that fails is noted and skipped; three in a row stop the
-  loop with a notice. A touch ends the scene in hand, and the loop takes up
-  again at the next one after two idle minutes. Whatever a scene started is
-  stopped when it ends, however it ends. A request that answers once (a
-  page) runs on its own thread, so the director can still be interrupted,
-  and its answer is kept for the page to draw.
+  loop with a notice. `pause()` holds the loop, `resume()` or five idle
+  minutes release it, `skip()` ends the scene in hand. Whatever a scene
+  started is stopped when it ends, however it ends.
 - **The playlist** (`launcher/autodemo_scenes.py`): each scene is built for
-  the stand it plays on -- with the discrete GPU or without, NPU or not,
-  camera or screen -- and takes another sample each turn of the loop.
+  the stand it plays on -- with the discrete GPU or without, NPU or not --
+  in the language chosen, and takes another sample each turn of the loop.
   "Seeing and answering" is written and held back (`HELD_BACK`).
 - **The routes**: `GET /api/autodemo` (state, scene, what plays and what is
   skipped and why), `GET /api/autodemo/check` (the same before starting),
-  `GET /api/autodemo/result`, and `POST .../start`, `stop`, `touch`,
+  `GET /api/autodemo/result`, and `POST .../start`, `stop`, `pause`,
   `resume`, `skip`.
 - **Keep-awake** while the loop runs (`launcher/keep_awake.py`), and no
   upgrade while it is on.
-- **The page's side** (`static/app.js`, "Auto Demo"): a start dialog with
-  the pre-start check; then, while the loop runs, the scene's own panel on
-  screen and above it what the scene says about itself -- what is
-  happening, each chip with what runs there, on which engine and why, each
-  with its live figure, and what to look at. The page asks where the loop
-  is once a second, so one opened or reloaded mid-scene joins it. A request
-  that answers once is drawn with the panel's own code and brought into
-  view. A press or a key anywhere but on the caption steps the loop aside
-  ("Go ahead, try it", with the time left before it comes back).
+- **The page's side** (`static/app.js`, "Start screen, and the Auto Demo's
+  stage"). Addresses: `#/` the start screen, `#/stage` the stage, `#/demos`
+  the grid, `#/brick/<id>` a demo. A reload stays where it was; a page
+  opened while the loop runs joins it. The stage has one output view per
+  kind of demo, each made to fit whole: the page agent's plan, six pictures
+  as they are drawn, the page's code as it is written, then the page itself,
+  scrolled slowly from top to bottom; the receipts, each beside the line
+  the two models make of it; two camera pictures with what was found drawn
+  on them, their chip, frame rate and counts. The chips column shows each
+  chip's load, what it does in this demo, and its own figure.
 
-**One real run** (XPS 14 with the B60, 2026-10-09, about eight minutes,
-watched): the Page Agent built and showed a page in 2 min 27 s with its
-three models loading, the three sample receipts were read and listed, two
-London traffic cameras ran at 25 and 24 frames a second on the integrated
-GPU and the NPU, a click paused the loop and stopped the cameras, "Resume
-now" took it to the next turn -- the Page Agent again, on its second sample
--- and "Stop" left nothing running. No scene failed. That is one turn and a
-bit, not a day.
+**Watched runs** (XPS 14 with the B60, 2026-10-09, in a headless Edge that
+photographs every sentence and measures what overflows):
+
+- A whole turn in English: the page built and shown in 2 min 23 s with its
+  three models loading (planner 18.6 tok/s on the NPU, 7 images a minute on
+  the integrated GPU while the 30B coder wrote at 43 to 52 tok/s on the
+  B60), the receipts, two London cameras at 25 frames a second each on the
+  integrated GPU and the NPU. The popup left unanswered closed itself; a
+  pause asked for while the receipts were read let them finish and held
+  their result past the scene's own time; resume went on to the cameras;
+  stop went back to the start screen with nothing left running. No scene
+  failed.
+- A second turn in French, with the page scene skipped part-way and the
+  five worn receipts.
+- Nothing overflowed and no sentence had to be set smaller at 1280x680,
+  1440x810 and 1920x1080.
+
+**The receipts scene showed what the receipts brick got wrong.** With each
+receipt beside its line, the first run put "Meridian Robotics" -- the
+customer, after "Billed to:" -- as the vendor of all three, lost two dates
+and filed a cafe under Lodging. Measured on the fourteen sample receipts
+that have a checked answer (Qwen2.5-1.5B on the NPU): vendor 5 right of 14,
+date 8, category 7, amount 13. Fixed in `expense_extract/pipeline.py`: the
+model is no longer shown the buyer's line, a date printed once in figures
+is read by rule (day first, where the model read "12/09/2026" on a French
+receipt as December), and the prompt says in plain sentences what a vendor
+is and what goes in which category. After: vendor 13, date 14, category 12,
+amount 13 -- and the one wrong amount is a hotel total too faded for the
+vision model to read, which the brick flags ("Amount could not be matched
+to the receipt text"); the stage shows that flag on its line and leaves it
+out of the total.
 
 Not built yet, most useful first:
 
 - **A run of several hours** on the real machine, watched through the
-  activity log. The loop has been round once.
-- **The caption leaves the screen when the result arrives**: the page scrolls
-  to the built page, which is what the scene was for, and the explanation is
-  above it. On a stand the two belong together -- a caption that stays in
-  view (a column beside the panel on a wide display, a bar that sticks to
-  the top otherwise).
-- **A built page is only seen from its top**: nobody scrolls the preview on a
-  stand. Scrolling it slowly needs a line of script in the page as it is
-  handed to the preview.
+  activity log. The loop has been round a few times, not a day.
 - The proofing pass on Object Detection and Document Q&A that lets the
-  fourth scene through.
+  fourth scene through, and an output view for it.
+- A camera clip that starts over takes its chip off the hardware panel for
+  a second or two; the stage holds its "at work" for six seconds to cover
+  it, the panel does not.
 - Deleting the loop's own expense reports (they pile up: one per turn), and
   unloading the large models between scenes on a machine short of memory.
-- The update prompt and the models dialog can still open over a running
-  loop; an upgrade itself is refused.
-- A scene's figure goes when its work ends, on the hardware panel as in the
-  caption (which keeps the last one it saw). The receipts are read in half
-  a minute, so their two figures are on screen for a moment only.
+- The stage has not been looked at on a stand without the discrete GPU: the
+  scenes for it are built and tested, not watched.
 - Step C of the plan below (start and stop by the clock, more camera
   scenes).
 

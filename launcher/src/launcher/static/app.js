@@ -2891,7 +2891,23 @@ function renderCards(demos) {
 
 let currentPanel = null;
 
+// "#/" is the start screen, "#/stage" the Auto Demo's stage, "#/demos" the
+// grid and "#/brick/<id>" a demo's panel. A reload stays where it was: only
+// the address the launcher opens lands on the start screen.
 function route() {
+  if (location.hash === "#/stage") {
+    showHome(); // whatever panel was open lets go of what it holds
+    setScreen("stage");
+    document.title = "Auto Demo · Panther Lake AI Studio";
+    stageOpen();
+    return;
+  }
+  stageClose();
+  if (["", "#", "#/"].includes(location.hash)) {
+    showLanding();
+    return;
+  }
+  setScreen("studio");
   const match = location.hash.match(/^#\/brick\/([\w-]+)$/);
   const demo = match ? demoById(match[1]) : null;
   if (!demo || demo.status !== "available" || !PANELS[demo.id]) {
@@ -3091,6 +3107,8 @@ function renderTelemetry(data) {
   STATUS.active = data.active || [];
   STATUS.metrics = data.metrics || [];
   STATUS.loaded = data.loaded || [];
+  STATUS.telemetry = data;
+  if (STAGE.on) stageSide();
 
   const loads = { CPU: { value: data.cpu_percent }, NPU: { value: data.npu_percent, name: data.npu_name } };
   for (const gpu of data.gpus || []) loads[chipKeyFor(gpu.id)] = { value: gpu.percent };
@@ -3414,27 +3432,161 @@ function closeLogViewer() {
   el("log-open").focus();
 }
 
-// --- Auto Demo ----------------------------------------------------------------------
-// The app running itself on a stand. The launcher directs (autodemo.py) and
-// this page follows: it asks where the loop is, opens the panel of the scene
-// in hand, and puts above it what the scene says about itself -- what is
-// happening, which chip does which part on which engine and why, what to
-// look at -- with each chip's live figure beside its line.
+// --- Start screen, and the Auto Demo's stage ---------------------------------------
+// The app opens on a start screen with two ways in: the demos to drive
+// yourself, or the Auto Demo -- the studio presenting itself on a stand with
+// nobody at the keyboard. The launcher directs that (autodemo.py) and this
+// page follows on a stage of its own: a caption that tells the demo in hand
+// as a story, a sentence or two at a time; what that demo puts out, and
+// nothing else; and the chips at work down the right. Nothing to set, nothing
+// to scroll.
 
 const AUTODEMO = {
   state: null,
-  sceneKey: null, // the scene being followed: its id and when it started
-  drawn: false, // its result has been handed to the panel
-  stopPartial: null,
-  lastTouch: 0,
-  figures: new Map(), // the last figure seen on each chip's line, by scene
-  options: { dgpu: "auto", big_screen: false },
+  options: { dgpu: "auto", big_screen: false, lang: "en", fullscreen: true },
 };
 const AUTODEMO_POLL_MS = 1000;
 
 function autodemoActive() {
   return !!AUTODEMO.state && ["checking", "playing", "paused"].includes(AUTODEMO.state.state);
 }
+
+// What the stage itself says, around the story the scenes bring with them.
+const STAGE_TEXT = {
+  en: {
+    tag: "Auto Demo",
+    checking: "Looking at what this machine has…",
+    next: "The next demo is about to start…",
+    paused: "The Auto Demo is paused. It takes up again by itself.",
+    stoppedTitle: "The Auto Demo has stopped.",
+    back: "Back to the start screen",
+    pausedPill: (clock) => `Paused · takes up again by itself in ${clock}`,
+    pausingPill: "Pausing as soon as this demo has finished",
+    chips: {},
+    idle: "Not needed for this demo",
+    starting: "at work…",
+    power: "Power",
+    overIdle: (watts) => `+${watts} W over idle`,
+    popupTitle: "This demo is running by itself",
+    popupText: "It goes round the studio's demos and tells each one as it runs. What would you like to do?",
+    popupPaused: "It is paused for now. What would you like to do?",
+    keep: "Keep playing",
+    resume: "Resume",
+    pause: "Pause",
+    stay: "Stay paused",
+    stop: "Stop the Auto Demo",
+    skip: "Skip to the next demo",
+    stopping: "Stopping what is running…",
+    request: "The request",
+    plan: "1 · The plan",
+    pictures: "2 · The pictures",
+    page: "3 · The page",
+    waitingPlan: "The plan will appear here.",
+    waitingPage: "The page will be written here.",
+    writing: "being written",
+    built: "built on this machine",
+    onOffer: "On offer",
+    receiptWaiting: "Waiting its turn",
+    receiptReading: "Being read…",
+    vendor: "Vendor",
+    date: "Date",
+    amount: "Amount",
+    category: "Category",
+    toCheck: "To check",
+    reasons: {},
+    receiptsDone: (count, total, flagged) => `${count} receipts read · ${total}` + (flagged ? ` · ${flagged} to check` : ""),
+    connecting: "Connecting to the camera…",
+    counted: "Counted so far",
+    nothingYet: "nothing yet",
+  },
+  fr: {
+    tag: "Démo automatique",
+    checking: "Inventaire de ce que cette machine possède…",
+    next: "La prochaine démo va commencer…",
+    paused: "La démo automatique est en pause. Elle reprendra d'elle-même.",
+    stoppedTitle: "La démo automatique s'est arrêtée.",
+    back: "Retour à l'écran d'accueil",
+    pausedPill: (clock) => `En pause · reprise automatique dans ${clock}`,
+    pausingPill: "Pause dès que cette démo sera terminée",
+    chips: { "Integrated GPU": "GPU intégré" },
+    idle: "Pas utile pour cette démo",
+    starting: "au travail…",
+    power: "Consommation",
+    overIdle: (watts) => `+${watts} W par rapport au repos`,
+    popupTitle: "Cette démo tourne toute seule",
+    popupText: "Elle enchaîne les démos du studio et raconte chacune pendant qu'elle tourne. Que souhaitez-vous faire ?",
+    popupPaused: "Elle est en pause pour l'instant. Que souhaitez-vous faire ?",
+    keep: "Continuer",
+    resume: "Reprendre",
+    pause: "Mettre en pause",
+    stay: "Rester en pause",
+    stop: "Arrêter la démo automatique",
+    skip: "Passer à la démo suivante",
+    stopping: "Arrêt de ce qui tourne…",
+    request: "La demande",
+    plan: "1 · Le plan",
+    pictures: "2 · Les images",
+    page: "3 · La page",
+    waitingPlan: "Le plan apparaîtra ici.",
+    waitingPage: "La page s'écrira ici.",
+    writing: "en cours d'écriture",
+    built: "construite sur cette machine",
+    onOffer: "Au programme",
+    receiptWaiting: "En attente",
+    receiptReading: "Lecture en cours…",
+    vendor: "Fournisseur",
+    date: "Date",
+    amount: "Montant",
+    category: "Catégorie",
+    toCheck: "À vérifier",
+    reasons: {
+      "Amount could not be matched to the receipt text": "montant introuvable sur le reçu",
+      "Amount is missing or ambiguous": "montant absent ou ambigu",
+      "Currency is missing, unsupported or ambiguous": "devise absente ou ambiguë",
+      "Date is missing or invalid": "date absente ou invalide",
+      "Vendor is missing": "fournisseur absent",
+      "Category is invalid": "catégorie invalide",
+      "Fractional amount for a zero-decimal currency": "montant décimal pour une devise sans décimales",
+      "No text detected by OCR": "aucun texte lu sur le reçu",
+    },
+    receiptsDone: (count, total, flagged) => `${count} reçus lus · ${total}` + (flagged ? ` · ${flagged} à vérifier` : ""),
+    connecting: "Connexion à la caméra…",
+    counted: "Comptés jusqu'ici",
+    nothingYet: "rien pour l'instant",
+  },
+};
+
+function stageText() {
+  const lang = (AUTODEMO.state && AUTODEMO.state.stand && AUTODEMO.state.stand.lang) || AUTODEMO.options.lang;
+  return STAGE_TEXT[lang] || STAGE_TEXT.en;
+}
+
+// ------------------------------------------------------------------ which screen is up
+
+function setScreen(name) {
+  document.body.classList.toggle("screen-landing", name === "landing");
+  document.body.classList.toggle("screen-stage", name === "stage");
+  el("landing").hidden = name !== "landing";
+  el("stage").hidden = name !== "stage";
+}
+
+function showLanding() {
+  showHome(); // whatever panel was open lets go of what it holds
+  setScreen("landing");
+  document.title = "Panther Lake AI Studio";
+  landingRender();
+}
+
+function landingRender() {
+  const state = AUTODEMO.state;
+  const note = el("landing-notice");
+  // The loop gave up by itself: whoever comes back to the machine is told why.
+  const stopped = !!state && state.state === "stopped" && !!state.notice;
+  note.hidden = !stopped;
+  if (stopped) note.textContent = state.notice;
+}
+
+// ------------------------------------------------------------------ before it starts
 
 function autodemoStandHtml(stand) {
   const yes = (text) => `<li class="found">${escapeHtml(text)}</li>`;
@@ -3444,7 +3596,7 @@ function autodemoStandHtml(stand) {
     (stand.npu ? yes("NPU") : no("No NPU")) +
     (stand.igpu ? yes(`Integrated GPU (${stand.igpu})`) : no("No integrated GPU")) +
     (stand.dgpu ? yes(`Discrete GPU (${stand.dgpu})`) : no("No discrete GPU in use")) +
-    (stand.cameras ? yes(stand.cameras === 1 ? "A camera" : `${stand.cameras} cameras`) : no("No camera: the screen is watched instead")) +
+    (stand.cameras ? yes(stand.cameras === 1 ? "A camera" : `${stand.cameras} cameras`) : no("No camera")) +
     (stand.internet ? yes("Internet") : no("No internet")) +
     `</ul>`
   );
@@ -3464,35 +3616,58 @@ function autodemoPlaylistHtml(playlist) {
   );
 }
 
+function autodemoRemember() {
+  try {
+    localStorage.setItem("ptl.autodemo", JSON.stringify(AUTODEMO.options));
+  } catch {
+    // Private mode: the choices just don't outlive the page.
+  }
+}
+
 async function autodemoCheck() {
   const box = el("autodemo-check");
+  const options = AUTODEMO.options;
   el("autodemo-start").disabled = true;
   try {
     // Asked once with the discrete GPU, to know whether there is one to leave out.
-    const found = await fetchJSON("/api/autodemo/check?dgpu=auto");
+    const lang = `lang=${encodeURIComponent(options.lang)}`;
+    const found = await fetchJSON(`/api/autodemo/check?dgpu=auto&${lang}`);
     const hasDiscrete = !!found.stand.dgpu;
-    const check =
-      AUTODEMO.options.dgpu === "off" && hasDiscrete ? await fetchJSON("/api/autodemo/check?dgpu=off") : found;
+    const check = options.dgpu === "off" && hasDiscrete ? await fetchJSON(`/api/autodemo/check?dgpu=off&${lang}`) : found;
+    const tick = (id, on, text) => `<label><input id="${id}" type="checkbox"${on ? " checked" : ""} /> ${text}</label>`;
     box.innerHTML =
       `<p class="section-label">This stand</p>${autodemoStandHtml(check.stand)}` +
       `<div class="autodemo-options">` +
+      `<label>Told in <select id="autodemo-lang">` +
+      [["en", "English"], ["fr", "Français"]]
+        .map(([value, name]) => `<option value="${value}"${options.lang === value ? " selected" : ""}>${name}</option>`)
+        .join("") +
+      `</select></label>` +
       (hasDiscrete
-        ? `<label><input id="autodemo-use-dgpu" type="checkbox"${AUTODEMO.options.dgpu === "auto" ? " checked" : ""} /> ` +
-          `Use the discrete GPU (untick it if it will be unplugged, or to rehearse a stand without it)</label>`
+        ? tick("autodemo-use-dgpu", options.dgpu === "auto", "Use the discrete GPU (untick it if it will be unplugged, or to rehearse a stand without it)")
         : "") +
-      `<label><input id="autodemo-big" type="checkbox"${AUTODEMO.options.big_screen ? " checked" : ""} /> ` +
-      `Large display: bigger text, to be read from a few metres</label></div>` +
+      tick("autodemo-big", options.big_screen, "Large display: bigger text, to be read from a few metres") +
+      tick("autodemo-fullscreen", options.fullscreen, "Full screen") +
+      `</div>` +
       `<p class="section-label">One turn of the loop</p>${autodemoPlaylistHtml(check.playlist)}`;
-    const useDiscrete = el("autodemo-use-dgpu");
-    if (useDiscrete) {
-      useDiscrete.addEventListener("change", () => {
-        AUTODEMO.options.dgpu = useDiscrete.checked ? "auto" : "off";
-        autodemoCheck();
+    const wire = (id, change) => {
+      const node = el(id);
+      if (!node) return;
+      node.addEventListener("change", () => {
+        change(node);
+        autodemoRemember();
       });
-    }
-    el("autodemo-big").addEventListener("change", (event) => {
-      AUTODEMO.options.big_screen = event.target.checked;
+    };
+    wire("autodemo-lang", (node) => {
+      options.lang = node.value;
+      autodemoCheck(); // the scenes' titles come in the language chosen
     });
+    wire("autodemo-use-dgpu", (node) => {
+      options.dgpu = node.checked ? "auto" : "off";
+      autodemoCheck();
+    });
+    wire("autodemo-big", (node) => (options.big_screen = node.checked));
+    wire("autodemo-fullscreen", (node) => (options.fullscreen = node.checked));
     el("autodemo-start").disabled = !check.playlist.some((entry) => entry.playable);
   } catch (err) {
     showPlaceholder(box, `The stand could not be looked at: ${err.message}`);
@@ -3512,228 +3687,717 @@ function closeAutodemoModal() {
 
 async function startAutodemo() {
   el("autodemo-start").disabled = true;
+  const { fullscreen, ...options } = AUTODEMO.options;
+  // Asked for while the click is still in hand: a browser grants the full
+  // screen to a person, not to a page.
+  if (fullscreen && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
   try {
-    AUTODEMO.lastTouch = Date.now(); // the click that starts the loop is not a visitor's
-    await postJSON("/api/autodemo/start", AUTODEMO.options);
+    AUTODEMO.state = await postJSON("/api/autodemo/start", options);
     closeAutodemoModal();
-    autodemoTick();
+    location.hash = "#/stage";
   } catch (err) {
     paintStatus(el("autodemo-start-status"), `Error: ${err.message}`, "error");
     el("autodemo-start").disabled = false;
   }
 }
 
-// A chip's figure, as the hardware panel has it. A figure that belongs to
-// work in hand goes when the work ends, and a scene's result is looked at
-// after that: the last one seen in this scene stays on its line as "last".
-function autodemoFigure(chip) {
-  if (!chip.demo) return "";
-  const key = `${AUTODEMO.sceneKey}|${chip.demo}|${chip.stage}`;
-  const metric = (STATUS.metrics || []).find((m) => m.demo_id === chip.demo && m.stage === chip.stage);
-  if (!metric) {
-    const seen = AUTODEMO.figures.get(key);
-    return seen ? `<span class="was">last</span> ${escapeHtml(seen)}` : "";
-  }
-  const text = formatMetric(metric);
-  AUTODEMO.figures.set(key, text);
-  return `${metric.sticky ? '<span class="was">last</span> ' : ""}${escapeHtml(text)}`;
-}
+// ------------------------------------------------------------------ the stage
 
-function autodemoClock(seconds) {
+const STAGE = {
+  on: false,
+  entered: 0,
+  sceneKey: null, // the scene on the stage: its id and when it started
+  view: null, // what draws its outputs
+  beat: -1, // which sentence of its story is up, and since when
+  beatSince: 0,
+  seen: new Set(), // the stages of its demo seen at work
+  figured: new Set(), // those that have had a figure to show: past loading their model
+  figures: new Map(), // the last figure seen on each chip's line
+  worked: new Map(), // when each chip was last seen at work
+  sayTimer: null,
+  popup: { open: false, left: 0, busy: false, timer: null },
+};
+const STAGE_POPUP_SECONDS = 15;
+// A built page is shown the way a visitor would read it: from the top, then
+// slowly down to the bottom. On a timer, not on animation frames, which a
+// window nobody is looking at does not get.
+const STAGE_PAGE_SCROLL =
+  "<script>(function(){var d=document.documentElement;d.style.scrollBehavior='auto';setTimeout(function(){" +
+  "var t0=Date.now(),id=setInterval(function(){var b=document.body,h=Math.max(d.scrollHeight,b?b.scrollHeight:0)-window.innerHeight," +
+  "k=Math.min(1,(Date.now()-t0)/26000);window.scrollTo(0,h*k);if(k>=1)clearInterval(id);},40);},5000);})();</" +
+  "script>";
+
+function stageClock(seconds) {
   const left = Math.max(0, Math.round(seconds));
   return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
 }
 
-function autodemoCaptionHtml(state) {
-  const buttons = (extra = "") =>
-    `<div class="autodemo-buttons">${extra}` +
-    `<button type="button" class="link-btn" data-autodemo="stop">Stop the Auto Demo</button></div>`;
-  if (state.state === "stopped") {
-    const failures = (state.failures || [])
-      .map((failure) => `<li><strong>${escapeHtml(failure.title)}</strong> ${escapeHtml(failure.error)}</li>`)
-      .join("");
-    return (
-      `<div class="autodemo-bar"><span class="autodemo-tag">Auto Demo</span></div>` +
-      `<h2>The Auto Demo has stopped</h2><p>${escapeHtml(state.notice)}</p>` +
-      (failures ? `<ul class="autodemo-failures">${failures}</ul>` : "") +
-      `<div class="autodemo-buttons"><button type="button" class="link-btn" data-autodemo="dismiss">Close</button></div>`
-    );
+function stageOpen() {
+  if (!STAGE.on) {
+    STAGE.on = true;
+    STAGE.entered = Date.now();
+    STAGE.sceneKey = null;
   }
-  if (state.state === "paused" && state.paused) {
-    return (
-      `<div class="autodemo-bar"><span class="autodemo-tag">Auto Demo · paused</span></div>` +
-      `<h2>Go ahead, try it</h2>` +
-      `<p>The demo is yours. It takes up again by itself in ` +
-      `<strong data-ad-clock></strong> once nobody is touching anything.</p>` +
-      buttons('<button type="button" class="link-btn" data-autodemo="resume">Resume now</button>')
-    );
+  if (AUTODEMO.state) stageRender(AUTODEMO.state);
+}
+
+function stageClose() {
+  if (!STAGE.on) return;
+  STAGE.on = false;
+  stagePopupClose();
+  stageLeaveView();
+  STAGE.sceneKey = null;
+  el("stage-main").replaceChildren();
+  document.body.classList.remove("stage-big");
+  if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+}
+
+function stageLeaveView() {
+  if (STAGE.view && STAGE.view.stop) STAGE.view.stop();
+  STAGE.view = null;
+}
+
+function stageRender(state) {
+  if (!STAGE.on || !state) return;
+  document.body.classList.toggle("stage-big", !!(state.stand && state.stand.big_screen));
+  const scene = state.state === "stopped" ? null : state.scene;
+  const key = scene ? `${scene.id}@${scene.started_at}` : `~${state.state}`;
+  if (key !== STAGE.sceneKey) {
+    STAGE.sceneKey = key;
+    stageLeaveView();
+    STAGE.beat = -1;
+    STAGE.beatSince = 0;
+    STAGE.seen = new Set();
+    STAGE.figured = new Set();
+    STAGE.figures = new Map();
+    STAGE.worked = new Map();
+    const main = el("stage-main");
+    main.className = `stage-main view-${scene ? scene.view : "none"}`;
+    if (scene && STAGE_VIEWS[scene.view]) STAGE.view = STAGE_VIEWS[scene.view](scene, main);
+    else if (state.state === "stopped") stageStoppedView(state, main);
+    else main.innerHTML = `<img class="stage-waiting" src="/static/panther_lake_ai_studio_darkbg.png" alt="" />`;
   }
-  const scene = state.scene;
+  stageCaption(state, scene);
+  stageSide(state, scene);
+  stagePill(state, scene);
+  if (scene && STAGE.view && STAGE.view.update) STAGE.view.update(scene, state);
+  if (STAGE.popup.open) stagePopupDraw();
+}
+
+function stageStoppedView(state, main) {
+  const failures = (state.failures || [])
+    .map((failure) => `<li><strong>${escapeHtml(failure.title)}</strong> ${escapeHtml(failure.error)}</li>`)
+    .join("");
+  main.innerHTML =
+    `<div class="stage-stopped"><p>${escapeHtml(state.notice || "")}</p>` +
+    (failures ? `<ul>${failures}</ul>` : "") +
+    `<button type="button" class="btn btn-primary" data-stage-home>${escapeHtml(stageText().back)}</button></div>`;
+}
+
+// ---- the caption: the story, one moment at a time
+
+function stageSay(text) {
+  const node = el("stage-beat");
+  if (node.dataset.text === text) return;
+  const first = !node.dataset.text;
+  node.dataset.text = text;
+  const put = () => {
+    node.textContent = text;
+    stageFitBeat();
+    node.classList.remove("changing");
+  };
+  clearTimeout(STAGE.sayTimer);
+  if (first) return put();
+  node.classList.add("changing");
+  STAGE.sayTimer = setTimeout(put, 260);
+}
+
+// A sentence that would not fit its three lines is set smaller, not cut.
+function stageFitBeat() {
+  const node = el("stage-beat");
+  const box = el("stage-beat-box");
+  node.style.fontSize = "";
+  let size = parseFloat(getComputedStyle(node).fontSize);
+  while (node.offsetHeight > box.clientHeight + 1 && size > 13) {
+    size -= 1;
+    node.style.fontSize = `${size}px`;
+  }
+}
+
+// A beat is due when everything it waits for has happened: its time into the
+// scene, its stage of the demo seen at work -- and putting something out, if
+// that is what the sentence points at -- the result being in.
+function stageBeatDue(beat, scene, state) {
+  if (beat.result && !(scene.result_ready || scene.phase === "showing")) return false;
+  if (beat.after && state.now - scene.started_at < beat.after) return false;
+  if (beat.figure && !STAGE.figured.has(beat.stage)) return false;
+  return !beat.stage || STAGE.seen.has(beat.stage);
+}
+
+function stageCaption(state, scene) {
+  const t = stageText();
+  const dots = el("stage-dots");
   if (!scene) {
-    return (
-      `<div class="autodemo-bar"><span class="autodemo-tag">Auto Demo</span></div>` +
-      `<h2>${state.state === "checking" ? "Looking at what this stand has..." : "Next scene coming up..."}</h2>` +
-      buttons()
-    );
+    el("stage-kicker").textContent = t.tag;
+    dots.replaceChildren();
+    stageSay({ stopped: t.stoppedTitle, checking: t.checking, paused: t.paused }[state.state] || t.next);
+    return;
   }
   const playable = (state.playlist || []).filter((entry) => entry.playable);
   const position = playable.findIndex((entry) => entry.id === scene.id) + 1;
-  const phase = { working: "at work", answered: "the result is in", showing: "the result" }[scene.phase] || scene.phase;
-  const chips = scene.chips
-    .map(
-      (chip, index) =>
-        `<li><span class="ad-chip">${escapeHtml(chip.chip)}</span>` +
-        `<span class="ad-does"><strong>${escapeHtml(chip.runs)}</strong> ${escapeHtml(chip.why)}</span>` +
-        `<span class="ad-figure" data-ad-chip="${index}"></span></li>`,
-    )
-    .join("");
-  return (
-    `<div class="autodemo-bar"><span class="autodemo-tag">Auto Demo</span>` +
-    `<span>Scene ${position || 1} of ${playable.length || 1} · ${escapeHtml(phase)} · <span data-ad-clock></span></span>` +
-    buttons('<button type="button" class="link-btn" data-autodemo="skip">Next scene</button>') +
-    `</div>` +
-    `<h2>${escapeHtml(scene.title)}</h2>` +
-    `<div class="autodemo-columns"><div>` +
-    `<h3>What is happening</h3><p>${escapeHtml(scene.happening)}</p>` +
-    `<h3>What to look at</h3><ul class="autodemo-look">${scene.look_at.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` +
-    `</div><div><h3>Which chip, and why</h3><ul class="autodemo-chips">${chips}</ul></div></div>`
+  el("stage-kicker").textContent = `${t.tag} · ${position || 1} / ${playable.length || 1} · ${scene.title}`;
+
+  // Work of this scene only: a figure left by the last turn of the loop is
+  // not this turn's stage at work.
+  for (const entry of STATUS.active || []) if (entry.demo_id === scene.demo) STAGE.seen.add(entry.stage || "default");
+  for (const metric of STATUS.metrics || []) {
+    if (metric.demo_id !== scene.demo || metric.at < scene.started_at) continue;
+    STAGE.seen.add(metric.stage || "default");
+    STAGE.figured.add(metric.stage || "default");
+  }
+
+  const beats = scene.beats;
+  const current = beats[STAGE.beat];
+  const shown = (Date.now() - STAGE.beatSince) / 1000;
+  // Long enough to be read standing up, by somebody who has just arrived.
+  const reading = current ? Math.max(5, current.text.length / 24) : 0;
+  let next = -1;
+  // The result does not wait for the rest of the story: what is on screen
+  // has changed, and the caption goes with it.
+  for (let index = beats.length - 1; index > STAGE.beat && next < 0; index--) {
+    if (beats[index].result && stageBeatDue(beats[index], scene, state) && shown >= Math.min(reading, 3)) next = index;
+  }
+  for (let index = STAGE.beat + 1; index < beats.length && next < 0 && shown >= reading; index++) {
+    if (stageBeatDue(beats[index], scene, state)) next = index;
+  }
+  if (next >= 0) {
+    STAGE.beat = next;
+    STAGE.beatSince = Date.now();
+    stageSay(beats[next].text);
+  }
+  const marks = beats.map((_beat, index) => `<i class="${index === STAGE.beat ? "now" : index < STAGE.beat ? "told" : ""}"></i>`).join("");
+  if (dots.dataset.marks !== marks) {
+    dots.dataset.marks = marks;
+    dots.innerHTML = marks;
+  }
+}
+
+// ---- the chips, down the right
+
+function stageChipLoad(name, stand, data) {
+  if (name === "CPU") return data.cpu_percent;
+  if (name === "NPU") return data.npu_percent;
+  const gpus = data.gpus || [];
+  const id = name === "Arc Pro B60" ? stand.dgpu : stand.igpu;
+  const gpu = gpus.find((entry) => entry.id === id) || (gpus.length === 1 ? gpus[0] : null);
+  return gpu ? gpu.percent : null;
+}
+
+// What a chip's line shows of its work: the figure of whichever of its
+// stages is at work, then the last one seen, dimmed.
+function stageFigure(chip, scene, t) {
+  if (!chip.demo) return { text: "", live: false, working: false };
+  const stages = chip.stages || ["default"];
+  // A camera clip that starts over is off its chip for a second or two:
+  // its line does not blink for that.
+  if ((STATUS.active || []).some((entry) => entry.demo_id === chip.demo && stages.includes(entry.stage || "default"))) {
+    STAGE.worked.set(chip.chip, Date.now());
+  }
+  const working = Date.now() - (STAGE.worked.get(chip.chip) || 0) < 6000;
+  const mine = (STATUS.metrics || []).filter(
+    (metric) => metric.demo_id === chip.demo && stages.includes(metric.stage || "default") && metric.at >= scene.started_at,
   );
+  const now = mine.find((metric) => !metric.sticky) || (working ? null : mine[mine.length - 1]);
+  if (now) {
+    STAGE.figures.set(chip.chip, formatMetric(now));
+    return { text: STAGE.figures.get(chip.chip), live: working, working };
+  }
+  if (STAGE.figures.has(chip.chip)) return { text: STAGE.figures.get(chip.chip), live: false, working };
+  return { text: working ? t.starting : "", live: false, working, note: true };
 }
 
-// The scene's demo has been started by the launcher, not by this page: the
-// panel takes it up the way it does after a reload.
-async function autodemoAttach(scene) {
-  if (!currentPanel || currentPanel.id !== scene.demo) return;
+function stageSide(state, scene) {
+  if (!STAGE.on) return;
+  state = state || AUTODEMO.state;
+  if (!state) return;
+  if (scene === undefined) scene = state.state === "stopped" ? null : state.scene;
+  const t = stageText();
+  const data = STATUS.telemetry || {};
+  const stand = state.stand || {};
+  const names = [...(stand.npu ? ["NPU"] : []), "Integrated GPU", ...(stand.dgpu ? ["Arc Pro B60"] : []), "CPU"];
+  const jobs = new Map((scene ? scene.chips : []).map((chip) => [chip.chip, chip]));
+  const box = el("stage-chips");
+  const shape = `${STAGE.sceneKey}|${names.join()}|${stand.lang}`;
+  if (box.dataset.shape !== shape) {
+    box.dataset.shape = shape;
+    box.innerHTML = names
+      .map((name) => {
+        const job = jobs.get(name);
+        const [does, model] = job ? job.label.split(" · ") : [scene ? t.idle : "", ""];
+        return (
+          `<div class="stage-chip${job ? " in-scene" : ""}" data-chip="${escapeHtml(name)}">` +
+          `<div class="sc-head"><span class="sc-name">${escapeHtml(t.chips[name] || name)}</span><span class="sc-load">--</span></div>` +
+          `<div class="telemetry-bar"><div class="telemetry-bar-fill"></div></div>` +
+          `<p class="sc-does">${escapeHtml(does || "")}</p>` +
+          `<p class="sc-model">${escapeHtml(model || "")}</p>` +
+          `<p class="sc-figure"></p></div>`
+        );
+      })
+      .join("");
+  }
+  for (const node of box.children) {
+    const load = stageChipLoad(node.dataset.chip, stand, data);
+    const known = load !== null && load !== undefined;
+    node.querySelector(".sc-load").textContent = known ? `${Math.round(load)}%` : "";
+    node.querySelector(".telemetry-bar-fill").style.width = known ? `${Math.min(load, 100)}%` : "0%";
+    const job = jobs.get(node.dataset.chip);
+    const figure = job && scene ? stageFigure(job, scene, t) : { text: "", live: false, working: false };
+    const line = node.querySelector(".sc-figure");
+    if (line.textContent !== figure.text) line.textContent = figure.text;
+    line.classList.toggle("was", !figure.live && !figure.note);
+    line.classList.toggle("note", !!figure.note);
+    node.classList.toggle("at-work", figure.working);
+  }
+  const power = data.power;
+  const meter = el("stage-power");
+  meter.hidden = !(power && power.available);
+  if (!meter.hidden) {
+    el("stage-power-name").textContent = t.power;
+    el("stage-power-value").textContent = `${power.package_w.toFixed(1)} W`;
+    el("stage-power-fill").style.width = `${Math.min((power.package_w / POWER_SCALE_W) * 100, 100)}%`;
+    const idle = power.idle_w !== null && power.idle_w !== undefined;
+    el("stage-power-note").textContent = idle ? t.overIdle(Math.max(power.package_w - power.idle_w, 0).toFixed(1)) : "";
+  }
+}
+
+function stagePill(state, scene) {
+  const t = stageText();
+  const pill = el("stage-pill");
+  pill.hidden = !state.paused;
+  if (!state.paused) return;
+  const atWork = scene && scene.phase !== "showing";
+  pill.textContent = atWork ? t.pausingPill : t.pausedPill(stageClock(state.paused.resumes_at - state.now));
+}
+
+// ---- what a demo puts out, one view per kind of demo
+
+// The page agent: its plan, its six pictures as they are drawn, the page's
+// code as it is written, then the page.
+function stagePageView(scene, root) {
+  const t = stageText();
+  root.innerHTML =
+    `<div class="sv-col">` +
+    `<section class="sv-card sv-plan"><h3>${escapeHtml(t.plan)}</h3><div class="sv-plan-body">` +
+    `<p class="sv-request"><span>${escapeHtml(t.request)}</span> ${escapeHtml(scene.props.request || "")}</p>` +
+    `<p class="sv-wait">${escapeHtml(t.waitingPlan)}</p></div></section>` +
+    `<section class="sv-card sv-pictures"><h3>${escapeHtml(t.pictures)}</h3><div class="sv-thumbs"></div></section>` +
+    `</div>` +
+    `<section class="sv-card sv-out"><h3>${escapeHtml(t.page)} <span class="sv-note"></span></h3>` +
+    `<div class="sv-out-body"><p class="sv-wait">${escapeHtml(t.waitingPage)}</p></div></section>`;
+  const planBody = root.querySelector(".sv-plan-body");
+  const thumbs = root.querySelector(".sv-thumbs");
+  const out = root.querySelector(".sv-out-body");
+  const note = root.querySelector(".sv-note");
+  let ended = false;
+  let run = null; // the build this scene started, once it has been seen running
+  let planShape = "";
+  let code = null;
+  let frame = null;
+  let framed = false;
+  let ready = false;
+
+  const drawPlan = (state) => {
+    const plan = state.plan;
+    if (!plan) return;
+    const shape = JSON.stringify([plan.title, plan.headline, plan.offers, plan.pictures.map((picture) => [picture.name, picture.ready])]);
+    if (shape === planShape) return;
+    planShape = shape;
+    const offers = plan.offers || [];
+    planBody.innerHTML =
+      `<p class="sv-request"><span>${escapeHtml(t.request)}</span> ${escapeHtml(scene.props.request || "")}</p>` +
+      (plan.title ? `<p class="sv-plan-title">${escapeHtml(plan.title)}</p>` : "") +
+      (plan.headline ? `<p class="sv-plan-headline">${escapeHtml(plan.headline)}</p>` : "") +
+      (offers.length ? `<p class="sv-plan-offers"><span>${escapeHtml(t.onOffer)}</span> ${offers.map(escapeHtml).join(" · ")}</p>` : "");
+    // Six frames from the start, filled as each picture is drawn; a picture
+    // already up is left alone, so that it does not blink at every look.
+    const names = plan.pictures.slice(0, 6).map((picture) => picture.name);
+    if (thumbs.dataset.names !== names.join()) {
+      thumbs.dataset.names = names.join();
+      thumbs.innerHTML = names.map((name) => `<div class="sv-thumb" data-name="${escapeHtml(name)}"></div>`).join("");
+    }
+    for (const picture of plan.pictures.slice(0, 6)) {
+      const tile = [...thumbs.children].find((node) => node.dataset.name === picture.name);
+      if (!tile || !picture.ready || tile.firstChild) continue;
+      const image = document.createElement("img");
+      image.alt = "";
+      image.src = `/api/page-agent/picture/${encodeURIComponent(picture.name)}?run=${state.run}`;
+      tile.append(image);
+    }
+  };
+
+  const progress = async () => {
+    try {
+      const state = await fetchJSON("/api/page-agent/progress");
+      if (ended) return;
+      // The launcher keeps the last build's progress until the next one
+      // starts: only this scene's own build is drawn.
+      if (state.running && run === null) run = state.run;
+      if (state.run === run || (run === null && ready)) drawPlan(state);
+    } catch {
+      // A missed look: the next one has everything.
+    }
+  };
+
+  const partial = async () => {
+    if (framed) return;
+    try {
+      const data = await fetchJSON("/api/bricks/page-agent/partial?stage=page");
+      if (ended || framed || !data.active || !data.text) return;
+      if (!code) {
+        code = document.createElement("pre");
+        code.className = "sv-code";
+        out.replaceChildren(code);
+        note.textContent = t.writing;
+      }
+      // The end of it: what is being written now.
+      code.textContent = data.text.slice(-5000);
+      code.scrollTop = code.scrollHeight;
+    } catch {
+      // A missed look.
+    }
+  };
+
+  const fit = () => {
+    if (!frame) return;
+    const holder = frame.parentElement;
+    const scale = holder.clientWidth / 1280;
+    frame.style.width = "1280px";
+    frame.style.height = `${Math.ceil(holder.clientHeight / scale)}px`;
+    frame.style.transform = `scale(${scale})`;
+  };
+
+  const showPage = async () => {
+    try {
+      const result = await fetchJSON("/api/autodemo/result");
+      if (ended || result.scene !== scene.id || !result.data || !result.data.html) return;
+      const holder = document.createElement("div");
+      holder.className = "sv-frame";
+      frame = document.createElement("iframe");
+      frame.setAttribute("sandbox", "allow-scripts");
+      frame.title = "The page that was built";
+      frame.srcdoc = result.data.html + STAGE_PAGE_SCROLL;
+      holder.append(frame);
+      out.replaceChildren(holder);
+      note.textContent = t.built;
+      fit();
+      progress(); // the last pictures, if the page was quicker than the look that draws them
+    } catch {
+      framed = false; // tried again at the next look
+    }
+  };
+
+  const timers = [setInterval(progress, 1000), setInterval(partial, 400)];
+  window.addEventListener("resize", fit);
+  progress();
+  return {
+    update(now) {
+      ready = !!now.result_ready;
+      if (ready && !framed) {
+        framed = true;
+        showPage();
+      }
+    },
+    stop() {
+      ended = true;
+      timers.forEach(clearInterval);
+      window.removeEventListener("resize", fit);
+    },
+  };
+}
+
+// The receipts: each one beside the line the two models make of it.
+function stageReceiptsView(scene, root) {
+  const t = stageText();
+  const receipts = scene.props.receipts || [];
+  root.innerHTML =
+    `<div class="sv-receipts${receipts.length > 3 ? " many" : ""}">` +
+    receipts
+      .map(
+        (receipt) =>
+          `<article class="sv-card sv-receipt" data-file="${escapeHtml(receipt.name)}">` +
+          `<div class="sv-receipt-picture"><img src="${escapeHtml(receipt.url)}" alt="" /></div>` +
+          `<div class="sv-receipt-line"><p class="sv-wait">${escapeHtml(t.receiptWaiting)}</p></div></article>`,
+      )
+      .join("") +
+    `</div><p class="sv-total"></p>`;
+  const cards = [...root.querySelectorAll(".sv-receipt")];
+  const total = root.querySelector(".sv-total");
+  let ended = false;
+  const money = (amount, currency) => `${Number(amount).toFixed(2)} ${currency || ""}`.trim();
+  // What the brick itself is not sure of: a figure it could not find on the
+  // receipt, a field the model left out.
+  const doubts = (item) => [item.error, ...(item.review_reasons || [])].filter(Boolean);
+
+  const look = async () => {
+    try {
+      const report = await fetchJSON("/api/expense-extract/report");
+      if (ended) return;
+      const items = report.items || [];
+      let reading = !!report.running; // the first receipt without a line is the one being read
+      for (const card of cards) {
+        const item = items.find((entry) => String(entry.source_file || "").split(/[\\/]/).pop() === card.dataset.file);
+        const line = card.querySelector(".sv-receipt-line");
+        const shape = item ? `item:${item.id}:${item.revision}` : reading ? "reading" : "waiting";
+        card.classList.toggle("reading", shape === "reading");
+        card.classList.toggle("done", !!item);
+        card.classList.toggle("flagged", !!item && doubts(item).length > 0);
+        if (!item) reading = false;
+        if (line.dataset.shape === shape) continue;
+        line.dataset.shape = shape;
+        if (!item) {
+          line.innerHTML = `<p class="sv-wait">${escapeHtml(shape === "reading" ? t.receiptReading : t.receiptWaiting)}</p>`;
+          continue;
+        }
+        const row = (label, value, unsure = false) =>
+          `<dt>${escapeHtml(label)}</dt><dd${unsure ? ' class="unsure"' : ""}>` +
+          `${escapeHtml(value === null || value === undefined ? "" : String(value))}</dd>`;
+        // A figure the brick could not find on the receipt is shown as what it is.
+        const unsure = (field) => doubts(item).some((reason) => reason.startsWith(field));
+        line.innerHTML =
+          `<dl>${row(t.vendor, item.vendor, unsure("Vendor"))}${row(t.date, item.date, unsure("Date"))}` +
+          `${row(t.amount, item.amount === null || item.amount === undefined ? "" : money(item.amount, item.currency), unsure("Amount") || unsure("Currency"))}` +
+          `${row(t.category, item.category, unsure("Category"))}</dl>` +
+          doubts(item)
+            .slice(0, 1)
+            .map((reason) => `<p class="sv-flag">${escapeHtml(t.toCheck)}: ${escapeHtml(t.reasons[reason] || reason.toLowerCase())}</p>`)
+            .join("");
+      }
+      if (!report.running && items.length) {
+        // As the brick's own totals do: a line somebody has to check is not
+        // counted yet, and currencies are never added together.
+        const sums = new Map();
+        const counted = items.filter((item) => !doubts(item).length && item.amount !== null && item.amount !== undefined);
+        for (const item of counted) sums.set(item.currency || "", (sums.get(item.currency || "") || 0) + Number(item.amount));
+        total.textContent = t.receiptsDone(
+          items.length,
+          [...sums].map(([currency, sum]) => money(sum, currency)).join(" + "),
+          items.length - counted.length,
+        );
+      }
+    } catch {
+      // A missed look.
+    }
+  };
+
+  const timer = setInterval(look, 1200);
+  look();
+  return {
+    stop() {
+      ended = true;
+      clearInterval(timer);
+    },
+  };
+}
+
+// The street cameras: each one's picture with what was found drawn on it,
+// the chip that watches it, how fast, and what it has counted.
+function stageCamerasView(scene, root) {
+  const t = stageText();
+  const feeds = scene.props.feeds || [];
+  root.innerHTML =
+    `<div class="sv-cameras">` +
+    feeds
+      .map(
+        (feed) =>
+          `<article class="sv-card sv-camera" data-feed="${escapeHtml(feed.id)}">` +
+          `<div class="sv-camera-head"><strong>${escapeHtml(feed.name)}</strong>` +
+          `<span class="sv-camera-chip">${escapeHtml(t.chips[feed.chip] || feed.chip)}</span><span class="sv-camera-rate"></span></div>` +
+          `<div class="sv-camera-picture"><p class="sv-wait">${escapeHtml(t.connecting)}</p></div>` +
+          `<p class="sv-camera-counts"><span>${escapeHtml(t.counted)}</span> <b>${escapeHtml(t.nothingYet)}</b></p></article>`,
+      )
+      .join("") +
+    `</div>`;
+  const cards = [...root.querySelectorAll(".sv-camera")];
+  let ended = false;
+
+  const look = async () => {
+    try {
+      const data = await fetchJSON("/api/smart-city-monitor/counts");
+      if (ended) return;
+      const totals = (data.snapshot && data.snapshot.per_feed_total) || {};
+      for (const card of cards) {
+        const id = card.dataset.feed;
+        const picture = card.querySelector(".sv-camera-picture");
+        if (data.running && !picture.querySelector("img")) {
+          const image = document.createElement("img");
+          image.alt = "";
+          // The stream ends if the camera is not up yet: asked again at the next look.
+          image.addEventListener("error", () => image.remove());
+          image.addEventListener("load", () => picture.querySelector(".sv-wait")?.remove(), { once: true });
+          image.src = `/api/smart-city-monitor/stream?feed=${encodeURIComponent(id)}&at=${Date.now()}`;
+          picture.append(image);
+        }
+        const counted = Object.entries(totals[id] || {})
+          .filter(([, count]) => count > 0)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 4)
+          .map(([kind, count]) => `${kind} ${count}`)
+          .join(" · ");
+        card.querySelector(".sv-camera-counts b").textContent = counted || t.nothingYet;
+        const rate = (STATUS.metrics || []).find((metric) => metric.demo_id === scene.demo && metric.stage === id && !metric.sticky);
+        card.querySelector(".sv-camera-rate").textContent = rate ? formatMetric(rate) : "";
+      }
+    } catch {
+      // A missed look.
+    }
+  };
+
+  const timer = setInterval(look, 1000);
+  look();
+  return {
+    stop() {
+      ended = true;
+      clearInterval(timer);
+      // An <img> on a stream holds its connection open until told otherwise.
+      for (const image of root.querySelectorAll(".sv-camera-picture img")) image.src = "";
+    },
+  };
+}
+
+const STAGE_VIEWS = { page: stagePageView, receipts: stageReceiptsView, cameras: stageCamerasView };
+
+// ---- somebody at the machine
+
+function stagePopupDraw() {
+  const t = stageText();
+  const popup = STAGE.popup;
+  const paused = !!(AUTODEMO.state && AUTODEMO.state.paused);
+  const box = el("stage-popup");
+  const count = ` (${popup.left})`;
+  el("stage-popup-title").textContent = t.popupTitle;
+  el("stage-popup-text").textContent = popup.busy ? t.stopping : paused ? t.popupPaused : t.popupText;
+  // The count sits on what happens if nobody answers: a stand that waits
+  // for an answer from somebody who has walked away has stopped for the day.
+  box.querySelector('[data-stage-action="continue"]').textContent = paused ? t.resume : t.keep + count;
+  box.querySelector('[data-stage-action="pause"]').textContent = paused ? t.stay + count : t.pause;
+  box.querySelector('[data-stage-action="stop"]').textContent = t.stop;
+  box.querySelector('[data-stage-action="skip"]').textContent = t.skip;
+  for (const button of box.querySelectorAll("button")) button.disabled = popup.busy;
+}
+
+function stagePopupOpen() {
+  if (STAGE.popup.open || !autodemoActive()) return;
+  const paused = !!AUTODEMO.state.paused;
+  STAGE.popup = { open: true, left: STAGE_POPUP_SECONDS, busy: false, timer: null };
+  // Somebody is here: a pause is not about to end under their hands.
+  if (paused) postJSON("/api/autodemo/pause", {}).catch(() => {});
+  stagePopupDraw();
+  el("stage-popup").hidden = false;
+  el("stage-popup").querySelector(`[data-stage-action="${paused ? "pause" : "continue"}"]`).focus();
+  STAGE.popup.timer = setInterval(() => {
+    if (STAGE.popup.busy) return;
+    STAGE.popup.left -= 1;
+    if (STAGE.popup.left <= 0) stagePopupAct("unanswered");
+    else stagePopupDraw();
+  }, 1000);
+}
+
+function stagePopupClose() {
+  clearInterval(STAGE.popup.timer);
+  STAGE.popup = { open: false, left: 0, busy: false, timer: null };
+  el("stage-popup").hidden = true;
+  STAGE.entered = Date.now(); // the click that answered is not another visitor
+}
+
+async function stagePopupAct(action) {
+  if (STAGE.popup.busy) return;
+  const paused = !!(AUTODEMO.state && AUTODEMO.state.paused);
+  if (action === "unanswered") action = paused ? "pause" : "continue";
   try {
-    await currentPanel.rehydrate();
+    if (action === "stop") {
+      STAGE.popup.busy = true;
+      stagePopupDraw();
+      AUTODEMO.state = await postJSON("/api/autodemo/stop", {});
+      stagePopupClose();
+      location.hash = "#/";
+      return;
+    }
+    if (action === "continue" && paused) AUTODEMO.state = await postJSON("/api/autodemo/resume", {});
+    if (action === "pause") AUTODEMO.state = await postJSON("/api/autodemo/pause", {});
+    if (action === "skip") AUTODEMO.state = await postJSON("/api/autodemo/skip", {});
   } catch {
-    // The panel shows what it can; the caption says the rest.
+    // The launcher did not answer: the next look says where the loop is.
   }
-  if (scene.demo === "page-agent") {
-    if (AUTODEMO.stopPartial) AUTODEMO.stopPartial();
-    AUTODEMO.stopPartial = followPartial("page-agent", { target: el("agent-result"), stage: "page" });
-  }
+  stagePopupClose();
+  stageRender(AUTODEMO.state);
 }
 
-async function autodemoDrawResult(scene) {
-  try {
-    const result = await fetchJSON("/api/autodemo/result");
-    const panel = PANELS[scene.demo];
-    if (result.scene !== scene.id || !panel || !panel.renderResult || !result.data) return;
-    if (AUTODEMO.stopPartial) AUTODEMO.stopPartial();
-    AUTODEMO.stopPartial = null;
-    panel.renderResult(result.data);
-    // The result is what the scene was for: bring it into view.
-    const shown = el(`${panel.prefix}-result`);
-    const frame = shown && shown.querySelector("iframe");
-    (frame || shown)?.scrollIntoView({ behavior: "smooth", block: frame ? "center" : "start" });
-  } catch {
-    // Drawn at the next look if it could not be fetched now.
-    AUTODEMO.drawn = false;
-  }
-}
-
-function autodemoRender(state) {
-  const previous = AUTODEMO.state;
-  AUTODEMO.state = state;
-  const caption = el("autodemo-caption");
-  const on = autodemoActive();
-  const show = on || (state.state === "stopped" && !AUTODEMO.dismissed);
-  document.body.classList.toggle("autodemo-on", on);
-  document.body.classList.toggle("autodemo-big", on && !!(state.stand && state.stand.big_screen));
-  caption.hidden = !show;
-  if (!show) {
-    if (previous && ["playing", "paused", "checking"].includes(previous.state)) AUTODEMO.sceneKey = null;
+// A press or a key, not a mouse that moved: a stand gets bumped.
+function stageTouched(event) {
+  if (!STAGE.on || !autodemoActive()) return;
+  if (event.type === "keydown") {
+    if (["Shift", "Control", "Alt", "Meta", "F11"].includes(event.key)) return;
+    if (STAGE.popup.open) {
+      if (event.key === "Escape") stagePopupAct("unanswered");
+      return;
+    }
+  } else if (STAGE.popup.open) {
+    // Beside the card: the same as not answering.
+    if (event.target === el("stage-popup")) stagePopupAct("unanswered");
     return;
   }
-  if (on) AUTODEMO.dismissed = false;
-  const scene = state.state === "playing" ? state.scene : null;
-  if (scene) {
-    const key = `${scene.id}@${scene.started_at}`;
-    if (key !== AUTODEMO.sceneKey) {
-      AUTODEMO.sceneKey = key;
-      AUTODEMO.drawn = false;
-      AUTODEMO.figures.clear();
-      if (location.hash !== `#/brick/${scene.demo}`) location.hash = `#/brick/${scene.demo}`;
-      window.scrollTo(0, 0);
-      // Once the panel is open and the demo has had the time to start.
-      setTimeout(() => autodemoAttach(scene), 1500);
-    }
-    if (scene.result_ready && !AUTODEMO.drawn) {
-      AUTODEMO.drawn = true;
-      autodemoDrawResult(scene);
-    }
-  }
-  // Drawn when the scene or its phase changes; between two changes only the
-  // clock and the figures move. A button redrawn every second can lose the
-  // click that was on its way to it.
-  const shape = [
-    state.state, scene ? AUTODEMO.sceneKey : "", scene ? scene.phase : "", state.notice, (state.failures || []).length,
-  ].join("|");
-  if (caption.dataset.shape !== shape) {
-    caption.dataset.shape = shape;
-    caption.innerHTML = autodemoCaptionHtml(state);
-  }
-  const clock = caption.querySelector("[data-ad-clock]");
-  if (clock) {
-    clock.textContent =
-      state.state === "paused" && state.paused
-        ? autodemoClock(state.paused.resumes_at - state.now)
-        : scene
-          ? autodemoClock(state.now - scene.started_at)
-          : "";
-  }
-  if (scene) {
-    for (const node of caption.querySelectorAll("[data-ad-chip]")) {
-      const figure = autodemoFigure(scene.chips[Number(node.dataset.adChip)]);
-      if (node.innerHTML !== figure) node.innerHTML = figure;
-    }
-  }
+  if (Date.now() - STAGE.entered < 1500) return; // the click that started the loop, or answered the popup
+  stagePopupOpen();
 }
+
+// ---- following the loop
 
 async function autodemoTick() {
+  let state;
   try {
-    autodemoRender(await fetchJSON("/api/autodemo"));
+    state = await fetchJSON("/api/autodemo");
   } catch {
-    // The launcher is restarting or away: the next look will tell.
+    return; // the launcher is restarting or away: the next look will tell
   }
-}
-
-// A visitor at the machine: the loop steps aside. A press or a key, not a
-// mouse that moved -- a stand gets bumped.
-function autodemoTouched(event) {
-  if (!autodemoActive() || AUTODEMO.state.state === "checking") return;
-  if (event.target instanceof Element && event.target.closest("#autodemo-caption, #autodemo-modal-overlay")) return;
-  if (Date.now() - AUTODEMO.lastTouch < 2000) return;
-  AUTODEMO.lastTouch = Date.now();
-  postJSON("/api/autodemo/touch", {}).then(autodemoRender).catch(() => {});
+  AUTODEMO.state = state;
+  const onStage = location.hash === "#/stage";
+  // The loop runs on this machine whatever the page shows: a page opened or
+  // reloaded while it does joins it, and one left on the stage when it has
+  // ended goes back to the start.
+  if (autodemoActive() && !onStage) {
+    location.hash = "#/stage";
+    return;
+  }
+  if (onStage && !autodemoActive() && state.state !== "stopped") {
+    location.hash = "#/";
+    return;
+  }
+  if (onStage) stageRender(state);
+  else if (!el("landing").hidden) landingRender();
 }
 
 function wireAutodemo() {
-  el("autodemo-open").addEventListener("click", openAutodemoModal);
+  try {
+    Object.assign(AUTODEMO.options, JSON.parse(localStorage.getItem("ptl.autodemo") || "{}"));
+  } catch {
+    // Nothing remembered.
+  }
+  el("landing-auto").addEventListener("click", openAutodemoModal);
   el("autodemo-modal-close").addEventListener("click", closeAutodemoModal);
   el("autodemo-modal-overlay").addEventListener("click", (event) => {
     if (event.target === el("autodemo-modal-overlay")) closeAutodemoModal();
   });
   el("autodemo-start").addEventListener("click", startAutodemo);
-  el("autodemo-caption").addEventListener("click", (event) => {
-    const action = event.target instanceof Element ? event.target.closest("[data-autodemo]") : null;
-    if (!action) return;
-    const what = action.dataset.autodemo;
-    if (what === "dismiss") {
-      AUTODEMO.dismissed = true;
-      el("autodemo-caption").hidden = true;
-      return;
-    }
-    AUTODEMO.lastTouch = Date.now();
-    postJSON(`/api/autodemo/${what}`, {}).then(autodemoRender).catch(() => {});
+  el("stage").addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target && target.closest("[data-stage-home]")) location.hash = "#/";
+    const action = target && target.closest("[data-stage-action]");
+    if (action) stagePopupAct(action.dataset.stageAction);
   });
-  for (const kind of ["pointerdown", "keydown", "wheel"]) {
-    document.addEventListener(kind, autodemoTouched, { capture: true, passive: true });
-  }
-  // Asked all the time, so that a page opened or reloaded mid-loop joins it.
+  el("stage").addEventListener("pointerdown", stageTouched);
+  document.addEventListener("keydown", stageTouched);
   setInterval(autodemoTick, AUTODEMO_POLL_MS);
-  autodemoTick();
+  return autodemoTick();
 }
 
 // --- Updates ----------------------------------------------------------------------
@@ -4208,10 +4872,12 @@ async function init() {
   wireChipPanel();
 
   el("panel-back").addEventListener("click", () => {
-    location.hash = "#/";
+    location.hash = "#/demos";
   });
   el("log-open").addEventListener("click", openLogViewer);
-  wireAutodemo();
+  // Asked before the first screen is chosen: a page opened while the loop
+  // runs goes straight to its stage.
+  const loopLookedAt = wireAutodemo();
   el("update-open").addEventListener("click", openUpdateFromFooter);
   el("app-version").addEventListener("click", openChangelogModal);
   el("changelog-modal-close").addEventListener("click", closeChangelogModal);
@@ -4243,7 +4909,8 @@ async function init() {
     else if (!el("update-modal-overlay").hidden) closeUpdateModal();
     else if (!el("models-modal-overlay").hidden) closeModelsModal();
     else if (!el("changelog-modal-overlay").hidden) closeChangelogModal();
-    else if (currentPanel && !["TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) location.hash = "#/";
+    else if (!el("autodemo-modal-overlay").hidden) closeAutodemoModal();
+    else if (currentPanel && !["TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) location.hash = "#/demos";
   });
 
   for (const panel of Object.values(PANELS)) {
@@ -4256,6 +4923,7 @@ async function init() {
 
   await pollStatus();
   setInterval(pollStatus, 1500);
+  await loopLookedAt;
   route();
 }
 

@@ -900,65 +900,288 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
   line-height: 1.7;
 }
 
-/* --- Auto Demo: what the scene on screen is, for a stand nobody is at --------- */
-.autodemo-caption {
-  margin: 0 0 18px;
-  padding: 16px 20px 18px;
-  border: 1px solid var(--accent);
-  border-radius: 14px;
-  background: linear-gradient(180deg, var(--accent-soft), transparent 70%), var(--bg-input);
+/* --- Start screen, and the Auto Demo's stage ------------------------------------ */
+/* Both take the whole window: the studio's header, footer and hardware panel
+   belong to the demos one drives. */
+body.screen-landing, body.screen-stage { padding-right: 0; overflow: hidden; }
+body:is(.screen-landing, .screen-stage) > :is(.topbar, .compact-bar, .app, .site-footer, .chip-panel, .subtitle-bar, .skip-link) { display: none !important; }
+/* Nothing opens over a stage nobody is at to close it. */
+body.screen-stage > .modal-overlay { display: none !important; }
+
+.landing {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: clamp(8px, 2vh, 24px);
+  padding: clamp(18px, 4vh, 44px) clamp(20px, 4vw, 72px) clamp(14px, 3vh, 32px);
+  background: radial-gradient(80vw 62vh at 50% 0%, rgba(0, 104, 181, 0.28), transparent 72%), var(--bg);
+  overflow-y: auto;
 }
-.autodemo-caption h2 { margin: 6px 0 10px; font-size: 24px; line-height: 1.2; }
-.autodemo-caption h3 {
-  margin: 12px 0 5px;
-  font-size: 11px;
-  font-weight: 600;
+.landing-top { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: 20px; }
+.landing-partner { height: clamp(28px, 4.6vh, 52px); width: auto; justify-self: start; }
+.landing-partner-dell { justify-self: end; }
+.landing-logo { height: clamp(110px, 27vh, 320px); width: auto; max-width: 54vw; object-fit: contain; }
+.landing-middle { display: grid; align-content: center; justify-items: center; gap: clamp(14px, 3.4vh, 40px); }
+.landing-line { margin: 0; max-width: 48ch; text-align: center; font-size: clamp(15px, 1.45vw, 26px); line-height: 1.45; color: var(--text-dim); }
+.landing-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: clamp(14px, 2vw, 36px); width: min(1040px, 100%); }
+.landing-choice {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  text-align: left;
+  padding: clamp(18px, 3.2vh, 40px) clamp(18px, 2.2vw, 40px);
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(17, 19, 23, 0.9));
+  color: var(--text);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.landing-choice:hover { border-color: var(--accent-hover); transform: translateY(-2px); }
+#landing-auto { border-color: var(--accent-hover); background: linear-gradient(160deg, rgba(0, 104, 181, 0.55), rgba(0, 104, 181, 0.12)); }
+.landing-choice .choice-title { font-size: clamp(22px, 2.4vw, 42px); font-weight: 700; letter-spacing: -0.01em; }
+.landing-choice .choice-title::after { content: " \2192"; color: var(--accent-hover); }
+.landing-choice .choice-text { font-size: clamp(13.5px, 1.1vw, 20px); line-height: 1.5; color: var(--text-dim); }
+.landing-notice {
+  margin: 0;
+  max-width: 80ch;
+  padding: 8px 14px;
+  border-left: 3px solid var(--warning);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.landing-bottom { display: flex; justify-content: center; }
+.landing-chip { height: clamp(56px, 11vh, 120px); width: auto; border-radius: 8px; }
+@media (max-width: 700px) { .landing-choices { grid-template-columns: 1fr; } }
+
+.stage {
+  --beat: clamp(19px, 1.85vw, 36px);
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--bg);
+  overflow: hidden;
+}
+/* Read from a few metres. */
+body.stage-big .stage { --beat: clamp(22px, 2.25vw, 46px); }
+
+/* The caption: always there, always the same height, so that nothing under
+   it moves when a sentence gives way to the next. */
+.stage-top {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(16px, 2.4vw, 44px);
+  padding: clamp(10px, 1.8vh, 22px) clamp(16px, 2.2vw, 40px);
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(0, 104, 181, 0.24), rgba(0, 104, 181, 0.05));
+}
+.stage-partner { height: clamp(22px, 3.6vh, 44px); width: auto; }
+.stage-caption { min-width: 0; display: grid; gap: 4px; }
+.stage-kicker-row { display: flex; align-items: center; gap: 14px; }
+.stage-kicker {
+  margin: 0;
+  min-width: 0;
+  font-size: clamp(11px, 0.9vw, 16px);
+  font-weight: 700;
   letter-spacing: 0.9px;
   text-transform: uppercase;
   color: var(--accent-hover);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.autodemo-caption p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--text); max-width: 70ch; }
-.autodemo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 12.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
-.autodemo-tag {
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-on);
-  font-size: 11px;
+.stage-dots { display: inline-flex; gap: 6px; margin-left: auto; }
+.stage-dots i { width: clamp(16px, 1.6vw, 30px); height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); }
+.stage-dots i.told { background: var(--accent); }
+.stage-dots i.now { background: var(--accent-hover); }
+.stage-beat-box { height: calc(var(--beat) * 1.32 * 3); display: grid; align-items: center; overflow: hidden; }
+.stage-beat { margin: 0; font-size: var(--beat); line-height: 1.32; font-weight: 500; color: var(--text); text-wrap: pretty; transition: opacity 0.25s ease; }
+.stage-beat.changing { opacity: 0; }
+
+.stage-body { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(230px, 21vw, 400px); }
+.stage-main { min-width: 0; min-height: 0; display: grid; padding: clamp(10px, 1.6vh, 22px) clamp(12px, 1.4vw, 26px); overflow: hidden; }
+.stage-waiting { place-self: center; width: min(46%, 640px); opacity: 0.45; }
+.stage-stopped { place-self: center; max-width: 72ch; display: grid; gap: 14px; justify-items: start; font-size: clamp(14px, 1.15vw, 20px); line-height: 1.5; color: var(--text-dim); }
+.stage-stopped p, .stage-stopped ul { margin: 0; }
+.stage-stopped ul { padding-left: 20px; font-size: 0.9em; }
+
+/* The chips, down the right: how loaded each is, what it does in this demo
+   and how fast it is doing it. */
+.stage-side {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(6px, 1.1vh, 14px);
+  padding: clamp(10px, 1.6vh, 22px) clamp(12px, 1.2vw, 22px);
+  border-left: 1px solid var(--border);
+  background: var(--bg-elevated);
+  overflow: hidden;
+}
+.stage-chips { display: flex; flex-direction: column; gap: clamp(6px, 1.1vh, 14px); }
+.stage-chip {
+  padding: clamp(7px, 1.1vh, 14px) clamp(9px, 0.9vw, 16px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  opacity: 0.5;
+  transition: opacity 0.3s ease, border-color 0.3s ease;
+}
+.stage-chip.in-scene, .stage-power { opacity: 1; }
+.stage-chip.at-work { border-color: var(--accent-hover); box-shadow: inset 0 0 0 1px var(--accent-soft); }
+.sc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.sc-name { font-size: clamp(13px, 1.05vw, 20px); font-weight: 700; }
+.sc-load { font-size: clamp(12px, 0.95vw, 18px); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.sc-does { margin: 7px 0 0; font-size: clamp(12px, 0.92vw, 17px); font-weight: 600; line-height: 1.3; }
+.sc-does:empty, .sc-model:empty { display: none; }
+.sc-model { margin: 1px 0 0; font-size: clamp(11px, 0.8vw, 15px); line-height: 1.3; color: var(--text-faint); }
+.stage-power .sc-model { margin-top: 5px; }
+.sc-figure { margin: 3px 0 0; min-height: 1.25em; font-size: clamp(16px, 1.5vw, 30px); font-weight: 700; line-height: 1.25; color: var(--accent-hover); font-variant-numeric: tabular-nums; }
+.sc-figure.was { color: var(--text-dim); }
+.sc-figure.note { padding-top: 0.35em; font-size: clamp(11.5px, 0.85vw, 16px); font-weight: 500; color: var(--warning); }
+.stage-chip:not(.in-scene) .sc-figure, .stage-chip[data-chip="CPU"] .sc-figure:empty { display: none; }
+.stage-chip:not(.in-scene) .sc-does { font-weight: 400; color: var(--text-faint); }
+.stage-side-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; }
+.stage-brand { height: clamp(30px, 5.5vh, 64px); width: auto; min-width: 0; object-fit: contain; }
+.stage-badge { height: clamp(30px, 5.5vh, 60px); width: auto; border-radius: 6px; }
+@media (max-height: 760px) { .stage-side-foot { display: none; } }
+
+/* What a demo puts out: one view per kind of demo, each made to fit the
+   stage whole. */
+.sv-card {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(9px, 1.3vh, 16px) clamp(10px, 1vw, 18px);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-card);
+  overflow: hidden;
+  transition: border-color 0.3s ease;
+}
+.sv-card > h3 {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: clamp(11px, 0.85vw, 15px);
   font-weight: 700;
   letter-spacing: 0.8px;
   text-transform: uppercase;
+  color: var(--text-faint);
 }
-.autodemo-buttons { margin-left: auto; display: flex; gap: 14px; }
-.autodemo-columns { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 4px 28px; }
-.autodemo-look, .autodemo-chips, .autodemo-failures { margin: 0; padding: 0; list-style: none; }
-.autodemo-look li { position: relative; padding-left: 14px; margin-bottom: 4px; font-size: 13.5px; line-height: 1.5; color: var(--text-dim); }
-.autodemo-look li::before { content: ""; position: absolute; left: 0; top: 0.62em; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-hover); }
-.autodemo-chips li {
+.sv-note { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--accent-hover); }
+.sv-wait { margin: auto; font-size: clamp(12.5px, 1vw, 18px); text-align: center; color: var(--text-faint); }
+@keyframes sv-in { from { opacity: 0; } to { opacity: 1; } }
+
+.view-page { grid-template-columns: minmax(0, 37fr) minmax(0, 63fr); gap: clamp(10px, 1.2vw, 20px); }
+.sv-col { min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: clamp(8px, 1.2vh, 16px); }
+.sv-plan-body { display: flex; flex-direction: column; gap: 4px; min-height: clamp(92px, 16vh, 190px); }
+.sv-request { margin: 0; font-size: clamp(12px, 0.9vw, 16px); color: var(--text-dim); }
+.sv-request span, .sv-plan-offers span, .sv-camera-counts span { margin-right: 6px; font-size: 0.84em; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-faint); }
+.sv-plan-title { margin: 2px 0 0; font-size: clamp(16px, 1.4vw, 28px); font-weight: 700; line-height: 1.2; }
+.sv-plan-headline { margin: 0; font-size: clamp(13px, 1.05vw, 20px); font-style: italic; line-height: 1.35; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.sv-plan-offers { margin: 0; font-size: clamp(12px, 0.9vw, 17px); line-height: 1.35; color: var(--text-dim); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+/* Two across: the pictures are wider than tall, and so are their frames. */
+.sv-thumbs { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.sv-thumb { min-height: 0; border: 1px dashed var(--border-strong); border-radius: 8px; background: var(--bg-input); overflow: hidden; }
+.sv-thumb:has(img) { border-color: transparent; }
+.sv-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; animation: sv-in 0.5s ease; }
+.sv-out-body { flex: 1 1 0; min-height: 0; display: flex; }
+.sv-code {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: clamp(10.5px, 0.78vw, 14px);
+  line-height: 1.5;
+  color: #9fd3ff;
+}
+.sv-frame { flex: 1 1 0; min-width: 0; min-height: 0; position: relative; border-radius: 8px; background: #fff; overflow: hidden; animation: sv-in 0.6s ease; }
+.sv-frame iframe { position: absolute; left: 0; top: 0; border: 0; background: #fff; transform-origin: 0 0; }
+
+.view-receipts { grid-template-rows: minmax(0, 1fr) auto; gap: clamp(6px, 1vh, 12px); }
+.sv-receipts, .sv-cameras { min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: clamp(10px, 1.2vw, 20px); }
+.sv-receipt.reading { border-color: var(--warning); }
+.sv-receipt.done { border-color: var(--success); }
+.sv-receipt.flagged { border-color: var(--warning); }
+.sv-receipt-picture { flex: 1 1 0; min-height: 0; border-radius: 8px; background: var(--bg-input); overflow: hidden; }
+.sv-receipt-picture img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.sv-receipt-line { flex: 0 0 auto; min-height: clamp(104px, 18vh, 190px); display: flex; flex-direction: column; justify-content: center; padding-top: 8px; }
+.sv-receipt.reading .sv-wait { color: var(--warning); animation: pulse 1.2s ease-in-out infinite; }
+.sv-receipt-line dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 12px; font-size: clamp(12.5px, 1vw, 19px); animation: sv-in 0.5s ease; }
+.sv-receipt-line dt { color: var(--text-faint); }
+.sv-receipt-line dd { margin: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-flag { margin: 6px 0 0; font-size: clamp(11px, 0.82vw, 15px); line-height: 1.3; color: var(--warning); }
+/* Five side by side: the same line, set smaller. */
+.sv-receipts.many { gap: clamp(8px, 0.9vw, 16px); }
+.sv-receipts.many .sv-receipt-line { justify-content: flex-start; min-height: clamp(128px, 21vh, 230px); }
+.sv-receipts.many .sv-receipt-line dl { gap: 2px 8px; font-size: clamp(11.5px, 0.86vw, 17px); }
+.sv-receipts.many .sv-receipt-line dd { white-space: normal; overflow-wrap: anywhere; }
+.sv-receipt-line dd.unsure { color: var(--warning); }
+.sv-receipt-line dd.unsure::after { content: " ?"; }
+.sv-total { margin: 0; min-height: 1.4em; text-align: center; font-size: clamp(14px, 1.2vw, 24px); font-weight: 600; color: var(--success); }
+
+.sv-camera-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; font-size: clamp(13px, 1.1vw, 22px); }
+.sv-camera-head strong { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-camera-chip { padding: 1px 10px; border: 1px solid var(--accent-hover); border-radius: 999px; font-size: 0.78em; white-space: nowrap; color: var(--accent-hover); }
+.sv-camera-rate { margin-left: auto; font-weight: 700; white-space: nowrap; color: var(--accent-hover); font-variant-numeric: tabular-nums; }
+.sv-camera-picture { flex: 1 1 0; min-height: 0; display: grid; border-radius: 8px; background: #000; overflow: hidden; }
+.sv-camera-picture > * { grid-area: 1 / 1; min-height: 0; }
+.sv-camera-picture img { width: 100%; height: 100%; object-fit: contain; background: #000; }
+.sv-camera-counts { margin: 8px 0 0; font-size: clamp(12.5px, 1vw, 19px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); }
+.sv-camera-counts b { font-weight: 600; color: var(--text); }
+
+/* The loop is on hold, and says so in the caption: over nothing the demo shows. */
+.stage-pill {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px 14px;
+  border: 1px solid var(--warning);
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: clamp(11.5px, 0.9vw, 16px);
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.stage-pill:not([hidden]) + .stage-dots { margin-left: 0; }
+.stage-popup { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, 0.72); }
+.stage-popup-card {
+  width: min(680px, 100%);
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: start;
-  padding: 7px 0;
-  border-top: 1px solid var(--border);
-  font-size: 13px;
-  line-height: 1.45;
+  gap: 14px;
+  justify-items: center;
+  text-align: center;
+  padding: clamp(22px, 4vh, 40px) clamp(20px, 3vw, 44px);
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow);
 }
-.autodemo-chips li:first-child { border-top: none; }
-.autodemo-chips .ad-chip { font-weight: 700; color: var(--text); }
-.autodemo-chips .ad-does { color: var(--text-dim); }
-.autodemo-chips .ad-does strong { display: block; color: var(--text); font-weight: 600; }
-.autodemo-chips .ad-figure { min-width: 96px; text-align: right; font-weight: 700; font-size: 15px; color: var(--accent-hover); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.autodemo-chips .ad-figure .was { font-size: 11px; font-weight: 500; color: var(--text-faint); }
-.autodemo-failures li { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
-@media (max-width: 980px) { .autodemo-columns { grid-template-columns: 1fr; } }
-/* Read from a few metres. */
-body.autodemo-big .autodemo-caption h2 { font-size: 34px; }
-body.autodemo-big .autodemo-caption p { font-size: 18px; }
-body.autodemo-big .autodemo-look li, body.autodemo-big .autodemo-chips li { font-size: 16px; }
-body.autodemo-big .autodemo-chips li { grid-template-columns: 150px minmax(0, 1fr) auto; }
-body.autodemo-big .autodemo-chips .ad-figure { font-size: 22px; }
-body.autodemo-big .autodemo-bar { font-size: 15px; }
+.stage-popup-card h2 { margin: 0; font-size: clamp(20px, 1.9vw, 32px); }
+.stage-popup-card p { margin: 0; font-size: clamp(14px, 1.15vw, 20px); line-height: 1.5; color: var(--text-dim); }
+.stage-popup-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 6px; }
+.stage-popup-actions .btn { min-width: 150px; padding: 12px 22px; font-size: clamp(14px, 1.1vw, 19px); font-variant-numeric: tabular-nums; }
+.stage-popup-card .link-btn { font-size: clamp(12.5px, 0.95vw, 16px); }
+@media (prefers-reduced-motion: reduce) {
+  .stage-beat, .stage-chip, .sv-card { transition: none; }
+  .sv-thumb img, .sv-frame, .sv-receipt-line dl, .sv-receipt.reading .sv-wait { animation: none; }
+}
 
 /* The start dialog: what the stand has, what one turn of the loop plays. */
 .autodemo-stand { margin: 0 0 12px; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 13px; }
@@ -966,6 +1189,7 @@ body.autodemo-big .autodemo-bar { font-size: 15px; }
 .autodemo-stand li.found { color: var(--success); border-color: var(--success); }
 .autodemo-stand li.missing { color: var(--text-faint); }
 .autodemo-options { display: grid; gap: 6px; margin: 0 0 14px; font-size: 13.5px; }
+.autodemo-options select { margin-left: 6px; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-input); color: var(--text); font: inherit; }
 .autodemo-playlist { margin: 0 0 14px; padding-left: 22px; font-size: 13.5px; }
 .autodemo-playlist li { margin-bottom: 6px; }
 .autodemo-playlist li span { display: block; font-size: 12.5px; color: var(--success); }

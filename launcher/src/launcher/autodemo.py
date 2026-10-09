@@ -4,9 +4,10 @@ what was measured for it).
 
 The launcher directs and the page follows. A thread here owns the playlist,
 the clock and the failure rules, and says where it is at `GET
-/api/autodemo`; the page opens the scene's panel, shows what the scene says
-about itself, and draws the result the director was handed. A reload of the
-page picks up mid-scene, and a stalled browser does not stop the show.
+/api/autodemo`; the page has a stage of its own for it -- a caption, the
+demo's outputs, the chips at work -- and draws what the director says. A
+reload of the page picks up mid-scene, and a stalled browser does not stop
+the show.
 
 The director acts the way a person does: through the launcher's own routes,
 on this machine. A scene is therefore data -- which route to call with what,
@@ -14,9 +15,11 @@ what to wait for, what to say -- and whatever a route checks for a person
 (the device exists, the folder is there, a build is already running) it
 checks for the director too.
 
-What a scene says is the point of it. One demo is on screen at a time, and
-beside it: what is happening, which chip does which part on which engine
-and why that one, and what to look at in the result.
+What a scene says is the point of it, and it says it as a story: a sentence
+or two at a time, each one shown when the thing it talks about is really
+happening (the planner is at work, the pictures are being drawn, the result
+is in) rather than at a time on a clock -- a model that takes forty seconds
+to load one day takes fifteen the next.
 """
 from __future__ import annotations
 
@@ -32,16 +35,33 @@ from .errors import Conflict
 
 
 @dataclass(frozen=True)
+class Beat:
+    """One moment of the story: a sentence or two, and when they are due.
+    All that is set must hold: `after` seconds into the scene, `stage` -- a
+    stage of the scene's demo, as the hardware panel names it -- seen at
+    work, `result` once the scene's work is done. With `figure`, the stage
+    must have a figure to show as well: a stage is "at work" from the moment
+    its model starts loading, and a sentence about what it puts out is early
+    until it puts something out."""
+
+    text: str
+    after: float = 0.0
+    stage: str = ""
+    result: bool = False
+    figure: bool = False
+
+
+@dataclass(frozen=True)
 class Chip:
-    """One line of "which chip, on which engine, and why"."""
+    """What a chip is doing in the scene, for the line under its gauge."""
 
     chip: str  # "NPU", "Integrated GPU", "Arc Pro B60", "CPU"
-    runs: str  # what runs there, and with what: "The planner: Qwen3-8B, OpenVINO"
-    why: str  # why there and not elsewhere
-    # Whose live figure belongs beside this line, as the hardware panel knows
-    # it: a demo and one of its stages.
+    label: str  # a few words: "Planner · Qwen3-8B"
+    # Whose live figure belongs on that line, as the hardware panel knows it:
+    # a demo and the stages of it this chip works on -- several when one
+    # chip does two jobs in turn.
     demo: str = ""
-    stage: str = "default"
+    stages: tuple[str, ...] = ("default",)
 
 
 @dataclass(frozen=True)
@@ -89,11 +109,14 @@ Step = Start | Ask | Wait | Until
 class Scene:
     id: str
     title: str
-    demo: str  # the brick whose panel is on screen
-    happening: str  # what is going on, in two or three sentences
+    demo: str  # the brick it shows; its stages cue the story
+    view: str  # which of the stage's output views draws it: "page", "receipts", "cameras"
+    beats: tuple[Beat, ...]  # the story, in order
     chips: tuple[Chip, ...]
-    look_at: tuple[str, ...]  # what to look at in the result
     steps: tuple[Step, ...]
+    # What the output view needs that only the scene knows (the receipts to
+    # show before they are read, say). Plain data: it goes to the page as is.
+    props: dict = field(default_factory=dict)
     # Routes called (POST) when the scene ends, however it ends: nothing a
     # scene started is left running.
     stop: tuple[str, ...] = ()
@@ -109,9 +132,13 @@ class Skip:
     reason: str
 
 
+LANGUAGES = ("en", "fr")
+
+
 @dataclass
 class Stand:
-    """What the stand has, looked at once when the loop starts."""
+    """What the stand has, looked at once when the loop starts, and how the
+    person starting it wants it played."""
 
     npu: bool = False
     igpu: str | None = None  # the integrated GPU's device name
@@ -119,6 +146,7 @@ class Stand:
     cameras: list = field(default_factory=list)
     internet: bool = False
     big_screen: bool = False
+    lang: str = "en"  # the language the story is told in
     # A demo's bundled samples, by demo id, fetched when a scene asks.
     samples: Callable[[str], list[dict]] = lambda demo: []
 
@@ -136,7 +164,7 @@ class SceneFailed(RuntimeError):
 
 
 class _Interrupted(Exception):
-    """The scene was ended from outside: stopped, paused or skipped."""
+    """The scene was ended from outside: stopped or skipped."""
 
 
 IDLE, CHECKING, PLAYING, PAUSED, STOPPED = "idle", "checking", "playing", "paused", "stopped"
@@ -151,9 +179,11 @@ class Director:
 
     - A scene that fails is noted and skipped; `max_failures` in a row and
       the loop stops with a plain notice rather than go round on an error.
-    - `touch()` -- a visitor at the mouse -- ends the scene in hand, leaves
-      the app to the visitor, and the loop takes up again at the next scene
-      once nobody has touched anything for `idle_resume` seconds.
+    - `pause()` holds the loop where it is: the scene in hand runs to its
+      end and its result stays on screen, and the next one does not start
+      until `resume()` -- or until nobody has asked for anything for
+      `idle_resume` seconds, because a stand that waits for an answer from
+      somebody who has walked away has stopped for the day.
     - Whatever a scene started is stopped when it ends, however it ends.
     """
 
@@ -163,7 +193,7 @@ class Director:
         playlist: list[Builder],
         *,
         online: Callable[[], bool] = _never,
-        idle_resume: float = 120.0,
+        idle_resume: float = 300.0,
         max_failures: int = 3,
         poll: float = 0.5,
         keep_awake: tuple[Callable[[], bool], Callable[[], None]] = (awake.hold, awake.release),
@@ -206,20 +236,22 @@ class Director:
         with self._lock:
             return self._result
 
-    def check(self, *, dgpu: str = "auto", big_screen: bool = False) -> dict:
+    def check(self, *, dgpu: str = "auto", big_screen: bool = False, lang: str = "en") -> dict:
         """What the loop would do if it were started now: what the stand
         has, and each scene with whether it can play and, if not, why.
         Nothing is started."""
-        stand = self._look_at_the_stand(dgpu, big_screen)
+        stand = self._look_at_the_stand(dgpu, big_screen, lang)
         return {"stand": self._describe(stand), "playlist": self._listing(stand, 1)[1]}
 
-    def start(self, *, dgpu: str = "auto", big_screen: bool = False) -> dict:
+    def start(self, *, dgpu: str = "auto", big_screen: bool = False, lang: str = "en") -> dict:
         """`dgpu`: "auto" uses the discrete GPU if it is plugged in, "off"
-        plays as if it were not there."""
+        plays as if it were not there. `lang`: the story's language."""
         if self.running:
             raise Conflict("The Auto Demo is already running.")
         if dgpu not in ("auto", "off"):
             raise ValueError("dgpu is 'auto' or 'off'.")
+        if lang not in LANGUAGES:
+            raise ValueError(f"lang is one of {', '.join(LANGUAGES)}.")
         self._stop.clear()
         self._interrupt.clear()
         self._paused = False
@@ -227,7 +259,7 @@ class Director:
             self._state = {**self._fresh(), "state": CHECKING, "started_at": time.time()}
             self._result = None
         self._thread = threading.Thread(
-            target=self._run, kwargs={"dgpu": dgpu, "big_screen": big_screen}, daemon=True, name="autodemo"
+            target=self._run, kwargs={"dgpu": dgpu, "big_screen": big_screen, "lang": lang}, daemon=True, name="autodemo"
         )
         self._thread.start()
         return self.snapshot()
@@ -240,22 +272,23 @@ class Director:
             thread.join(wait)
         return self.snapshot()
 
-    def touch(self) -> dict:
-        """Somebody is at the machine: the loop steps aside. Called again
-        while paused, it puts the resumption off again."""
+    def pause(self) -> dict:
+        """Hold the loop where it is. Nothing is interrupted: the scene in
+        hand finishes and stays on screen. Asked again while paused, it
+        puts the resumption off again."""
         if not self.running:
             return self.snapshot()
         with self._lock:
+            since = (self._state["paused"] or {}).get("since") or time.time()
             self._paused = True
             self._resumes_at = time.time() + self._idle_resume
-            if self._state["state"] == PAUSED:
-                self._state["paused"] = {**self._state["paused"], "resumes_at": self._resumes_at}
-        self._interrupt.set()
+            self._state["paused"] = {"since": since, "resumes_at": self._resumes_at}
         return self.snapshot()
 
     def resume(self) -> dict:
         with self._lock:
             self._paused = False
+            self._state["paused"] = None
         return self.snapshot()
 
     def skip(self) -> dict:
@@ -270,7 +303,7 @@ class Director:
         with self._lock:
             self._state.update(changes)
 
-    def _look_at_the_stand(self, dgpu: str, big_screen: bool) -> Stand:
+    def _look_at_the_stand(self, dgpu: str, big_screen: bool, lang: str = "en") -> Stand:
         gpus = self._call("GET", "/api/system/gpu-devices", None, 15)
         cameras, devices = [], []
         try:
@@ -294,6 +327,7 @@ class Director:
             cameras=list(cameras),
             internet=bool(self._online()),
             big_screen=big_screen,
+            lang=lang if lang in LANGUAGES else "en",
             samples=samples,
         )
 
@@ -301,7 +335,7 @@ class Director:
     def _describe(stand: Stand) -> dict:
         return {
             "npu": stand.npu, "igpu": stand.igpu, "dgpu": stand.dgpu, "cameras": len(stand.cameras),
-            "internet": stand.internet, "big_screen": stand.big_screen,
+            "internet": stand.internet, "big_screen": stand.big_screen, "lang": stand.lang,
         }
 
     def _listing(self, stand: Stand, loop: int) -> tuple[list[Scene | Skip], list[dict]]:
@@ -321,11 +355,11 @@ class Director:
             })
         return built, listing
 
-    def _run(self, dgpu: str, big_screen: bool) -> None:
+    def _run(self, dgpu: str, big_screen: bool, lang: str) -> None:
         self._set(awake=bool(self._hold_awake()))
         notice = ""
         try:
-            stand = self._look_at_the_stand(dgpu, big_screen)
+            stand = self._look_at_the_stand(dgpu, big_screen, lang)
             self._set(stand=self._describe(stand))
             failures_in_a_row, loop = 0, 0
             while not self._stop.is_set():
@@ -339,7 +373,7 @@ class Director:
                         break
                     if not isinstance(scene, Scene):
                         continue
-                    self._wait_while_paused()
+                    self._wait_while_paused(between_scenes=True)
                     if self._stop.is_set():
                         break
                     played += 1
@@ -361,34 +395,36 @@ class Director:
             self._release_awake()
             self._set(state=STOPPED if notice else IDLE, scene=None, paused=None, notice=notice, awake=False)
 
-    def _wait_while_paused(self) -> None:
+    def _wait_while_paused(self, between_scenes: bool = False) -> None:
+        """Hold here for as long as the loop is paused: until it is resumed,
+        stopped, skipped, or left alone for `idle_resume` seconds."""
         if not self._paused:
             return
-        with self._lock:
-            self._state.update(state=PAUSED, scene=None, paused={"since": time.time(), "resumes_at": self._resumes_at})
-        while self._paused and not self._stop.is_set():
+        if between_scenes:
+            self._set(state=PAUSED, scene=None)
+        while self._paused and not self._stop.is_set() and not self._interrupt.is_set():
             if time.time() >= self._resumes_at:
-                self._paused = False
                 break
             time.sleep(min(self._poll, 0.2))
-        self._set(paused=None)
+        with self._lock:
+            self._paused = False
+            self._state["paused"] = None
 
     # --------------------------------------------------------------------- one scene
 
     def _play(self, scene: Scene) -> bool:
         """True unless the scene failed. Being interrupted is not failing."""
         self._interrupt.clear()
-        if self._paused:  # touched between two scenes
-            self._interrupt.set()
         now = time.time()
         with self._lock:
             self._result = None
             self._state.update(
                 state=PLAYING,
                 scene={
-                    "id": scene.id, "title": scene.title, "demo": scene.demo, "happening": scene.happening,
-                    "chips": [asdict(chip) for chip in scene.chips], "look_at": list(scene.look_at),
-                    "phase": "working", "started_at": now, "ends_by": now + scene.at_most, "result_ready": False,
+                    "id": scene.id, "title": scene.title, "demo": scene.demo, "view": scene.view,
+                    "beats": [asdict(beat) for beat in scene.beats], "chips": [asdict(chip) for chip in scene.chips],
+                    "props": scene.props, "phase": "working", "started_at": now, "ends_by": now + scene.at_most,
+                    "result_ready": False,
                 },
             )
         deadline = time.monotonic() + scene.at_most
@@ -397,6 +433,7 @@ class Director:
                 self._do(step, scene, deadline)
             self._phase("showing", ends_by=time.time() + scene.hold)
             self._pause_for(scene.hold)
+            self._wait_while_paused()  # held on its result for as long as the loop is
             return True
         except _Interrupted:
             return True
