@@ -57,11 +57,15 @@ class SampleVideo:
         return VIDEO_DIR / self.filename
 
 
+# The street videos are named by their city and nothing more, on screen and
+# on disk (asked for by the user, 2026-10-09): a street, a square or a shop
+# named on a stand is somebody's interest, and a city is not. Where each was
+# filmed is in its source page, for the credit that its licence asks for.
 TORONTO = SampleVideo(
-    key="toronto-crossing",
-    name="Yonge-Dundas crossing, Toronto",
-    description="A scramble crossing at street level: pedestrians in every direction, cars, bicycles. 57 seconds, 1080p.",
-    filename="toronto-yonge-dundas-crossing.webm",
+    key="toronto",
+    name="Toronto",
+    description="A busy crossing at street level: pedestrians in every direction, cars, bicycles. 57 seconds, 1080p.",
+    filename="toronto.webm",
     urls=("https://upload.wikimedia.org/wikipedia/commons/transcoded/d/d2/DiagonalCrosswalkYongeDundas.webm/"
           "DiagonalCrosswalkYongeDundas.webm.1080p.vp9.webm",),
     size_bytes=36_657_572,
@@ -71,10 +75,10 @@ TORONTO = SampleVideo(
     source_page="https://commons.wikimedia.org/wiki/File:DiagonalCrosswalkYongeDundas.webm",
 )
 TYUMEN = SampleVideo(
-    key="tyumen-crossing",
-    name="Respubliki-Ordzhonikidze crossing, Tyumen",
+    key="tyumen",
+    name="Tyumen",
     description="A city crossing at street level in winter sun: a steady stream of cars, pedestrians waiting and crossing. 31 seconds, 1080p.",
-    filename="tyumen-crossing.webm",
+    filename="tyumen.webm",
     # The upload itself, not a version made of it: this one cannot change.
     urls=("https://upload.wikimedia.org/wikipedia/commons/8/8f/"
           "Kruci%C4%9Do_de_stratoj_Respubliko_kaj_Or%C4%9Donikidze_%28Tjumeno%29.webm",),
@@ -86,11 +90,11 @@ TYUMEN = SampleVideo(
 )
 # Kept for what it shows of the detector's limits, not played by default: of
 # several hundred people seen from far above it boxes a handful (see below).
-SHIBUYA = SampleVideo(
-    key="shibuya-crossing",
-    name="Shibuya Crossing, Tokyo",
-    description="The scramble crossing from above: a few hundred people at once, of whom the detector boxes a handful. 59 seconds, 1080p.",
-    filename="tokyo-shibuya-crossing.webm",
+TOKYO = SampleVideo(
+    key="tokyo",
+    name="Tokyo",
+    description="A large crossing from above: a few hundred people at once, of whom the detector boxes a handful. 59 seconds, 1080p.",
+    filename="tokyo.webm",
     urls=("https://upload.wikimedia.org/wikipedia/commons/transcoded/5/53/Shibuya_Crossing%2C_Tokyo%2C_Japan_%28video%29.webm/"
           "Shibuya_Crossing%2C_Tokyo%2C_Japan_%28video%29.webm.1080p.vp9.webm",),
     size_bytes=37_432_911,
@@ -155,9 +159,9 @@ CATTLE_DRIVE = SampleVideo(
 #   Toronto        median 11            0%               122 a minute
 #   Tyumen         median  9            0%                80 a minute
 #   (Ljubljana)    median  7            1%                32 a minute   <- looked at, not kept
-#   Shibuya        median  3           28%                27 a minute
+#   Tokyo          median  3           28%                27 a minute
 #   Intel sample   median  0           58%                 --
-VIDEOS: tuple[SampleVideo, ...] = (TORONTO, TYUMEN, SHIBUYA, INTEL_STREET, CAPPING_LINE, CATTLE_DRIVE)
+VIDEOS: tuple[SampleVideo, ...] = (TORONTO, TYUMEN, TOKYO, INTEL_STREET, CAPPING_LINE, CATTLE_DRIVE)
 BY_KEY = {video.key: video for video in VIDEOS}
 
 

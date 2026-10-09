@@ -61,7 +61,7 @@ an LLM a third time. What it adds on top:
   `uv run panther-lake-prefetch street-videos` to fetch them by hand. The
   two it opens on, crossings in Toronto and Tyumen, are the two the
   detector does best on (a median of 11 and 9 boxes on screen, never none);
-  in the Shibuya clip, a crowd seen from far above, it boxes a handful of
+  in the Tokyo clip, a crowd seen from far above, it boxes a handful of
   several hundred people. Two are not streets: a bottle capping line and a
   cattle drive ("A herd and a line, two chips"), where it holds a median of
   3 and 8 boxes on screen. Its tallies run high: about 90 "cattle" for a
@@ -105,7 +105,7 @@ Or one of the bundled street videos, once fetched:
 
 ```bash
 uv run panther-lake-prefetch street-videos
-uv run smart-city-monitor --source sample-data/videos/toronto-yonge-dundas-crossing.webm --engine openvino
+uv run smart-city-monitor --source sample-data/videos/toronto.webm --engine openvino
 ```
 
 Monitor a live camera — anything FFmpeg can open, including a YouTube

@@ -147,6 +147,20 @@ def test_every_video_says_where_it_comes_from_and_under_which_licence():
     assert sample_videos.for_path("C:/somewhere/else.mp4") is None and sample_videos.for_path("https://x.example/a.mp4") is None
 
 
+def test_a_street_video_is_named_by_its_city_and_nothing_more():
+    """On screen and on disk: a street, a square or a shop named on a stand
+    is somebody's interest, and a city is not."""
+    streets = [video for video in sample_videos.VIDEOS if video.counts == "street"][:3]
+    assert [(video.name, video.filename, video.key) for video in streets] == [
+        ("Toronto", "toronto.webm", "toronto"), ("Tyumen", "tyumen.webm", "tyumen"), ("Tokyo", "tokyo.webm", "tokyo")]
+    readme = (Path(sample_videos.SAMPLE_ROOT) / "videos" / "README.md").read_text(encoding="utf-8")
+    shown = " ".join([readme.split("## Licences and credits")[0]]
+                     + [f"{video.name} {video.description}" for video in sample_videos.VIDEOS]
+                     + [f"{sample.name} {sample.description}" for sample in samples.SAMPLES if sample.kind == "file"])
+    for place in ("Yonge", "Dundas", "Shibuya", "Respubliki", "Ordzhonikidze"):
+        assert place not in shown, f"{place} is named where a visitor reads it"
+
+
 def test_the_videos_are_fetched_with_the_models_and_weigh_what_they_weigh(monkeypatch):
     spec = models.BY_KEY["street-videos"]
     assert spec.demos == ("smart-city-monitor",) and models.remote_size(spec) == sample_videos.total_bytes()
@@ -178,17 +192,17 @@ def test_the_city_monitor_offers_its_own_videos_first_and_opens_on_two_of_them()
     assert "RG72" in alone[1].description and "CC BY-SA 4.0" in alone[1].description
     assert "Basile Morin" in alone[2].description
     # A feed playing one of them is called by its name, not by a file name.
-    assert sources.display_name(str(sample_videos.SHIBUYA.path)) == "Shibuya Crossing, Tokyo"
+    assert sources.display_name(str(sample_videos.TOKYO.path)) == "Tokyo"
     assert sources.display_name(r"C:\videos\crossing.mp4") == "crossing.mp4"
 
 
 def test_the_page_is_told_which_videos_are_still_to_be_fetched(monkeypatch):
-    monkeypatch.setattr(sample_videos, "present", lambda video: video.key == "toronto-crossing")
+    monkeypatch.setattr(sample_videos, "present", lambda video: video.key == "toronto")
     listed = TestClient(launcher_app.app).get("/api/smart-city-monitor/devices").json()["samples"]
     by_name = {sample["name"]: sample for sample in listed}
-    assert by_name["Yonge-Dundas crossing, Toronto"]["ready"] is True
-    assert by_name["Shibuya Crossing, Tokyo"]["ready"] is False and by_name["Two streets, two chips"]["ready"] is False
-    assert by_name["Respubliki-Ordzhonikidze crossing, Tyumen"]["ready"] is False
+    assert by_name["Toronto"]["ready"] is True
+    assert by_name["Tokyo"]["ready"] is False and by_name["Two streets, two chips"]["ready"] is False
+    assert by_name["Tyumen"]["ready"] is False
     assert "ready" not in by_name["Westminster Bridge, London"]  # a camera on the network has nothing to fetch
 
 
@@ -204,7 +218,7 @@ def test_starting_a_feed_on_a_video_not_fetched_yet_fetches_it_first(monkeypatch
     body = {"feeds": [{"path": str(sample_videos.TORONTO.path), "engine": "portable"},
                       {"path": r"C:\videos\mine.mp4", "engine": "portable"}]}
     assert web.post("/api/smart-city-monitor/start", json=body).status_code == 200
-    assert order == ["fetch toronto-crossing", "start"]  # the visitor's own file is none of its business
+    assert order == ["fetch toronto", "start"]  # the visitor's own file is none of its business
     assert [feed.counting for feed in started["feeds"]] == ["street", "street"]
     # A video that cannot be fetched is said, and nothing is started on it.
     order.clear()
@@ -241,7 +255,7 @@ def test_the_second_pair_is_a_herd_and_a_line_each_counted_for_what_it_shows(mon
     assert pair.counting == ("herd", "line") and not pair.default and pair.group == samples.LOCAL
     alone = {sample.videos[0]: sample for sample in samples.SAMPLES if sample.kind == "file" and len(sample.videos) == 1}
     assert alone["cattle-drive"].counting == ("herd",) and alone["bottle-capping-line"].counting == ("line",)
-    assert alone["toronto-crossing"].counting == ("street",)
+    assert alone["toronto"].counting == ("street",)
     # Started with nothing said, a sample video is counted for what it shows; told, a feed counts what it is told to.
     started = {}
     monkeypatch.setattr(sample_videos, "present", lambda video: True)
