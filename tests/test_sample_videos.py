@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from launcher import app as launcher_app
 from launcher import autodemo_scenes
-from launcher.autodemo import Scene, Skip, Stand
+from launcher.autodemo import Director, Scene, Skip, Stand
 from pantherlake_ai_core import models, sample_videos
 from pantherlake_ai_core.sample_videos import SampleVideo, VideoUnavailable
 from smart_city_monitor import samples, sources
@@ -328,23 +328,33 @@ def test_the_loop_plays_one_counting_scene_a_turn_the_streets_then_the_herd_and_
         {"name": "Bottle capping line", "kind": "file", "ready": True, "counting": ["line"], "feeds": "C:/v/bottles.webm"},
         {"name": "Cattle on the road", "kind": "file", "ready": True, "counting": ["herd"], "feeds": "C:/v/cattle.webm"},
     ]
+    # One place in the playlist for the two, not two scenes of the same brick back to back.
+    place = next(slot for slot in autodemo_scenes.PLAYLIST if isinstance(slot, tuple))
+    assert [entry.key for entry in place] == ["smart-city", "herd-and-line"]
+    director = Director(lambda *call: {}, [place])
+
+    def turns(stand, loops=(1, 2, 3, 4, 5), chosen=None):
+        return [director._listing(stand, loop, chosen)[0] for loop in loops]
+
     stand = _stand(listed)
-    turns = [autodemo_scenes.counting(stand, loop) for loop in (1, 2, 3, 4, 5)]
-    assert [scene.id for scene in turns] == ["smart-city", "herd-and-line", "smart-city", "herd-and-line", "smart-city"]
+    played = [scenes[0] for scenes in turns(stand)]
+    assert [scene.id for scene in played] == ["smart-city", "herd-and-line", "smart-city", "herd-and-line", "smart-city"]
+    assert all(len(scenes) == 1 for scenes in turns(stand))  # never both in one turn
     # The streets still change chips each time they play, which is now every other turn.
-    streets = [[feed["path"] for feed in scene.steps[0].body["feeds"]] for scene in turns[::2]]
+    streets = [[feed["path"] for feed in scene.steps[0].body["feeds"]] for scene in played[::2]]
     assert streets == [["C:/v/a.webm", "C:/v/b.webm"], ["C:/v/b.webm", "C:/v/a.webm"], ["C:/v/a.webm", "C:/v/b.webm"]]
-    # One slot in the playlist, not two scenes of the same brick back to back.
-    assert autodemo_scenes.counting in autodemo_scenes.PLAYLIST
-    assert autodemo_scenes.smart_city not in autodemo_scenes.PLAYLIST and autodemo_scenes.herd_and_line not in autodemo_scenes.PLAYLIST
     # The one whose turn it is cannot play: the other does, rather than the loop going a scene short.
     only_streets = _stand(_listed())
-    assert [autodemo_scenes.counting(only_streets, loop).id for loop in (1, 2)] == ["smart-city", "smart-city"]
+    assert [scenes[0].id for scenes in turns(only_streets, (1, 2))] == ["smart-city", "smart-city"]
     only_herd = _stand([entry for entry in listed if entry.get("counting")])
-    assert [autodemo_scenes.counting(only_herd, loop).id for loop in (1, 2)] == ["herd-and-line", "herd-and-line"]
-    # Neither can: it says why the one whose turn it was could not.
-    nothing = autodemo_scenes.counting(_stand(_listed(ready=False)), 2)
-    assert isinstance(nothing, Skip) and "Prepare models" in nothing.reason
+    assert [scenes[0].id for scenes in turns(only_herd, (1, 2))] == ["herd-and-line", "herd-and-line"]
+    # One of the two left out when the loop was started: the other every turn, changing chips every turn.
+    chosen = turns(stand, (1, 2), {"smart-city"})
+    assert [scenes[0].id for scenes in chosen] == ["smart-city", "smart-city"]
+    assert [feed["path"] for feed in chosen[1][0].steps[0].body["feeds"]] == ["C:/v/b.webm", "C:/v/a.webm"]
+    # Neither can: nothing plays there, and each says why.
+    scenes, listing = director._listing(_stand(_listed(ready=False)), 2)
+    assert scenes == [] and all("Prepare models" in entry["reason"] for entry in listing)
 
 
 def test_without_its_videos_the_auto_demo_falls_back_on_the_live_cameras_or_says_what_it_needs():

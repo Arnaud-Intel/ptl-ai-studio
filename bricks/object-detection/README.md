@@ -1,7 +1,7 @@
 # object-detection
 
-Detects objects in a live webcam or screen-capture feed and overlays
-labeled, confidence-scored bounding boxes — fully on-device.
+Detects objects in a video file, a live webcam or a screen-capture feed and
+overlays labeled, confidence-scored bounding boxes — fully on-device.
 
 It supports two interchangeable inference engines, each using a
 genuinely different model family (not just a different runtime for the
@@ -54,6 +54,14 @@ Watch a webcam, with a live annotated window (needs a display):
 uv run object-detect --source webcam --show
 ```
 
+Play a video file — with no `--path`, the studio's Toronto sample video,
+fetched the first time (see [`sample-data/videos`](../../sample-data/videos/README.md)):
+
+```bash
+uv run object-detect --source file --show
+uv run object-detect --source file --path street.mp4 --once
+```
+
 Run on Intel NPU via OpenVINO:
 
 ```bash
@@ -66,7 +74,9 @@ Press `Ctrl+C` to stop.
 
 | Flag | Description |
 | --- | --- |
-| `--source {webcam,screen}` | Video source. `screen` works everywhere; `webcam` needs a camera. Default: `screen`. |
+| `--source {webcam,screen,file}` | Video source. `screen` works everywhere; `webcam` needs a camera; `file` plays `--path`. Default: `screen`. |
+| `--path FILE` | The video, for `--source file`. Default: the Toronto sample video, fetched if need be. |
+| `--once` | Play the file once instead of in a loop. |
 | `--camera-index N` | Which webcam (see `--list-devices`). Default: `0`. |
 | `--screen-index N` | Which screen/monitor (see `--list-devices`). Default: `1`. |
 | `--engine {portable,openvino}` | Inference backend. Default: `portable`. |
@@ -78,9 +88,11 @@ Press `Ctrl+C` to stop.
 ## How it works
 
 1. **Capture** ([`pantherlake_ai_core.video`](../../core/src/pantherlake_ai_core/video.py),
-   shared with other bricks) — OpenCV for webcam frames, [`mss`](https://github.com/BoboTiG/python-mss)
-   for screen frames. Both yield plain BGR `numpy` arrays, so the rest of
-   the pipeline doesn't care which source is in use.
+   shared with other bricks) — OpenCV for webcam frames and video files (a
+   file is played at its own frame rate, in a loop), [`mss`](https://github.com/BoboTiG/python-mss)
+   for screen frames. All yield plain BGR `numpy` arrays, so the rest of
+   the pipeline doesn't care which source is in use. A frame wider than
+   1280 pixels is shrunk to that before anything else is done with it.
 2. **Detect** ([`engine_factory.py`](src/object_detection/engine_factory.py)) —
    picks [`detector_portable.py`](src/object_detection/detector_portable.py)
    or [`detector_openvino.py`](src/object_detection/detector_openvino.py);
@@ -95,6 +107,43 @@ Press `Ctrl+C` to stop.
    present a frame" differs per consumer while "how to detect objects in
    it" doesn't.
 
+## What its proofing pass found (2026-10-10)
+
+The Auto Demo's "Seeing and answering" scene waited for this brick to be
+gone over. On the XPS 14, YOLO11s, through the launcher:
+
+| Source | Integrated GPU | NPU | CPU |
+| --- | --- | --- | --- |
+| A sample video (Toronto, 1080p, 24 frames a second) | 24.0 | 23.8 | 24.0 |
+| The webcam | 30.4 | | |
+| The screen (2880x1800) | 18.8 (12.0 before) | 12.6 before | |
+
+DETR on the portable engine: 4.3 frames a second on the same video.
+
+- **There was nothing to point it at.** A covered camera or a screen full
+  of windows gives a detector nothing to find (no box at all on this
+  desktop). A video file is now a source, the studio's sample videos are
+  offered, and the panel opens on the busiest of them.
+- **A wrong source was answered "started".** The source was checked after
+  the model had loaded, on a thread nobody waited for; the Auto Demo's own
+  scene asked for `camera`, which does not exist (`webcam` does), and would
+  have shown an empty picture. It is refused at once now, by name, before
+  any model is loaded.
+- **A big screen cost three frames in four.** Of a frame's 83 ms, 20 went
+  to resizing 2880x1800 pixels for a model that looks at 640, and 21 to
+  drawing and encoding all of them for a page that shows them 700 wide.
+  Frames are shrunk to 1280 first, and the screen capture hands over
+  packed pixels instead of a view with gaps (15 ms a resize). What is left
+  is the capture itself, 41 ms a grab.
+- **Boxes were hairlines on a tall picture**: two pixels and a 13-pixel
+  label whatever the frame. They are sized to it, as the city monitor's are.
+- **What it still misses**: small people. On the Toronto crossing YOLO11s
+  boxes 5 people a frame where DETR boxes 21, and in a crowd seen from far
+  above it finds a handful of several hundred. Its 640-pixel look is the
+  reason; a larger input or tiles is the remedy, and it is not done.
+- **Not looked at**: the camera's picture itself. The webcam was run once
+  for its frame rate and its labels, without its picture being fetched.
+
 ## Notes / current limitations
 
 - The two engines use different label vocabularies: DETR here uses
@@ -107,3 +156,6 @@ Press `Ctrl+C` to stop.
   detector. On a slow path (e.g. DETR on a large screen capture) this
   means a lower effective frame rate rather than dropped detections --
   reasonable for a demo, worth revisiting if this needs to hit a target FPS.
+- A video file is played at its own pace and every frame is looked at: a
+  detector slower than the file (DETR, at 4 frames a second) plays it in
+  slow motion rather than skip.

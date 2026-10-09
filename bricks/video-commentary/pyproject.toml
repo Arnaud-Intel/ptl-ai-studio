@@ -7,6 +7,7 @@ dependencies = [
     "pantherlake-ai-core",
     "screen-ocr",
     "doc-qa",
+    "voice-clone-studio",  # the voices a line is said aloud in
     "numpy>=1.26",
     "opencv-python>=4.9",
 ]
@@ -16,6 +17,7 @@ dependencies = [
 openvino = [
     "screen-ocr[openvino]",
     "doc-qa[openvino]",
+    "voice-clone-studio[openvino]",
 ]
 
 [project.scripts]
@@ -32,3 +34,4 @@ packages = ["src/video_commentary"]
 pantherlake-ai-core = { workspace = true }
 screen-ocr = { workspace = true }
 doc-qa = { workspace = true }
+voice-clone-studio = { workspace = true }

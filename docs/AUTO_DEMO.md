@@ -11,20 +11,20 @@ stand has and what one turn of the loop will play, and takes four choices:
 the language the story is told in (English or French), whether to use the
 discrete GPU, larger text for a big display, and full screen.
 
-## Where it stands (2026-10-09)
+## Where it stands (2026-10-10)
 
-Decided with the user, 2026-10-08 and -09:
+Decided with the user, 2026-10-08 to -10:
 
 | Question | Answer |
 | --- | --- |
 | Captions or a voice? | Captions only. A stand at a large event is too loud for sound |
 | Which language? | English unless French is chosen when the loop is started. Every sentence is written in both |
 | What is on screen? | A stage made for it and nothing else: **the caption on top, always**, telling the demo in hand as a story, a sentence or two at a time (what, why, how); **the demo's outputs** in the middle; **the chips** down the right. No settings, no options, no scrolling |
-| A camera on the stand? | Almost always; the screen is the fallback |
+| A camera on the stand? | Almost always. The person starting the loop can leave it out (a meeting, a film for colleagues): a scene that would show it plays a video kept on the machine instead, never the screen |
 | The discrete GPU? | Not always there: looked for when the loop starts, and the person starting it can leave it out |
 | A large display? | Sometimes: a setting of the loop, not a different build |
 | Somebody touches the machine? | A popup asks: keep playing, pause, or stop. Stop goes back to the start screen |
-| Which scenes? | Page Agent, Expense extraction on the worn receipts, Smart City when the internet is reachable, and Detection with Q&A once those two bricks have had a proofing pass |
+| Which scenes? | Page Agent, Expense extraction on the worn receipts, the two counting scenes in turn, the Video Commentator, and Detection with Q&A now that both bricks have had a proofing pass. **Which of them play is ticked when the loop is started** (asked for on 2026-10-10), and remembered |
 
 Three things were put to the user as changes to what was asked, and built
 that way:
@@ -61,11 +61,17 @@ Built, and tested without a browser or a model (`tests/test_autodemo.py`):
 - **The playlist** (`launcher/autodemo_scenes.py`): each scene is built for
   the stand it plays on -- with the discrete GPU or without, NPU or not --
   in the language chosen, and takes another sample each turn of the loop.
-  "Seeing and answering" is written and held back (`HELD_BACK`).
-- **The routes**: `GET /api/autodemo` (state, scene, what plays and what is
-  skipped and why), `GET /api/autodemo/check` (the same before starting),
-  `GET /api/autodemo/result`, and `POST .../start`, `stop`, `pause`,
-  `resume`, `skip`.
+  Every scene has a key the start screen ticks it by. Scenes that share a
+  place in the loop (the two counting scenes) take turns in it; if one was
+  left out, or cannot play here, the other has the place every turn.
+  `HELD_BACK` is empty, and stays for the next scene written before its
+  demo is ready.
+- **The routes**: `GET /api/autodemo` (state, scene, and every scene of the
+  playlist with whether it was chosen, can play, and plays this turn),
+  `GET /api/autodemo/check` (the same before starting), `GET
+  /api/autodemo/result`, and `POST .../start` (which takes `scenes`, the
+  keys to play, and `camera`: "auto" or "off"), `stop`, `pause`, `resume`,
+  `skip`.
 - **Keep-awake** while the loop runs (`launcher/keep_awake.py`), and no
   upgrade while it is on.
 - **The page's side** (`static/app.js`, "Start screen, and the Auto Demo's
@@ -76,8 +82,17 @@ Built, and tested without a browser or a model (`tests/test_autodemo.py`):
   as they are drawn, the page's code as it is written, then the page itself,
   scrolled slowly from top to bottom; the receipts, each beside the line
   the two models make of it; two camera pictures with what was found drawn
-  on them, their chip, frame rate and counts. The chips column shows each
-  chip's load, what it does in this demo, and its own figure.
+  on them, their chip, frame rate and counts; the commentator's video with
+  its line on it as a subtitle, what was actually seen under it, and the
+  lines said so far with the voice of each; the detector's picture, with
+  what is in it and how fast, beside a question and its answer as it is
+  written. The chips column shows each chip's load, what it does in this
+  demo, and its own figure.
+- **Before it starts**: the dialog lists what the stand has, then every
+  scene with a tick -- "plays", "left out", "plays every other turn, taking
+  turns with ...", or why it cannot play here, in which case it cannot be
+  ticked. What is remembered is what was taken out, so a scene added later
+  plays without anybody having to find it.
 
 **Watched runs** (XPS 14 with the B60, 2026-10-09, in a headless Edge that
 photographs every sentence and measures what overflows):
@@ -111,13 +126,43 @@ vision model to read, which the brick flags ("Amount could not be matched
 to the receipt text"); the stage shows that flag on its line and leaves it
 out of the total.
 
+**The two scenes added on 2026-10-10**, watched in English at 1920x1080
+and in French at 1280x680 (XPS 14, on battery, the B60 not plugged in), the
+other scenes unticked and the camera left out. Nothing overflowed, no
+sentence was set smaller, no scene failed, and nothing was left running or
+loaded after the stop.
+
+- **A video, watched and commented on** (80 s). The first plain sentence
+  14 s after the scene starts, the two models loading until then; the
+  voices wait for it rather than for a clock. Then a sports commentator, a
+  nature documentary, an upbeat voice, each change answered within two
+  seconds without the picture being read again: about a second to see
+  (22 tok/s on the integrated GPU) and a second to say (46 tok/s on the
+  NPU). It plays another sample video each turn. It is silent, like the
+  rest of the loop; its comments are in English in either language, and
+  its last sentence says that the small model embroiders -- on this run it
+  put the herd "under a starry night sky" at midday.
+- **Seeing and answering at once** (55 s). The detector on a video (or the
+  camera) for fourteen seconds alone, then the folder indexed and the
+  question asked on the NPU. The first version started both together: the
+  answer was written before the detector had shown a frame, and the story
+  about one not slowing the other was over before it could be seen. The
+  frame rate held at 24 while the answer was written (41 tok/s); it dipped
+  to 14 for a second and a half earlier, when the NPU's models were being
+  loaded, which is the CPU's work.
+
+What the Object Detection pass found and changed is in that brick's README.
+
 Not built yet, most useful first:
 
 - **A run of several hours** on the real machine, watched through the
   activity log. The loop has been round a few times, not a day.
-- The proofing pass on Object Detection that lets the fourth scene through
-  (Document Q&A had its own on 2026-10-09: see the backlog's R06), and an
-  output view for it.
+- **A whole turn with all six scenes**, and the camera: the two new scenes
+  were watched on their own, with a video in the camera's place. The
+  webcam was run once through the detector for its frame rate (30), and
+  its picture was not looked at.
+- **French comments** in the commentator scene: the two models answer in
+  English.
 - "Count whatever passes" -- a cattle drive and a bottle capping line through
   the same detector, each counted for what it shows -- takes turns with the
   streets: the streets on the first turn of the loop, the herd and the line

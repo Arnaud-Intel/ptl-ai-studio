@@ -43,8 +43,13 @@ class ObjectDetectionRunner:
         screen_index: int,
         engine: Engine,
         compute_device: str,
+        path: str = "",
+        loop: bool = True,
     ) -> None:
         worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
+        # What is wrong with the source and can be known now is said now, to
+        # whoever pressed Start, rather than from the thread a moment later.
+        pipeline.frames_from(source, camera_index=camera_index, screen_index=screen_index, path=path, loop=loop).close()
 
         self.error = None
         with self._frame_lock:
@@ -79,6 +84,8 @@ class ObjectDetectionRunner:
                     source=source,
                     camera_index=camera_index,
                     screen_index=screen_index,
+                    path=path,
+                    loop=loop,
                     engine=engine,
                     compute_device=compute_device,
                     on_frame=on_frame,

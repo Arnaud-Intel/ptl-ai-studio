@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from launcher import app as launcher_app
 from launcher import autodemo, autodemo_scenes
-from launcher.autodemo import Ask, Beat, Chip, Director, Scene, Skip, Stand, Start, Until, Wait
+from launcher.autodemo import Ask, Beat, Chip, Director, Entry, Scene, Skip, Stand, Start, Until, Wait
 from launcher.errors import Conflict
 
 GPUS = [
@@ -43,6 +43,15 @@ SAMPLES = {
         {"name": "Bottle capping line", "group": "On this machine", "kind": "file", "ready": True, "counting": ["line"], "feeds": "C:/v/bottles.webm"},
     ],
     "doc-qa": [{"name": "Can the pilot launch?", "folder": "C:/docs", "question": "Is it approved?"}],
+    "video-commentary": [
+        {"name": "Cattle on the road", "path": "C:/v/cattle.webm", "ready": True},
+        {"name": "Bottle capping line", "path": "C:/v/bottles.webm", "ready": True},
+        {"name": "Tokyo", "path": "C:/v/tokyo.webm", "ready": False},
+    ],
+    "object-detection": [
+        {"name": "Tyumen", "kind": "file", "path": "C:/v/tyumen.webm", "ready": False},
+        {"name": "Toronto", "kind": "file", "path": "C:/v/toronto.webm", "ready": True},
+    ],
 }
 
 
@@ -74,7 +83,7 @@ class Stage:
         if path == "/api/system/gpu-devices":
             return self.gpus
         if path == "/api/object-detection/devices":
-            return {"cameras": self.cameras, "openvino_devices": self.devices}
+            return {"cameras": self.cameras, "openvino_devices": self.devices, "samples": SAMPLES["object-detection"]}
         if path.endswith("/devices"):
             return {"samples": SAMPLES.get(path.split("/")[2], [])}
         return self.answers.get(path, {"status": "ok"})
@@ -146,9 +155,13 @@ def test_the_scene_in_hand_comes_with_its_story_and_what_its_view_needs():
     ]
     assert scene["chips"] == [{"chip": "NPU", "label": "Plans · a small model", "demo": "page", "stages": ("plan",)}]
     assert scene["props"] == {"request": "page"} and scene["result_ready"] is False and director.result() is None
-    assert state["playlist"] == [{"id": "page", "title": "Page", "playable": True, "demo": "page", "reason": ""}]
+    assert state["playlist"] == [{
+        "key": "scene-1", "id": "page", "title": "Page", "playable": True, "demo": "page", "reason": "",
+        "chosen": True, "plays": True, "turns_with": [],
+    }]
     assert state["stand"] == {
-        "npu": True, "igpu": "GPU.0", "dgpu": "GPU.1", "cameras": 1, "internet": False, "big_screen": True, "lang": "fr",
+        "npu": True, "igpu": "GPU.0", "dgpu": "GPU.1", "cameras": 1, "cameras_found": 1, "internet": False,
+        "big_screen": True, "lang": "fr",
     }
     assert state["awake"] is True
     # The answer is kept for the page to draw, and stays on screen for the scene's hold.
@@ -305,13 +318,102 @@ def test_the_loop_cannot_be_started_twice_and_a_stand_with_nothing_to_play_says_
     assert "Cameras (needs the internet)" in nothing.snapshot()["notice"]
 
 
+# --- which scenes play ------------------------------------------------------------------
+
+
+def _named(key: str, *, skip: str = "") -> Entry:
+    """A scene under a key, that plays a route of its own name -- or cannot play, and says why."""
+    def build(stand, turn):
+        return Skip(key.title(), skip) if skip else _scene(key, Start(f"/{key}/start", {"turn": turn}))
+    return Entry(key, build)
+
+
+def _started(stage: Stage, count: int) -> list[tuple[str, int]]:
+    return [(path, body["turn"]) for _method, path, body in stage.calls if path.endswith("/start")][:count]
+
+
+def test_only_the_scenes_chosen_at_the_start_are_played_and_a_wrong_choice_is_refused():
+    stage = Stage()
+    director = _director(stage, [_named("page"), _named("receipts"), _named("cameras")])
+    assert director.keys() == ["page", "receipts", "cameras"]
+    listed = director.check(scenes=["page", "cameras"])["playlist"]
+    assert [(entry["key"], entry["chosen"], entry["plays"]) for entry in listed] == [
+        ("page", True, True), ("receipts", False, False), ("cameras", True, True)]
+    assert listed[1]["playable"] is True  # it could play: it was left out
+    director.start(scenes=["cameras", "page"])
+    assert _until(lambda: director.snapshot()["loop"] >= 3)
+    director.stop()
+    assert stage.posted()[:4] == ["/page/start", "/cameras/start", "/page/start", "/cameras/start"]  # in the playlist's order
+    assert "/receipts/start" not in stage.posted()
+    assert [entry["chosen"] for entry in director.snapshot()["playlist"]] == [True, False, True]
+    # Every scene, when nothing is said; and a choice that cannot be honoured is refused before anything starts.
+    assert all(entry["chosen"] for entry in director.check()["playlist"])
+    with pytest.raises(ValueError, match="No such scene: weather"):
+        director.start(scenes=["page", "weather"])
+    with pytest.raises(ValueError, match="at least one"):
+        director.start(scenes=[])
+    assert director.running is False
+    # Chosen, and it cannot play here: the loop says so rather than go round on nothing.
+    alone = _director(stage, [_named("page"), _named("cameras", skip="needs the internet")])
+    alone.start(scenes=["cameras"])
+    assert _until(lambda: alone.snapshot()["state"] == autodemo.STOPPED)
+    assert alone.snapshot()["notice"].endswith("stand: Cameras (needs the internet)")  # only what was asked for is explained
+
+
+def test_scenes_that_share_a_place_take_turns_in_it_and_each_is_told_its_own_turn():
+    stage = Stage()
+    director = _director(stage, [_named("page"), (_named("streets"), _named("herd"))])
+    assert director.keys() == ["page", "streets", "herd"]
+    first = director.check()["playlist"]
+    assert [(entry["key"], entry["plays"], entry["turns_with"]) for entry in first] == [
+        ("page", True, []), ("streets", True, ["herd"]), ("herd", False, ["streets"])]
+    director.start()
+    assert _until(lambda: director.snapshot()["loop"] >= 5)
+    director.stop()
+    assert _started(stage, 8) == [
+        ("/page/start", 1), ("/streets/start", 1), ("/page/start", 2), ("/herd/start", 1),
+        ("/page/start", 3), ("/streets/start", 2), ("/page/start", 4), ("/herd/start", 2)]  # never both in one turn
+    # One of the two left out, or unable to play here: the other has the place every turn.
+    for playlist, scenes in (
+        ([(_named("streets"), _named("herd"))], ["herd"]),
+        ([(_named("streets", skip="needs the internet"), _named("herd"))], None),
+    ):
+        stage = Stage()
+        only = _director(stage, playlist)
+        only.start(scenes=scenes)
+        assert _until(lambda: only.snapshot()["loop"] >= 4)
+        only.stop()
+        assert _started(stage, 3) == [("/herd/start", 1), ("/herd/start", 2), ("/herd/start", 3)]
+
+
+def test_an_answer_on_the_way_to_the_one_that_matters_is_not_the_scenes_result():
+    stage = Stage()
+    stage.slow["/docs/ask"] = threading.Event()
+    stage.answers["/docs/index"] = {"chunks": 12}
+    stage.answers["/docs/ask"] = {"text": "Not yet approved."}
+    scene = lambda stand, loop: _scene("docs", Ask("/docs/index", keep=False), Ask("/docs/ask"), hold=0.3)  # noqa: E731
+    director = _director(stage, [scene])
+    director.start()
+    assert _until(lambda: "/docs/ask" in stage.posted())
+    assert director.result() is None and director.snapshot()["scene"]["result_ready"] is False  # indexed, not answered
+    stage.slow["/docs/ask"].set()
+    assert _until(lambda: director.result() is not None)
+    assert director.result() == {"scene": "docs", "data": {"text": "Not yet approved."}}
+    director.stop()
+
+
 # --- the playlist, on the stands it will meet -------------------------------------------
 
 
 def _stand(stage: Stage, **options) -> Stand:
     return Director(stage, [], online=lambda: options.pop("internet", True))._look_at_the_stand(
-        options.pop("dgpu", "auto"), options.pop("big_screen", False), options.pop("lang", "en")
+        options.pop("dgpu", "auto"), options.pop("big_screen", False), options.pop("lang", "en"), options.pop("camera", "auto")
     )
+
+
+def _builders() -> list:
+    """Every scene of the playlist, those that share a place in it included."""
+    return [entry.build for slot in autodemo_scenes.PLAYLIST for entry in (slot if isinstance(slot, tuple) else (slot,))]
 
 
 def test_the_stand_is_looked_at_once_and_the_discrete_gpu_can_be_left_out():
@@ -322,6 +424,12 @@ def test_the_stand_is_looked_at_once_and_the_discrete_gpu_can_be_left_out():
     assert without.dgpu is None and without.igpu == "GPU.0" and without.lang == "fr"
     laptop = _stand(Stage(gpus=GPUS[:1], cameras=[], devices=["CPU", "GPU.0"]), internet=False)
     assert (laptop.dgpu, laptop.npu, laptop.cameras, laptop.internet) == (None, False, [], False)
+    # A camera left out is, for every scene, a camera that is not there -- and the stand still says it has one.
+    covered = _stand(stage, camera="off")
+    assert covered.cameras == [] and covered.cameras_found == 1
+    assert Director._describe(covered)["cameras"] == 0 and Director._describe(covered)["cameras_found"] == 1
+    with pytest.raises(ValueError, match="camera is"):
+        _director(stage, []).start(camera="sometimes")
 
 
 def test_the_page_agent_scene_tells_what_two_gpus_change_and_takes_another_brief_each_turn():
@@ -372,28 +480,83 @@ def test_the_other_scenes_fit_the_stand_or_say_why_they_cannot_play():
     offline = autodemo_scenes.smart_city(_stand(stage, internet=False), 1)
     assert isinstance(offline, Skip) and "internet" in offline.reason
 
-    held = autodemo_scenes.seeing_and_answering(stand, 1)
+
+
+def test_a_scene_written_before_its_demo_is_ready_is_held_back_by_its_key(monkeypatch):
+    monkeypatch.setattr(autodemo_scenes, "HELD_BACK", {"video-commentary": "held back until its demo has had a proofing pass"})
+    held = autodemo_scenes.video_commentary(_stand(Stage()), 1)
     assert isinstance(held, Skip) and "proofing pass" in held.reason  # written, and not played yet
 
 
-def test_seeing_and_answering_is_ready_for_the_day_it_is_let_through(monkeypatch):
-    monkeypatch.setattr(autodemo_scenes, "HELD_BACK", {})
+def test_the_playlist_names_its_scenes_for_the_start_screen_and_holds_none_back():
+    director = Director(Stage(), autodemo_scenes.PLAYLIST, online=lambda: True)
+    assert director.keys() == [
+        "page-agent", "expense-extraction", "smart-city", "herd-and-line", "video-commentary", "seeing-and-answering"]
+    assert autodemo_scenes.HELD_BACK == {}
+    listed = director.check()["playlist"]
+    # A scene's key is the id it plays under: what the start screen ticks is what the stage shows.
+    assert [(entry["key"], entry["id"]) for entry in listed if entry["playable"]] == [(key, key) for key in director.keys()]
+    assert [entry["turns_with"] for entry in listed[2:4]] == [["herd-and-line"], ["smart-city"]]
+    assert [entry["plays"] for entry in listed] == [True, True, True, False, True, True]  # the streets on the first turn
+
+
+def test_seeing_and_answering_watches_the_camera_or_a_video_and_keeps_only_the_answer():
     stage = Stage()
     scene = autodemo_scenes.seeing_and_answering(_stand(stage), 1)
-    assert scene.steps[0].body == {"source": "camera", "camera_index": 0, "engine": "openvino", "compute_device": "GPU.0"}
-    assert "Nothing it sees is recorded." in scene.beats[0].text
-    assert [step.path for step in scene.steps] == ["/api/object-detection/start", "/api/doc-qa/ingest", "/api/doc-qa/ask"]
-    no_camera = autodemo_scenes.seeing_and_answering(_stand(Stage(cameras=[])), 1)
-    assert no_camera.steps[0].body["source"] == "screen" and "recorded" not in no_camera.beats[0].text
+    # "webcam", as the brick names it: the scene was written with "camera", which the brick refuses.
+    assert scene.steps[0].body == {"source": "webcam", "camera_index": 0, "engine": "openvino", "compute_device": "GPU.0"}
+    assert "Nothing it sees is recorded" in scene.beats[0].text and scene.props["camera"] is True
+    asked = [step for step in scene.steps if not isinstance(step, Wait)]
+    assert [step.path for step in asked] == ["/api/object-detection/start", "/api/doc-qa/ingest", "/api/doc-qa/ask"]
+    assert isinstance(scene.steps[1], Wait)  # the picture first, alone: the answer takes seconds, the detector's first frame more
+    assert [step.keep for step in asked[1:]] == [False, True]  # indexing the folder is not the answer
+    assert asked[1].body["compute_device"] == "NPU"
+    assert scene.stop == ("/api/object-detection/stop", "/api/bricks/doc-qa/stop")  # nothing left running, nothing left loaded
+    assert scene.view == "answer" and scene.props["question"] == "Is it approved?"
+    # No camera, or one left out when the loop was started: a video kept on the machine, never the screen.
+    for stand in (_stand(Stage(cameras=[])), _stand(stage, camera="off")):
+        video = autodemo_scenes.seeing_and_answering(stand, 1)
+        assert video.steps[0].body == {"source": "file", "path": "C:/v/toronto.webm", "engine": "openvino", "compute_device": "GPU.0"}
+        assert "recorded" not in video.beats[0].text and video.props == {
+            "question": "Is it approved?", "camera": False, "watching": "Toronto"}
+    bare = _stand(Stage(cameras=[]))
+    bare.samples = lambda demo: [] if demo == "object-detection" else SAMPLES.get(demo, [])
+    skipped = autodemo_scenes.seeing_and_answering(bare, 1)
+    assert isinstance(skipped, Skip) and "camera" in skipped.reason and "Prepare models" in skipped.reason
+    assert isinstance(autodemo_scenes.seeing_and_answering(_stand(Stage(devices=["CPU", "GPU.0"])), 1), Skip)  # no NPU
 
 
-def test_every_scene_tells_its_story_a_sentence_or_two_at_a_time_in_both_languages(monkeypatch):
-    monkeypatch.setattr(autodemo_scenes, "HELD_BACK", {})
+def test_the_commentator_scene_waits_for_its_first_line_then_changes_voice_and_stays_silent():
     stage = Stage()
-    for options in ({}, {"dgpu": "off"}):
+    scene = autodemo_scenes.video_commentary(_stand(stage), 1)
+    start = scene.steps[0]
+    assert start.path == "/api/video-commentary/start" and start.body == {
+        "source": "file", "path": "C:/v/cattle.webm", "loop": True, "mood": "plain", "voice": "",
+        "vision_device": "GPU.0", "mood_device": "NPU"}  # no sound: a stand is too loud for it
+    # The voices wait for the first plain sentence, not for a clock: two models load first.
+    wait = scene.steps[1]
+    assert isinstance(wait, Until) and (wait.path, wait.key, wait.equals) == ("/api/video-commentary/comments", "commenting", True)
+    assert [step.body["mood"] for step in scene.steps if isinstance(step, Start) and step.path.endswith("/mood")] == [
+        "sports", "documentary", "upbeat"]
+    assert scene.stop == ("/api/video-commentary/stop",) and scene.view == "commentary"
+    assert scene.props["video"] == "Cattle on the road" and set(scene.props["moods"]) == {"plain", "sports", "documentary", "upbeat"}
+    assert [chip.stages for chip in scene.chips] == [("vision",), ("mood",)]
+    assert "embroiders" in scene.beats[-1].text  # it says how far to trust the voice
+    # Another video each turn, of those on the machine.
+    assert autodemo_scenes.video_commentary(_stand(stage), 2).steps[0].body["path"] == "C:/v/bottles.webm"
+    assert autodemo_scenes.video_commentary(_stand(stage), 3).steps[0].body["path"] == "C:/v/cattle.webm"
+    # Without an NPU the small model shares the GPU, and the scene says so on one chip's line.
+    shared = autodemo_scenes.video_commentary(_stand(Stage(devices=["CPU", "GPU.0"])), 1)
+    assert shared.steps[0].body["mood_device"] == "GPU.0" and [chip.stages for chip in shared.chips] == [("vision", "mood")]
+    assert "shares the graphics chip" in shared.beats[2].text
+    assert isinstance(autodemo_scenes.video_commentary(_stand(Stage(gpus=[])), 1), Skip)
+
+
+def test_every_scene_tells_its_story_a_sentence_or_two_at_a_time_in_both_languages():
+    stage = Stage()
+    for options in ({}, {"dgpu": "off"}, {"camera": "off"}):
         english, french = _stand(stage, **options), _stand(stage, lang="fr", **options)
-        # The playlist's own scenes, and the one that takes the streets' place every other turn.
-        for build in [*autodemo_scenes.PLAYLIST, autodemo_scenes.herd_and_line]:
+        for build in _builders():
             scene, scène = build(english, 1), build(french, 1)
             assert isinstance(scene, Scene) and isinstance(scène, Scene)
             assert len(scene.beats) >= 3 and scene.beats[0].stage == "" and scene.beats[0].after == 0  # it opens at once
@@ -429,13 +592,19 @@ def test_the_loop_is_checked_started_followed_and_stopped_through_the_api(client
     check = web.get("/api/autodemo/check?dgpu=off&lang=fr").json()
     assert check["stand"]["dgpu"] is None and check["stand"]["lang"] == "fr"
     assert check["playlist"][0]["playable"] is True and director.running is False
+    assert check["playlist"][0]["key"] == "scene-1"
+    assert web.get("/api/autodemo/check?camera=off").json()["stand"]["cameras"] == 0
     assert web.get("/api/autodemo/result").status_code == 404
 
     assert web.post("/api/autodemo/start", json={"lang": "de"}).status_code == 400
-    started = web.post("/api/autodemo/start", json={"dgpu": "auto", "big_screen": True, "lang": "fr"})
+    refused = web.post("/api/autodemo/start", json={"scenes": ["nothing-of-the-kind"]})
+    assert refused.status_code == 400 and "No such scene" in refused.json()["error"] and director.running is False
+    started = web.post("/api/autodemo/start", json={
+        "dgpu": "auto", "big_screen": True, "lang": "fr", "camera": "off", "scenes": ["scene-1"]})
     assert started.status_code == 200 and web.post("/api/autodemo/start", json={}).status_code == 409
     assert _until(lambda: (web.get("/api/autodemo").json()["scene"] or {}).get("id") == "page")
     assert web.get("/api/autodemo").json()["stand"]["lang"] == "fr"
+    assert web.get("/api/autodemo").json()["stand"]["cameras"] == 0  # left out when it was started
     assert "Auto Demo" in launcher_app._busy_demos()  # no upgrade while the loop is on
 
     held = web.post("/api/autodemo/pause").json()

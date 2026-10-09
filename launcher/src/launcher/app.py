@@ -61,6 +61,7 @@ from pantherlake_ai_core.engine import (
 )
 from pydantic import BaseModel, Field
 from pantherlake_ai_core import sample_videos
+from object_detection.pipeline import SOURCES as object_detection_sources
 from smart_city_monitor import sources as smart_city_sources
 from smart_city_monitor.types import COUNTING as SMART_CITY_COUNTING
 from smart_city_monitor.types import FeedSpec as SmartCityFeedSpec
@@ -292,8 +293,9 @@ smart_city_monitor_runner = SmartCityMonitorRunner()
 screen_ocr_runner = ScreenOcrRunner()
 meeting_notes_runner = MeetingNotesRunner()
 webcam_effects_runner = WebcamEffectsRunner()
-video_commentary_runner = VideoCommentaryRunner()
 voice_clone_studio_runner = VoiceCloneStudioRunner()
+# The commentator speaks, when asked to, with the voice enrolled in the Voice Clone Studio.
+video_commentary_runner = VideoCommentaryRunner(cloned=voice_clone_studio_runner)
 voice_assistant_runner = VoiceAssistantRunner()
 expense_extract_runner = ExpenseExtractRunner()
 smart_recall_runner = SmartRecallRunner()
@@ -512,8 +514,20 @@ def demo_devices(demo_id: str) -> JSONResponse:
     if demo_id == "video-commentary":
         from video_commentary import moods as commentary_moods
 
+        from video_commentary import voices as commentary_voices
+
         payload["moods"] = [{"key": mood.key, "name": mood.name} for mood in commentary_moods.MOODS]
         payload["default_mood"] = commentary_moods.DEFAULT
+        # The voices a line can be said aloud in, and whether each can be used now:
+        # the cloned one is the voice enrolled in the Voice Clone Studio, if there is one.
+        payload["voices"] = [
+            {
+                "key": voice.key, "name": voice.name,
+                "ready": voice.key != commentary_voices.CLONED or video_commentary_runner.clone_ready,
+                "device": video_commentary_runner.voice_device(voice.key),
+            }
+            for voice in commentary_voices.VOICES
+        ]
         if payload["openvino_devices"]:
             # What "Auto" means for each of its two models, so the menus can say it.
             payload["auto_devices"] = dict(zip(("vision", "mood"), _video_commentary_devices(None, None)))
@@ -646,9 +660,11 @@ async def doc_qa_ask(req: DocQAAskRequest) -> JSONResponse:
 
 
 class ObjectDetectionStartRequest(BaseModel):
-    source: str = "screen"
+    source: str = "screen"  # "webcam", "screen" or "file"
     camera_index: int = 0
     screen_index: int = 1
+    path: str = ""  # the video, for "file"
+    loop: bool = True
     engine: str | None = None
     compute_device: str | None = None
 
@@ -656,11 +672,23 @@ class ObjectDetectionStartRequest(BaseModel):
 @app.post("/api/object-detection/start")
 async def start_object_detection(req: ObjectDetectionStartRequest) -> JSONResponse:
     try:
+        # Refused here, before a model is loaded for it: "started" is not an
+        # answer to a source that does not exist.
+        if req.source not in object_detection_sources:
+            raise ValueError(f"unknown source '{req.source}': one of {', '.join(object_detection_sources)}")
+        path = req.path.strip()
+        if req.source == "file" and not path:
+            raise ValueError("Choose a sample video, or give the path of a video file.")
         engine, device = resolve(req.engine, req.compute_device, realtime_vision=True)
+        video_file = sample_videos.for_path(path) if req.source == "file" else None
+        if video_file is not None and not sample_videos.present(video_file) and not object_detection_runner.running:
+            await run_in_threadpool(_fetch_sample_videos, "object-detection", [(None, video_file)])
         object_detection_runner.start(
             source=req.source,
             camera_index=req.camera_index,
             screen_index=req.screen_index,
+            path=path,
+            loop=req.loop,
             engine=engine,
             compute_device=device,
         )
@@ -677,9 +705,17 @@ async def stop_object_detection() -> JSONResponse:
 
 @app.get("/api/object-detection/detections")
 def object_detection_detections() -> JSONResponse:
-    return JSONResponse(
-        {"detections": object_detection_runner.latest_detections(), "error": object_detection_runner.error}
-    )
+    detections = object_detection_runner.latest_detections()
+    counts: dict[str, int] = {}
+    for detection in detections:
+        counts[detection["label"]] = counts.get(detection["label"], 0) + 1
+    return JSONResponse({
+        "detections": detections,
+        # How many of each kind are in the picture now, most first.
+        "counts": dict(sorted(counts.items(), key=lambda item: -item[1])),
+        "running": object_detection_runner.running,
+        "error": object_detection_runner.error,
+    })
 
 
 @app.get("/api/object-detection/stream")
@@ -867,11 +903,18 @@ class VideoCommentaryStartRequest(BaseModel):
     vision_device: str | None = None
     mood_device: str | None = None
     mood: str | None = None
+    # The line said aloud: "studio", "cloned" (the voice enrolled in the Voice
+    # Clone Studio), or "" for silence. Not said: as it was last left.
+    voice: str | None = None
     every: float = 4.0  # seconds between two looks at the picture
 
 
 class VideoCommentaryMoodRequest(BaseModel):
     mood: str
+
+
+class VideoCommentaryVoiceRequest(BaseModel):
+    voice: str = ""
 
 
 @app.post("/api/video-commentary/start")
@@ -887,11 +930,14 @@ async def start_video_commentary(req: VideoCommentaryStartRequest) -> JSONRespon
         video_commentary_runner.start(
             source=req.source, path=path, camera_index=req.camera_index, screen_index=req.screen_index, loop=req.loop,
             vision_device=sees, mood_device=says, mood=req.mood or video_commentary_runner.mood,
-            every=min(max(req.every, 2.0), 30.0),
+            every=min(max(req.every, 2.0), 30.0), voice=req.voice,
         )
     except Exception as exc:
         return error_response(exc)
-    return JSONResponse({"status": "started", "devices": {"vision": sees, "mood": says}, "mood": video_commentary_runner.mood})
+    return JSONResponse({
+        "status": "started", "devices": {"vision": sees, "mood": says},
+        "mood": video_commentary_runner.mood, "voice": video_commentary_runner.voice,
+    })
 
 
 @app.post("/api/video-commentary/stop")
@@ -907,6 +953,26 @@ def video_commentary_mood(req: VideoCommentaryMoodRequest) -> JSONResponse:
         return JSONResponse({"mood": video_commentary_runner.set_mood(req.mood)})
     except Exception as exc:
         return error_response(exc)
+
+
+@app.post("/api/video-commentary/voice")
+def video_commentary_voice(req: VideoCommentaryVoiceRequest) -> JSONResponse:
+    """Whether the next line on is said aloud, and in which voice: it can
+    change while the video plays."""
+    try:
+        return JSONResponse({"voice": video_commentary_runner.set_voice(req.voice)})
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.get("/api/video-commentary/speech/{number}")
+def video_commentary_speech(number: int) -> Response:
+    """The sound of one spoken comment, for the page to play. Only the
+    last few are kept: a line that was not heard in time is not heard late."""
+    sound = video_commentary_runner.speech(number)
+    if sound is None:
+        return JSONResponse({"error": "That line's sound is no longer kept."}, status_code=404)
+    return Response(content=sound, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/video-commentary/comments")
@@ -1785,6 +1851,11 @@ class AutoDemoRequest(BaseModel):
     dgpu: str = "auto"
     big_screen: bool = False
     lang: str = "en"  # the language the story is told in: "en" or "fr"
+    # "auto": a scene that can show the camera does. "off": none switches it
+    # on -- in a meeting, or anywhere people have not come to be on a screen.
+    camera: str = "auto"
+    # The scenes to play, by the keys /api/autodemo/check lists. Not said: all of them.
+    scenes: list[str] | None = None
 
 
 @app.get("/api/autodemo")
@@ -1795,10 +1866,12 @@ def autodemo_state() -> JSONResponse:
 
 
 @app.get("/api/autodemo/check")
-def autodemo_check(dgpu: str = "auto", big_screen: bool = False, lang: str = "en") -> JSONResponse:
-    """What the loop would play on this stand, before starting it."""
+def autodemo_check(dgpu: str = "auto", big_screen: bool = False, lang: str = "en", camera: str = "auto") -> JSONResponse:
+    """What the loop would play on this stand, before starting it: every
+    scene of the playlist under the key it is chosen by, whether it can play
+    here and, if not, why."""
     try:
-        return JSONResponse(autodemo_director.check(dgpu=dgpu, big_screen=big_screen, lang=lang))
+        return JSONResponse(autodemo_director.check(dgpu=dgpu, big_screen=big_screen, lang=lang, camera=camera))
     except Exception as exc:
         return error_response(exc)
 
@@ -1816,7 +1889,9 @@ def autodemo_result() -> JSONResponse:
 @app.post("/api/autodemo/start")
 def autodemo_start(req: AutoDemoRequest) -> JSONResponse:
     try:
-        return JSONResponse(autodemo_director.start(dgpu=req.dgpu, big_screen=req.big_screen, lang=req.lang))
+        return JSONResponse(autodemo_director.start(
+            dgpu=req.dgpu, big_screen=req.big_screen, lang=req.lang, camera=req.camera, scenes=req.scenes,
+        ))
     except Exception as exc:
         return error_response(exc)
 

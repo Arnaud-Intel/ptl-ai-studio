@@ -169,13 +169,20 @@
           <label class="field">
             <span>Video source</span>
             <select id="objdet-source">
-              <option value="screen">Screen capture</option>
+              <option value="file">A video file</option>
               <option value="webcam">Webcam</option>
+              <option value="screen">Screen capture</option>
             </select>
           </label>
-          <label class="field">
+          <label class="field" id="objdet-device-field" hidden>
             <span>Source device</span>
             <select id="objdet-source-device"></select>
+          </label>
+          <label class="field" id="objdet-sample-field">
+            <span>Sample video</span>
+            <select id="objdet-sample" class="sample-picker">
+              <option value="">Pick one, or type a path...</option>
+            </select>
           </label>
           <label class="field">
             <span>Engine</span>
@@ -187,6 +194,10 @@
           <label class="field">
             <span>Compute device</span>
             <select id="objdet-compute-device"></select>
+          </label>
+          <label class="field field-wide" id="objdet-path-field">
+            <span>Video file on this machine</span>
+            <input id="objdet-path" type="text" placeholder="C:\videos\street.mp4" autocomplete="off" />
           </label>
         </div>
         <div class="run-row">
@@ -231,6 +242,10 @@
             <select id="vidcom-mood" title="The voice of the comments. It can be changed while the video plays."></select>
           </label>
           <label class="field">
+            <span>Said aloud</span>
+            <select id="vidcom-voice" title="Whether each line is spoken as well as written, and in which voice. It can be changed while the video plays."></select>
+          </label>
+          <label class="field">
             <span>Sees on</span>
             <select id="vidcom-vision-device" title="Where the vision model reads the picture."></select>
           </label>
@@ -248,7 +263,8 @@
           <button id="vidcom-stop" class="btn btn-secondary" type="button" disabled>Stop</button>
           <span id="vidcom-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
-        <p class="field-help">The mood can be changed while the video plays. Under each line in a mood is what was actually seen.</p>
+        <p class="field-help">The mood and the voice can be changed while the video plays. Under each line in a mood is what was actually seen.</p>
+        <p id="vidcom-voice-note" class="field-help" hidden></p>
         <div class="media-layout">
           <div class="vidcom-stage">
             <div class="video-frame">

@@ -3173,12 +3173,14 @@ dependencies = [
     { name = "opencv-python" },
     { name = "pantherlake-ai-core" },
     { name = "screen-ocr" },
+    { name = "voice-clone-studio" },
 ]
 
 [package.optional-dependencies]
 openvino = [
     { name = "doc-qa", extra = ["openvino"] },
     { name = "screen-ocr", extra = ["openvino"] },
+    { name = "voice-clone-studio", extra = ["openvino"] },
 ]
 
 [package.metadata]
@@ -3190,6 +3192,8 @@ requires-dist = [
     { name = "pantherlake-ai-core", editable = "core" },
     { name = "screen-ocr", editable = "bricks/screen-ocr" },
     { name = "screen-ocr", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/screen-ocr" },
+    { name = "voice-clone-studio", editable = "bricks/voice-clone-studio" },
+    { name = "voice-clone-studio", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/voice-clone-studio" },
 ]
 provides-extras = ["openvino"]
 

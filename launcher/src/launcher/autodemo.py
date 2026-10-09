@@ -76,12 +76,15 @@ class Start:
 class Ask:
     """Ask a demo that answers one request and wait for the answer, which is
     kept for the page to draw. `cancel` is the route that stops it part-way,
-    for when the scene is interrupted."""
+    for when the scene is interrupted. `keep=False` for a request on the way
+    to the one that matters -- a folder indexed before the question is asked
+    -- whose answer is not the scene's result."""
 
     path: str
     body: dict = field(default_factory=dict)
     cancel: str = ""
     timeout: float = 900.0
+    keep: bool = True
 
 
 @dataclass(frozen=True)
@@ -143,7 +146,8 @@ class Stand:
     npu: bool = False
     igpu: str | None = None  # the integrated GPU's device name
     dgpu: str | None = None  # the discrete GPU's, if it is plugged in and wanted
-    cameras: list = field(default_factory=list)
+    cameras: list = field(default_factory=list)  # those the scenes may use
+    cameras_found: int = 0  # those the machine has, used or not
     internet: bool = False
     big_screen: bool = False
     lang: str = "en"  # the language the story is told in
@@ -155,6 +159,22 @@ class Stand:
 # says both depend on the chips there -- and for the loop it is in, so that a
 # scene with several samples shows another one each time round.
 Builder = Callable[[Stand, int], Scene | Skip]
+
+
+@dataclass(frozen=True)
+class Entry:
+    """A scene as the start screen lists it: the name it is ticked under,
+    which stays the same whether it can play on this stand or not, and what
+    builds it."""
+
+    key: str
+    build: Builder
+
+
+# One place in the loop. Several entries in it take turns there: the first on
+# the first turn of the loop, the second on the second, and round again. Two
+# scenes of the same demo back to back read as one long one.
+Slot = Builder | Entry | tuple[Entry, ...]
 # call(method, path, body, timeout) -> the route's JSON answer; raises on an error answer.
 Call = Callable[[str, str, dict | None, float], dict]
 
@@ -200,7 +220,7 @@ class Director:
     def __init__(
         self,
         call: Call,
-        playlist: list[Builder],
+        playlist: list[Slot],
         *,
         online: Callable[[], bool] = _never,
         idle_resume: float = 300.0,
@@ -209,7 +229,8 @@ class Director:
         busy_wait: float = 75.0,
         keep_awake: tuple[Callable[[], bool], Callable[[], None]] = (awake.hold, awake.release),
     ):
-        self._call, self._playlist, self._online = call, list(playlist), online
+        self._call, self._online = call, online
+        self._playlist: list[tuple[Entry, ...]] = [self._slot(slot, index) for index, slot in enumerate(playlist)]
         self._idle_resume, self._max_failures, self._poll = idle_resume, max_failures, poll
         # How long a demo that says it is busy is waited for. A page being
         # planned when its scene was skipped takes up to a minute to end, and
@@ -259,16 +280,49 @@ class Director:
         with self._lock:
             return self._result
 
-    def check(self, *, dgpu: str = "auto", big_screen: bool = False, lang: str = "en") -> dict:
+    @staticmethod
+    def _slot(slot: Slot, index: int) -> tuple[Entry, ...]:
+        if isinstance(slot, tuple):
+            return slot
+        if isinstance(slot, Entry):
+            return (slot,)
+        name = getattr(slot, "__name__", "")
+        return (Entry(name.replace("_", "-") if name.isidentifier() else f"scene-{index + 1}", slot),)
+
+    def keys(self) -> list[str]:
+        """Every scene of the playlist, by the name it is chosen under."""
+        return [entry.key for slot in self._playlist for entry in slot]
+
+    def _chosen(self, scenes: list[str] | None) -> set[str] | None:
+        """The scenes asked for, checked. None is all of them."""
+        if scenes is None:
+            return None
+        unknown = sorted(set(scenes) - set(self.keys()))
+        if unknown:
+            raise ValueError(f"No such scene: {', '.join(unknown)}. The playlist has: {', '.join(self.keys())}.")
+        if not scenes:
+            raise ValueError("Choose at least one demo to play.")
+        return set(scenes)
+
+    def check(
+        self, *, dgpu: str = "auto", big_screen: bool = False, lang: str = "en", camera: str = "auto",
+        scenes: list[str] | None = None,
+    ) -> dict:
         """What the loop would do if it were started now: what the stand
         has, and each scene with whether it can play and, if not, why.
         Nothing is started."""
-        stand = self._look_at_the_stand(dgpu, big_screen, lang)
-        return {"stand": self._describe(stand), "playlist": self._listing(stand, 1)[1]}
+        chosen = self._chosen(scenes)
+        stand = self._look_at_the_stand(dgpu, big_screen, lang, camera)
+        return {"stand": self._describe(stand), "playlist": self._listing(stand, 1, chosen)[1]}
 
-    def start(self, *, dgpu: str = "auto", big_screen: bool = False, lang: str = "en") -> dict:
+    def start(
+        self, *, dgpu: str = "auto", big_screen: bool = False, lang: str = "en", camera: str = "auto",
+        scenes: list[str] | None = None,
+    ) -> dict:
         """`dgpu`: "auto" uses the discrete GPU if it is plugged in, "off"
-        plays as if it were not there. `lang`: the story's language."""
+        plays as if it were not there. `camera`: the same for the camera --
+        "off" and no scene switches it on. `lang`: the story's language.
+        `scenes`: the ones to play, by key; all of them if not said."""
         if self.running:
             raise Conflict(
                 "The Auto Demo is still stopping: the demo it was showing is finishing. Try again in a moment."
@@ -276,8 +330,11 @@ class Director:
             )
         if dgpu not in ("auto", "off"):
             raise ValueError("dgpu is 'auto' or 'off'.")
+        if camera not in ("auto", "off"):
+            raise ValueError("camera is 'auto' or 'off'.")
         if lang not in LANGUAGES:
             raise ValueError(f"lang is one of {', '.join(LANGUAGES)}.")
+        chosen = self._chosen(scenes)
         self._stop.clear()
         self._interrupt.clear()
         self._paused = False
@@ -285,7 +342,9 @@ class Director:
             self._state = {**self._fresh(), "state": CHECKING, "started_at": time.time()}
             self._result = None
         self._thread = threading.Thread(
-            target=self._run, kwargs={"dgpu": dgpu, "big_screen": big_screen, "lang": lang}, daemon=True, name="autodemo"
+            target=self._run,
+            kwargs={"dgpu": dgpu, "big_screen": big_screen, "lang": lang, "camera": camera, "chosen": chosen},
+            daemon=True, name="autodemo",
         )
         self._thread.start()
         return self.snapshot()
@@ -335,7 +394,7 @@ class Director:
         with self._lock:
             self._state.update(changes)
 
-    def _look_at_the_stand(self, dgpu: str, big_screen: bool, lang: str = "en") -> Stand:
+    def _look_at_the_stand(self, dgpu: str, big_screen: bool, lang: str = "en", camera: str = "auto") -> Stand:
         gpus = self._call("GET", "/api/system/gpu-devices", None, 15)
         cameras, devices = [], []
         try:
@@ -356,7 +415,10 @@ class Director:
             npu=any(str(device).upper().startswith("NPU") for device in devices),
             igpu=integrated[0] if integrated else None,
             dgpu=discrete[-1] if discrete and dgpu == "auto" else None,
-            cameras=list(cameras),
+            # A camera shows whoever stands in front of it. One that was
+            # left out is, for every scene, a camera that is not there.
+            cameras=list(cameras) if camera == "auto" else [],
+            cameras_found=len(cameras),
             internet=bool(self._online()),
             big_screen=big_screen,
             lang=lang if lang in LANGUAGES else "en",
@@ -367,44 +429,67 @@ class Director:
     def _describe(stand: Stand) -> dict:
         return {
             "npu": stand.npu, "igpu": stand.igpu, "dgpu": stand.dgpu, "cameras": len(stand.cameras),
+            "cameras_found": max(stand.cameras_found, len(stand.cameras)),
             "internet": stand.internet, "big_screen": stand.big_screen, "lang": stand.lang,
         }
 
-    def _listing(self, stand: Stand, loop: int) -> tuple[list[Scene | Skip], list[dict]]:
-        """This turn of the loop: its scenes as built for the stand, and the
-        same as a list to show -- what will play, what will not, and why."""
-        built, listing = [], []
-        for build in self._playlist:
-            try:
-                scene = build(stand, loop)
-            except Exception as exc:  # a scene that cannot even be put together is one that cannot play
-                scene = Skip(getattr(build, "__name__", "scene").replace("_", " "), f"could not be prepared: {exc}")
-            playable = isinstance(scene, Scene)
-            built.append(scene)
-            listing.append({
-                "id": scene.id if playable else "", "title": scene.title, "playable": playable,
-                "demo": scene.demo if playable else "", "reason": "" if playable else scene.reason,
-            })
-        return built, listing
+    @staticmethod
+    def _build(entry: Entry, stand: Stand, turn: int) -> Scene | Skip:
+        try:
+            return entry.build(stand, turn)
+        except Exception as exc:  # a scene that cannot even be put together is one that cannot play
+            return Skip(entry.key.replace("-", " "), f"could not be prepared: {exc}")
 
-    def _run(self, dgpu: str, big_screen: bool, lang: str) -> None:
+    def _listing(self, stand: Stand, loop: int, chosen: set[str] | None = None) -> tuple[list[Scene], list[dict]]:
+        """This turn of the loop: the scenes it plays, built for the stand,
+        and every scene of the playlist as a list to show -- whether it was
+        chosen, whether it can play here and if not why, and whether this
+        is its turn.
+
+        Where several scenes share a place in the loop, those that were
+        chosen and can play take turns in it: if one of them cannot play
+        here, the others have the place every turn rather than the loop
+        going a scene short."""
+        plays, listing = [], []
+        for slot in self._playlist:
+            looked = {entry.key: self._build(entry, stand, loop) for entry in slot}
+            able = [entry for entry in slot
+                    if (chosen is None or entry.key in chosen) and isinstance(looked[entry.key], Scene)]
+            mine = able[(loop - 1) % len(able)] if able else None
+            for entry in slot:
+                scene = looked[entry.key]
+                if entry is mine:
+                    # Told how many times it has played itself, not which
+                    # turn of the loop this is: a scene that shows another
+                    # sample each time must not skip every other one.
+                    again = self._build(entry, stand, (loop - 1) // len(able) + 1)
+                    scene = again if isinstance(again, Scene) else scene
+                    plays.append(scene)
+                playable = isinstance(scene, Scene)
+                listing.append({
+                    "key": entry.key, "id": scene.id if playable else "", "title": scene.title, "playable": playable,
+                    "demo": scene.demo if playable else "", "reason": "" if playable else scene.reason,
+                    "chosen": chosen is None or entry.key in chosen, "plays": entry is mine,
+                    "turns_with": [other.key for other in slot if other is not entry],
+                })
+        return plays, listing
+
+    def _run(self, dgpu: str, big_screen: bool, lang: str, camera: str = "auto", chosen: set[str] | None = None) -> None:
         self._set(awake=bool(self._hold_awake()))
         notice = ""
         try:
-            stand = self._look_at_the_stand(dgpu, big_screen, lang)
+            stand = self._look_at_the_stand(dgpu, big_screen, lang, camera)
             self._set(stand=self._describe(stand))
             failures_in_a_row, loop = 0, 0
             while not self._stop.is_set():
                 loop += 1
                 played = 0
                 # What this turn of the loop will play, said before it starts.
-                built, listing = self._listing(stand, loop)
+                built, listing = self._listing(stand, loop, chosen)
                 self._set(loop=loop, playlist=listing)
                 for scene in built:
                     if self._stop.is_set():
                         break
-                    if not isinstance(scene, Scene):
-                        continue
                     self._wait_while_paused(between_scenes=True)
                     if self._stop.is_set():
                         break
@@ -418,7 +503,7 @@ class Director:
                         return
                 if not played and not self._stop.is_set():
                     notice = "No scene of the playlist can be played on this stand: " + "; ".join(
-                        f"{entry['title']} ({entry['reason']})" for entry in listing
+                        f"{entry['title']} ({entry['reason']})" for entry in listing if entry["chosen"]
                     )
                     return
         except Exception as exc:  # the stand could not even be looked at
@@ -552,6 +637,8 @@ class Director:
                 raise SceneFailed(f"{scene.title}: no answer after {scene.at_most:.0f} s")
         if "error" in box:
             raise SceneFailed(f"{scene.title}: {box['error']}")
+        if not step.keep:
+            return
         with self._lock:
             self._result = {"scene": scene.id, "data": box.get("answer")}
         self._phase("answered", result_ready=True)

@@ -19,6 +19,29 @@ a new one or the deferred list, and moves its original wording to
 
 <!-- - [ ] **Title.** Short description. (filed YYYY-MM-DD, source) -->
 
+- [ ] **The studio's voice takes the launcher down when it is put on the
+  NPU, and is unusable on a GPU.** Seen while measuring voices for the
+  Video Commentator, in a script of its own: `voice_model.
+  accelerate_tts_with_openvino(tts, device="NPU")` -- what the Voice
+  Assistant does when its chip is the NPU, and what the Voice Clone Studio's
+  OpenVoice model does there -- ends in the NPU compiler's "LLVM ERROR:
+  Failed to infer result type(s)" (the model's shapes have no upper bound)
+  and the process exits with it: no Python error to catch. On the
+  integrated GPU the same voice compiled again for every sentence of a new
+  length, 16 to 22 s each (0.05 s for one it had seen); on the CPU through
+  OpenVINO, 0.5 s. One observation, on today's driver, with the B60
+  unplugged; the Voice Assistant's README offers `--compute-device NPU`.
+  To check in the app itself, then either give the voice bounded shapes or
+  keep it on the CPU whatever chip the rest of the brick uses, as the
+  commentator does. (filed 2026-10-10, voice timings)
+- [ ] **A cloned voice is slowed threefold by a video playing beside it.**
+  Chatterbox made a line in 8 to 11 s alone and in 18 to 30 s inside the
+  Video Commentator, where a 1080p video is decoded and re-encoded for the
+  page at 30 frames a second on the same CPU. Its first line also pays a
+  warm-up of about twenty seconds. Worth a look at how many threads it
+  takes, and at warming it when the voice is chosen rather than at the
+  first line. (filed 2026-10-10, voice timings)
+
 - [ ] **Speech speed in the panel is untested with real audio.** Times real
   time is computed per utterance (unit-tested) for live translation and
   meeting notes, but was not watched live -- nothing was played through the
@@ -117,6 +140,16 @@ a new one or the deferred list, and moves its original wording to
   whole turn in English and most of one in French. The receipts scene plays
   the five worn receipts, as asked. Next: a run of several hours, and the
   proofing pass on Object Detection for the fourth scene.
+  *2026-10-10:* asked for by the user: a scene for the Video Commentator,
+  the proofing pass on Object Detection, and a choice of scenes when the
+  loop is started. All three are built. The start dialog ticks each scene
+  (and whether the camera may be used); the commentator has its scene and
+  its view; Object Detection had its pass (a video file as a source, a
+  wrong source refused before a model loads, boxes sized to the picture,
+  the screen from 12 to 19 frames a second: its README has the rest) and
+  "Seeing and answering" plays, on a view of its own, with nothing held
+  back. Watched in both languages on their own; not yet a whole turn of
+  six scenes, nor a run of several hours.
 - [ ] **Street videos on disk for the city monitor, and what the detector makes of them.**
   Asked for by the user on 2026-10-09: a local video as the demo's default,
   for a stand and for manual use, retrieved by the installer from where it
@@ -177,6 +210,20 @@ a new one or the deferred list, and moves its original wording to
   not on people. Also open: speaking the line (the voice brick exists), a
   scene on the Auto Demo's stage, and Qwen3-8B on the NPU for a voice that
   keeps to the facts. (filed 2026-10-09, user request)
+  *2026-10-10:* the scene is on the Auto Demo's stage, and the line can be
+  said aloud (asked for by the user: "an option for speaking the line
+  aloud (with our cloned voice?)"). Off by default. The studio's own voice,
+  read in a delivery that follows the mood, is made on the CPU in 0.6 to
+  1.0 s for a line of 5 to 8 s, and the next look waits for it to have been
+  said: a line every eight to ten seconds. The cloned voice is the one
+  enrolled in the Voice Clone Studio, lent; it works and it cannot keep up
+  -- 18 to 30 s a line with Chatterbox while the video plays, 22 s with
+  OpenVoice on the GPU -- so it is two lines a minute, each twenty seconds
+  behind its picture. Checked without playing anything: each line's sound,
+  read back by Whisper, gave the line. Left: lines short enough to be
+  said (an upbeat one ran to 28 words and 11 s), a faster cloned voice,
+  French, and a sound option for the Auto Demo's scene if a stand ever
+  wants one.
 - [ ] **A second pair of videos for counting: a factory line, a herd.**
   Asked for by the user on 2026-10-09, after the street pair: "a
   manufacturing duo -- recognise items, count them, defects -- or sheep

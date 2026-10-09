@@ -101,6 +101,23 @@ class VoiceCloneStudioRunner:
     def model(self) -> str | None:
         return self._model
 
+    @property
+    def device(self) -> str | None:
+        """The chip the enrolled voice is made on (Chatterbox: the CPU, whatever was asked)."""
+        if self._session is None:
+            return None
+        return self._device if self._engine == Engine.OPENVINO.value else "CPU"
+
+    def speak(self, text: str):
+        """A line in the enrolled voice, for a demo that borrows it (the
+        Video Commentator). Returns (audio, sample_rate). Nothing is said
+        here of this demo being at work: the borrower shows the voice as a
+        stage of its own, on the chip `device` names."""
+        with self._lock:
+            if self._session is None or not self._enrolled:
+                raise Conflict("Enroll a voice first.")
+            return self._session.synthesize(text)
+
     def synthesize(self, *, text: str, style: str, tau: float):
         """Blocking. Returns (audio: np.ndarray, sample_rate)."""
         with self._lock:

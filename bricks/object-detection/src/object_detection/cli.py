@@ -6,6 +6,7 @@ import datetime as dt
 import sys
 
 from pantherlake_ai_core import engine as engine_mod
+from pantherlake_ai_core import sample_videos
 
 from . import pipeline
 
@@ -13,12 +14,17 @@ from . import pipeline
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="object-detect",
-        description="Locally detect objects in a webcam or screen feed and print/overlay bounding boxes.",
+        description="Locally detect objects in a video file, a webcam or a screen feed and print/overlay bounding boxes.",
     )
     p.add_argument(
-        "--source", choices=["webcam", "screen"], default="screen",
-        help="Video source. 'screen' works on any machine; 'webcam' needs a camera. Default: screen",
+        "--source", choices=list(pipeline.SOURCES), default="screen",
+        help="Video source. 'screen' works on any machine; 'webcam' needs a camera; 'file' plays --path. Default: screen",
     )
+    p.add_argument(
+        "--path", default=None,
+        help="The video, for --source file. Default: the first sample video (fetched if need be).",
+    )
+    p.add_argument("--once", action="store_true", help="Play the file once instead of in a loop.")
     p.add_argument("--camera-index", type=int, default=0, help="Webcam index (see --list-devices). Default: 0")
     p.add_argument("--screen-index", type=int, default=1, help="Screen/monitor index (see --list-devices). Default: 1")
     p.add_argument(
@@ -61,7 +67,14 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"Loading detector (engine={engine.value}, device={compute_device})... this may download a model on first use.")
 
-    source_label = "webcam" if args.source == "webcam" else f"screen {args.screen_index}"
+    path = args.path or ""
+    if args.source == "file" and not path:
+        clip = sample_videos.TORONTO
+        if not sample_videos.present(clip):
+            print(f"Fetching {clip.name} ({clip.size_bytes / 1e6:.0f} MB, first use only)...", file=sys.stderr)
+        path = str(sample_videos.download(clip))
+
+    source_label = {"webcam": "webcam", "file": path}.get(args.source, f"screen {args.screen_index}")
     print(f"Watching {source_label}. Press Ctrl+C to stop.\n")
 
     show_window = args.show
@@ -91,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
             source=args.source,
             camera_index=args.camera_index,
             screen_index=args.screen_index,
+            path=path,
+            loop=not args.once,
             engine=engine,
             compute_device=compute_device,
             model_path=args.model_path,

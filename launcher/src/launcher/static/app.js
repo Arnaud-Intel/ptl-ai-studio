@@ -1675,16 +1675,46 @@ const PANELS = {
     transport: "mjpeg",
     video: "objdet-video",
     statusKey: "object-detection",
-    controls: ["objdet-source", "objdet-source-device", "objdet-engine", "objdet-compute-device"],
+    controls: ["objdet-source", "objdet-source-device", "objdet-sample", "objdet-path", "objdet-engine", "objdet-compute-device"],
     populate(data) {
-      wireVideoSource(el("objdet-source"), el("objdet-source-device"), data);
+      const source = el("objdet-source");
+      wireVideoSource(source, el("objdet-source-device"), data);
       wireEngineAndDevice(el("objdet-engine"), el("objdet-compute-device"), data, { preferRealtimeVision: true });
+      const showSource = () => {
+        const file = source.value === "file";
+        el("objdet-path-field").hidden = !file;
+        el("objdet-sample-field").hidden = !file;
+        el("objdet-device-field").hidden = file;
+      };
+      source.addEventListener("change", showSource);
+      showSource();
+
+      const samples = data.samples || [];
+      const picker = el("objdet-sample");
+      for (const sample of samples) {
+        picker.appendChild(option(sample.name, sample.name + (sample.ready === false ? " (fetched the first time it is started)" : "")));
+      }
+      picker.title = samples.map((sample) => `${sample.name}: ${sample.description}`).join("\n");
+      picker.addEventListener("change", () => {
+        const sample = samples.find((entry) => entry.name === picker.value);
+        if (sample) el("objdet-path").value = sample.path;
+      });
+      // The panel opens ready to run, on a video kept on this machine: a
+      // screen full of windows has nothing in it for a detector to find.
+      const usual = samples.find((sample) => sample.default);
+      if (usual && !el("objdet-path").value) {
+        el("objdet-path").value = usual.path;
+        picker.value = usual.name;
+      }
     },
     body() {
       const source = el("objdet-source").value;
       const device = el("objdet-source-device").value;
+      const path = el("objdet-path").value.trim();
+      if (source === "file" && !path) throw new Error("Choose a sample video, or give the path of a video file.");
       return {
         source,
+        path: source === "file" ? path : "",
         camera_index: source === "webcam" ? Number(device || 0) : 0,
         screen_index: source === "screen" ? Number(device || 1) : 1,
         engine: el("objdet-engine").value,
@@ -1793,6 +1823,62 @@ const PANELS = {
     controls: ["vidcom-source", "vidcom-source-device", "vidcom-sample", "vidcom-path", "vidcom-vision-device", "vidcom-mood-device"],
     lastComment: 0,
     moodNames: {},
+    sound: null, // the line being said
+    // Whether the voices can be used is asked again each time the panel
+    // opens: a voice may have been enrolled in the Voice Clone Studio since.
+    async refreshVoices() {
+      let voices = [];
+      try {
+        voices = (await fetchJSON("/api/video-commentary/devices")).voices || [];
+      } catch {
+        return;
+      }
+      const select = el("vidcom-voice");
+      const chosen = select.value;
+      fillSelect(select, [
+        { value: "", label: "No: written only" },
+        ...voices.map((voice) => ({
+          value: voice.key,
+          label: voice.ready ? `${voice.name} (${deviceLabel(voice.device)})` : `${voice.name}: enrol one in Voice Clone Studio first`,
+        })),
+      ]);
+      for (const voice of voices) select.querySelector(`option[value="${voice.key}"]`).disabled = !voice.ready;
+      select.value = voices.some((voice) => voice.key === chosen && voice.ready) ? chosen : "";
+      this.voiceNote();
+    },
+    voiceNote(notice) {
+      const note = el("vidcom-voice-note");
+      const voice = el("vidcom-voice").value;
+      const text =
+        notice ||
+        (voice === "cloned"
+          ? "A cloned voice takes twenty to thirty seconds to make each line while the video plays: about two lines a minute, each well behind its picture, and Stop waits for the line in hand."
+          : voice
+            ? "Each line is spoken about three seconds after the picture it is about, and the next look waits for it to have been said: a line every eight to ten seconds."
+            : "");
+      note.textContent = text;
+      note.hidden = !text;
+    },
+    hush() {
+      if (!this.sound) return;
+      this.sound.pause();
+      this.sound = null;
+    },
+    say(number) {
+      this.hush();
+      const sound = new Audio(`/api/video-commentary/speech/${number}`);
+      this.sound = sound;
+      // A browser that will not play without a click says so by refusing: the line stays written.
+      sound.play().catch(() => {});
+    },
+    async open() {
+      await StreamPanel.prototype.open.call(this);
+      this.refreshVoices();
+    },
+    leave() {
+      this.hush();
+      StreamPanel.prototype.leave.call(this);
+    },
     populate(data) {
       const devices = data.openvino_devices || [];
       const auto = data.auto_devices || {};
@@ -1810,6 +1896,16 @@ const PANELS = {
       el("vidcom-mood").addEventListener("change", () => {
         // While it runs, the next comment is in the new voice; before, it is just the choice Start will send.
         if (this.running) postJSON("/api/video-commentary/mood", { mood: el("vidcom-mood").value }).catch(() => {});
+      });
+      el("vidcom-voice").addEventListener("change", async () => {
+        this.voiceNote();
+        if (!el("vidcom-voice").value) this.hush();
+        if (!this.running) return;
+        try {
+          await postJSON("/api/video-commentary/voice", { voice: el("vidcom-voice").value });
+        } catch (err) {
+          this.voiceNote(err.message);
+        }
       });
 
       const source = el("vidcom-source");
@@ -1862,6 +1958,7 @@ const PANELS = {
         vision_device: el("vidcom-vision-device").value,
         mood_device: el("vidcom-mood-device").value,
         mood: el("vidcom-mood").value,
+        voice: el("vidcom-voice").value,
       };
     },
     onRunning(isRunning) {
@@ -1869,8 +1966,12 @@ const PANELS = {
       const caption = el("vidcom-caption");
       if (!isRunning) {
         caption.hidden = true;
+        this.hush();
         return; // the list stays: what was said is still worth reading once it has stopped
       }
+      // A run found already going (a reload, another page): its last lines are
+      // listed, and not said again.
+      let heardFrom = this.lastComment === 0 && STATUS.snapshot[this.statusKey] ? Infinity : 0;
       this.lastComment = 0;
       showPlaceholder(log, "The comments will be listed here as they come.");
       this.every(700, async () => {
@@ -1883,14 +1984,23 @@ const PANELS = {
           }
           // A mood changed from another page, or kept from before a reload.
           if (data.mood && document.activeElement !== el("vidcom-mood")) el("vidcom-mood").value = data.mood;
-          for (const comment of data.comments || []) {
+          if (data.notice) this.voiceNote(data.notice);
+          const comments = data.comments || [];
+          if (heardFrom === Infinity) heardFrom = comments.length ? comments[comments.length - 1].number : 0;
+          // Of several lines come at once, only the last is said.
+          const toSay = comments.filter((comment) => comment.speech && comment.number > heardFrom).pop();
+          if (toSay && el("vidcom-voice").value) this.say(toSay.number);
+          for (const comment of comments) {
             if (!this.lastComment) log.replaceChildren();
             this.lastComment = comment.number;
             const plain = comment.said === comment.seen;
             el("vidcom-said").textContent = comment.said;
             el("vidcom-seen").textContent = plain ? "" : `Seen: ${comment.seen}`;
             caption.hidden = false;
-            const took = `${comment.seeing_seconds.toFixed(1)} s to see` + (plain ? "" : ` + ${comment.saying_seconds.toFixed(1)} s to say`);
+            const took =
+              `${comment.seeing_seconds.toFixed(1)} s to see` +
+              (plain ? "" : ` + ${comment.saying_seconds.toFixed(1)} s to say`) +
+              (comment.speech ? ` + ${comment.voicing_seconds.toFixed(1)} s for the voice` : "");
             const entry = document.createElement("div");
             entry.className = "vidcom-entry";
             entry.innerHTML =
@@ -3608,7 +3718,11 @@ function closeLogViewer() {
 
 const AUTODEMO = {
   state: null,
-  options: { dgpu: "auto", big_screen: false, lang: "en", fullscreen: true },
+  // `left_out`: the scenes unticked on the start screen, by key. What is
+  // remembered is what was taken out, so that a scene added to the playlist
+  // later plays without anybody having to find it and tick it.
+  options: { dgpu: "auto", big_screen: false, lang: "en", camera: "auto", fullscreen: true, left_out: [] },
+  listed: [], // the playlist as the last look at the stand gave it
 };
 const AUTODEMO_POLL_MS = 1000;
 
@@ -3663,6 +3777,21 @@ const STAGE_TEXT = {
     connecting: "Connecting to the camera…",
     counted: "Counted so far",
     nothingYet: "nothing yet",
+    loadingModels: "The two models are loading…",
+    saw: "What it saw",
+    saidTitle: "What was said",
+    firstLine: "The first line is on its way…",
+    toSee: (seconds) => `${seconds} s to see`,
+    toSay: (seconds) => `${seconds} s to say`,
+    camera: "This laptop's camera",
+    startingDetector: "Starting the detector…",
+    inPicture: "In the picture now",
+    nothingSeen: "nothing right now",
+    question: "The question",
+    answer: "The answer",
+    searching: "Searching the documents…",
+    answered: "written on this machine",
+    foundIn: "Found in",
   },
   fr: {
     tag: "Démo automatique",
@@ -3718,6 +3847,21 @@ const STAGE_TEXT = {
     connecting: "Connexion à la caméra…",
     counted: "Comptés jusqu'ici",
     nothingYet: "rien pour l'instant",
+    loadingModels: "Chargement des deux modèles…",
+    saw: "Ce qu'il a vu",
+    saidTitle: "Ce qui a été dit",
+    firstLine: "La première phrase arrive…",
+    toSee: (seconds) => `${seconds} s pour voir`,
+    toSay: (seconds) => `${seconds} s pour dire`,
+    camera: "La caméra de ce portable",
+    startingDetector: "Démarrage du détecteur…",
+    inPicture: "À l'image en ce moment",
+    nothingSeen: "rien pour l'instant",
+    question: "La question",
+    answer: "La réponse",
+    searching: "Recherche dans les documents…",
+    answered: "rédigée sur cette machine",
+    foundIn: "Trouvé dans",
   },
 };
 
@@ -3766,24 +3910,68 @@ function autodemoStandHtml(stand) {
     (stand.npu ? yes("NPU") : no("No NPU")) +
     (stand.igpu ? yes(`Integrated GPU (${stand.igpu})`) : no("No integrated GPU")) +
     (stand.dgpu ? yes(`Discrete GPU (${stand.dgpu})`) : no("No discrete GPU in use")) +
-    (stand.cameras ? yes(stand.cameras === 1 ? "A camera" : `${stand.cameras} cameras`) : no("No camera")) +
+    (stand.cameras
+      ? yes(stand.cameras === 1 ? "A camera" : `${stand.cameras} cameras`)
+      : no(stand.cameras_found ? "Camera not used" : "No camera")) +
     (stand.internet ? yes("Internet") : no("No internet")) +
     `</ul>`
   );
 }
 
-function autodemoPlaylistHtml(playlist) {
+// Each scene with a tick: what plays is chosen here. One that cannot play on
+// this stand says why, and cannot be ticked.
+function autodemoPlaylistHtml(playlist, leftOut) {
+  const out = new Set(leftOut);
+  const playing = (key) => {
+    const entry = playlist.find((other) => other.key === key);
+    return !!entry && entry.playable && !out.has(key);
+  };
   return (
-    `<ol class="autodemo-playlist">` +
+    `<ul class="autodemo-playlist">` +
     playlist
-      .map(
-        (entry) =>
-          `<li class="${entry.playable ? "plays" : "skipped"}"><strong>${escapeHtml(entry.title)}</strong>` +
-          `<span>${entry.playable ? "plays" : `skipped: ${escapeHtml(entry.reason)}`}</span></li>`,
-      )
+      .map((entry) => {
+        const on = playing(entry.key);
+        // Scenes that share a place in the loop take turns in it.
+        const partners = (entry.turns_with || []).filter(playing).map((key) => playlist.find((other) => other.key === key).title);
+        const note = !entry.playable
+          ? `cannot play here: ${escapeHtml(entry.reason)}`
+          : !on
+            ? "left out"
+            : partners.length
+              ? `plays every other turn, taking turns with “${escapeHtml(partners.join("”, “"))}”`
+              : "plays";
+        return (
+          `<li class="${on ? "plays" : "skipped"}"><label>` +
+          `<input type="checkbox" data-scene="${escapeHtml(entry.key)}"${on ? " checked" : ""}${entry.playable ? "" : " disabled"} />` +
+          `<strong>${escapeHtml(entry.title)}</strong></label><span>${note}</span></li>`
+        );
+      })
       .join("") +
-    `</ol>`
+    `</ul>`
   );
+}
+
+// The scenes that will play: listed, able to, and not taken out.
+function autodemoChosen() {
+  const out = new Set(AUTODEMO.options.left_out);
+  return AUTODEMO.listed.filter((entry) => entry.playable && !out.has(entry.key)).map((entry) => entry.key);
+}
+
+function autodemoDrawPlaylist() {
+  const box = el("autodemo-playlist");
+  if (box) box.innerHTML = autodemoPlaylistHtml(AUTODEMO.listed, AUTODEMO.options.left_out);
+  el("autodemo-start").disabled = !autodemoChosen().length;
+}
+
+function autodemoSceneTicked(event) {
+  const tick = event.target instanceof Element ? event.target.closest("input[data-scene]") : null;
+  if (!tick) return;
+  const out = new Set(AUTODEMO.options.left_out);
+  if (tick.checked) out.delete(tick.dataset.scene);
+  else out.add(tick.dataset.scene);
+  AUTODEMO.options.left_out = [...out];
+  autodemoRemember();
+  autodemoDrawPlaylist();
 }
 
 function autodemoRemember() {
@@ -3800,10 +3988,12 @@ async function autodemoCheck() {
   el("autodemo-start").disabled = true;
   try {
     // Asked once with the discrete GPU, to know whether there is one to leave out.
-    const lang = `lang=${encodeURIComponent(options.lang)}`;
+    const lang = `lang=${encodeURIComponent(options.lang)}&camera=${options.camera === "off" ? "off" : "auto"}`;
     const found = await fetchJSON(`/api/autodemo/check?dgpu=auto&${lang}`);
     const hasDiscrete = !!found.stand.dgpu;
+    const hasCamera = !!found.stand.cameras_found;
     const check = options.dgpu === "off" && hasDiscrete ? await fetchJSON(`/api/autodemo/check?dgpu=off&${lang}`) : found;
+    AUTODEMO.listed = check.playlist;
     const tick = (id, on, text) => `<label><input id="${id}" type="checkbox"${on ? " checked" : ""} /> ${text}</label>`;
     box.innerHTML =
       `<p class="section-label">This stand</p>${autodemoStandHtml(check.stand)}` +
@@ -3816,10 +4006,18 @@ async function autodemoCheck() {
       (hasDiscrete
         ? tick("autodemo-use-dgpu", options.dgpu === "auto", "Use the discrete GPU (untick it if it will be unplugged, or to rehearse a stand without it)")
         : "") +
+      (hasCamera
+        ? tick(
+            "autodemo-use-camera",
+            options.camera !== "off",
+            "Use the camera: whoever is in front of it is shown on screen, and nothing is recorded (untick it in a meeting)",
+          )
+        : "") +
       tick("autodemo-big", options.big_screen, "Large display: bigger text, to be read from a few metres") +
       tick("autodemo-fullscreen", options.fullscreen, "Full screen") +
       `</div>` +
-      `<p class="section-label">One turn of the loop</p>${autodemoPlaylistHtml(check.playlist)}`;
+      `<p class="section-label">One turn of the loop: tick the demos to play</p><div id="autodemo-playlist"></div>`;
+    autodemoDrawPlaylist();
     const wire = (id, change) => {
       const node = el(id);
       if (!node) return;
@@ -3836,9 +4034,12 @@ async function autodemoCheck() {
       options.dgpu = node.checked ? "auto" : "off";
       autodemoCheck();
     });
+    wire("autodemo-use-camera", (node) => {
+      options.camera = node.checked ? "auto" : "off";
+      autodemoCheck(); // a scene that showed the camera plays a video instead, or cannot play
+    });
     wire("autodemo-big", (node) => (options.big_screen = node.checked));
     wire("autodemo-fullscreen", (node) => (options.fullscreen = node.checked));
-    el("autodemo-start").disabled = !check.playlist.some((entry) => entry.playable);
   } catch (err) {
     showPlaceholder(box, `The stand could not be looked at: ${err.message}`);
   }
@@ -3857,7 +4058,8 @@ function closeAutodemoModal() {
 
 async function startAutodemo() {
   el("autodemo-start").disabled = true;
-  const { fullscreen, ...options } = AUTODEMO.options;
+  const { fullscreen, left_out: _leftOut, ...options } = AUTODEMO.options;
+  options.scenes = autodemoChosen();
   // Asked for while the click is still in hand: a browser grants the full
   // screen to a person, not to a page.
   if (fullscreen && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
@@ -4013,7 +4215,8 @@ function stageCaption(state, scene) {
     stageSay({ stopped: t.stoppedTitle, checking: t.checking, paused: t.paused }[state.state] || t.next);
     return;
   }
-  const playable = (state.playlist || []).filter((entry) => entry.playable);
+  // The scenes of this turn of the loop: of two that take turns, one.
+  const playable = (state.playlist || []).filter((entry) => (entry.plays === undefined ? entry.playable : entry.plays));
   const position = playable.findIndex((entry) => entry.id === scene.id) + 1;
   el("stage-kicker").textContent = `${t.tag} · ${position || 1} / ${playable.length || 1} · ${scene.title}`;
 
@@ -4434,7 +4637,177 @@ function stageCamerasView(scene, root) {
   };
 }
 
-const STAGE_VIEWS = { page: stagePageView, receipts: stageReceiptsView, cameras: stageCamerasView };
+// The commentator: the video with its line on it as a subtitle, what the
+// vision model actually saw underneath, and the lines said so far, each with
+// the voice it was said in.
+function stageCommentaryView(scene, root) {
+  const t = stageText();
+  const moods = scene.props.moods || {};
+  root.innerHTML =
+    `<article class="sv-card sv-camera sv-watch">` +
+    `<div class="sv-camera-head"><strong>${escapeHtml(scene.props.video || "")}</strong>` +
+    `<span class="sv-camera-chip" hidden></span><span class="sv-camera-rate"></span></div>` +
+    `<div class="sv-camera-picture"><p class="sv-wait">${escapeHtml(t.loadingModels)}</p><p class="sv-subtitle" hidden></p></div>` +
+    `<p class="sv-camera-counts"><span>${escapeHtml(t.saw)}</span> <b>${escapeHtml(t.firstLine)}</b></p></article>` +
+    `<section class="sv-card sv-said"><h3>${escapeHtml(t.saidTitle)}</h3><div class="sv-lines"><p class="sv-wait">${escapeHtml(t.firstLine)}</p></div></section>`;
+  const picture = root.querySelector(".sv-camera-picture");
+  const subtitle = root.querySelector(".sv-subtitle");
+  const badge = root.querySelector(".sv-camera-chip");
+  const lines = root.querySelector(".sv-lines");
+  let ended = false;
+  let last = 0;
+
+  const look = async () => {
+    try {
+      const data = await fetchJSON(`/api/video-commentary/comments?after=${last}`);
+      if (ended) return;
+      if (data.running && !picture.querySelector("img")) {
+        const image = document.createElement("img");
+        image.alt = "";
+        // The stream ends if the video is not up yet: asked again at the next look.
+        image.addEventListener("error", () => image.remove());
+        image.addEventListener("load", () => picture.querySelector(".sv-wait")?.remove(), { once: true });
+        image.src = `/api/video-commentary/stream?at=${Date.now()}`;
+        picture.prepend(image);
+      }
+      for (const comment of data.comments || []) {
+        if (!last) lines.replaceChildren();
+        last = comment.number;
+        const plain = comment.said === comment.seen;
+        const voice = moods[comment.mood] || comment.mood;
+        subtitle.textContent = comment.said;
+        subtitle.hidden = false;
+        badge.textContent = voice;
+        badge.hidden = false;
+        root.querySelector(".sv-camera-counts b").textContent = comment.seen;
+        root.querySelector(".sv-camera-rate").textContent =
+          t.toSee(comment.seeing_seconds.toFixed(1)) + (plain ? "" : ` · ${t.toSay(comment.saying_seconds.toFixed(1))}`);
+        const entry = document.createElement("div");
+        entry.className = "sv-line";
+        entry.innerHTML = `<span>${escapeHtml(voice)}</span><p>${escapeHtml(comment.said)}</p>`;
+        lines.prepend(entry);
+        while (lines.children.length > 6) lines.lastChild.remove();
+      }
+    } catch {
+      // A missed look.
+    }
+  };
+
+  const timer = setInterval(look, 700);
+  look();
+  return {
+    stop() {
+      ended = true;
+      clearInterval(timer);
+      // An <img> on a stream holds its connection open until told otherwise.
+      for (const image of picture.querySelectorAll("img")) image.src = "";
+    },
+  };
+}
+
+// Seeing and answering: the detector's picture with what it finds and how
+// fast, beside a question and the answer as it is written from the documents.
+function stageAnswerView(scene, root) {
+  const t = stageText();
+  root.innerHTML =
+    `<article class="sv-card sv-camera">` +
+    `<div class="sv-camera-head"><strong>${escapeHtml(scene.props.camera ? t.camera : scene.props.watching || "")}</strong>` +
+    `<span class="sv-camera-chip">${escapeHtml(t.chips["Integrated GPU"] || "Integrated GPU")}</span><span class="sv-camera-rate"></span></div>` +
+    `<div class="sv-camera-picture"><p class="sv-wait">${escapeHtml(t.startingDetector)}</p></div>` +
+    `<p class="sv-camera-counts"><span>${escapeHtml(t.inPicture)}</span> <b>${escapeHtml(t.nothingSeen)}</b></p></article>` +
+    `<section class="sv-card sv-qa"><h3>${escapeHtml(t.question)}</h3><p class="sv-question">${escapeHtml(scene.props.question || "")}</p>` +
+    `<h3>${escapeHtml(t.answer)} <span class="sv-note"></span></h3>` +
+    `<div class="sv-answer"><p class="sv-wait">${escapeHtml(t.searching)}</p></div><p class="sv-sources"></p></section>`;
+  const picture = root.querySelector(".sv-camera-picture");
+  const answer = root.querySelector(".sv-answer");
+  const note = root.querySelector(".sv-note");
+  let ended = false;
+  let written = false; // the whole answer is up
+  let asked = false;
+
+  const put = (words) => {
+    if (!answer.querySelector(".sv-answer-text")) answer.innerHTML = `<p class="sv-answer-text"></p>`;
+    const node = answer.querySelector(".sv-answer-text");
+    node.textContent = words;
+    answer.scrollTop = answer.scrollHeight;
+  };
+
+  const watch = async () => {
+    try {
+      const data = await fetchJSON("/api/object-detection/detections");
+      if (ended) return;
+      if (data.running && !picture.querySelector("img")) {
+        const image = document.createElement("img");
+        image.alt = "";
+        image.addEventListener("error", () => image.remove());
+        image.addEventListener("load", () => picture.querySelector(".sv-wait")?.remove(), { once: true });
+        image.src = `/api/object-detection/stream?at=${Date.now()}`;
+        picture.append(image);
+      }
+      const seen = Object.entries(data.counts || {})
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([kind, count]) => `${kind} ${count}`)
+        .join(" · ");
+      root.querySelector(".sv-camera-counts b").textContent = seen || t.nothingSeen;
+      const rate = (STATUS.metrics || []).find((metric) => metric.demo_id === "object-detection" && !metric.sticky);
+      root.querySelector(".sv-camera-rate").textContent = rate ? formatMetric(rate) : "";
+    } catch {
+      // A missed look.
+    }
+  };
+
+  const writing = async () => {
+    if (written) return;
+    try {
+      const data = await fetchJSON("/api/bricks/doc-qa/partial");
+      if (ended || written || !data.active || !data.text) return;
+      note.textContent = t.writing;
+      put(data.text);
+    } catch {
+      // A missed look.
+    }
+  };
+
+  const showAnswer = async () => {
+    try {
+      const result = await fetchJSON("/api/autodemo/result");
+      if (ended || result.scene !== scene.id || !result.data || !result.data.text) return;
+      written = true;
+      note.textContent = t.answered;
+      put(result.data.text);
+      answer.scrollTop = 0;
+      const files = [...new Set((result.data.sources || []).map((source) => String(source.source).split(/[\\/]/).pop()))];
+      root.querySelector(".sv-sources").textContent = files.length ? `${t.foundIn}: ${files.join(" · ")}` : "";
+    } catch {
+      asked = false; // tried again at the next look
+    }
+  };
+
+  const timers = [setInterval(watch, 1000), setInterval(writing, 400)];
+  watch();
+  return {
+    update(now) {
+      if (now.result_ready && !asked) {
+        asked = true;
+        showAnswer();
+      }
+    },
+    stop() {
+      ended = true;
+      timers.forEach(clearInterval);
+      for (const image of picture.querySelectorAll("img")) image.src = "";
+    },
+  };
+}
+
+const STAGE_VIEWS = {
+  page: stagePageView,
+  receipts: stageReceiptsView,
+  cameras: stageCamerasView,
+  commentary: stageCommentaryView,
+  answer: stageAnswerView,
+};
 
 // ---- somebody at the machine
 
@@ -4558,6 +4931,7 @@ function wireAutodemo() {
     if (event.target === el("autodemo-modal-overlay")) closeAutodemoModal();
   });
   el("autodemo-start").addEventListener("click", startAutodemo);
+  el("autodemo-check").addEventListener("change", autodemoSceneTicked);
   el("stage").addEventListener("click", (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (target && target.closest("[data-stage-home]")) location.hash = "#/";

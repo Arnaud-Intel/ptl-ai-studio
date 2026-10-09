@@ -141,14 +141,15 @@ REGISTRY: list[Demo] = [
         id="object-detection",
         name="Object Detection Overlay",
         category="Vision",
-        tagline="Live bounding boxes from a webcam or screen capture.",
+        tagline="Live bounding boxes on a video, a webcam or the screen.",
         description=(
-            "Runs a local object-detection model over a live webcam or screen "
-            "feed and overlays labeled, confidence-scored boxes in real time."
+            "Runs a local object-detection model over a video file, a live webcam or "
+            "the screen, and overlays labeled, confidence-scored boxes in real time."
         ),
         engines=["portable", "openvino"],
         status="available",
         devices=("cameras", "screens"),
+        samples="object_detection.samples",
     ),
     Demo(
         id="screen-ocr",

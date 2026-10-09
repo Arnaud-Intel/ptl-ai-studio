@@ -186,9 +186,9 @@ which chip is working: such a demo showed up under no chip at all.)
 | Demo | What it does | Runs on |
 | --- | --- | --- |
 | **Webcam Background Effects** | Real-time background blur or replacement, no video ever leaves the machine | CPU / NPU; GPU temporarily gated for invalid masks |
-| **Object Detection Overlay** | Live labeled bounding boxes over a webcam or screen feed | CPU / NPU / GPU |
+| **Object Detection Overlay** | Live labeled bounding boxes over a video file, a webcam or the screen | CPU / NPU / GPU |
 | **Screen / Image Text Extraction** | Pull text out of a screenshot or photo, with optional on-device translation | CPU / GPU † |
-| **Video Commentator** *(experimental)* | A model watches a video and says what is happening every few seconds, in the mood you pick -- upbeat, sports commentator, nature documentary, deadpan | GPU (sees) **and** NPU (says), at once |
+| **Video Commentator** *(experimental)* | A model watches a video and says what is happening every few seconds, in the mood you pick -- upbeat, sports commentator, nature documentary, deadpan -- and aloud if you like | GPU (sees) **and** NPU (says), at once; CPU for the voice |
 | **Smart City Monitor** | Count pedestrians/cars/bikes per minute on live city cameras or local clips -- each feed pinnable to its own chip | CPU / NPU / GPU **each**, at once |
 
 ### Text

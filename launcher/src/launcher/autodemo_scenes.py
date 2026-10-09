@@ -14,10 +14,13 @@ What goes in was decided with the user on 2026-10-08 and -09:
 - The story is told in English unless French is chosen when the loop is
   started. Every sentence here is written in both.
 - Smart City plays only when the internet is reachable.
-- "Seeing and answering" (object detection with document Q&A) is written
-  and held back until both bricks have had a proofing pass (Document Q&A
-  had its own on 2026-10-09): it does not play until its entry is taken
-  out of `HELD_BACK`.
+- "Seeing and answering" (object detection with document Q&A) waited for
+  both bricks to have a proofing pass. Document Q&A had its own on
+  2026-10-09 and Object Detection on 2026-10-10, so it plays. `HELD_BACK`
+  stays for the next scene that is written before its demo is ready.
+- Which scenes play is chosen when the loop is started (asked for by the
+  user on 2026-10-10): every scene has a key the start screen ticks, and a
+  camera is only switched on if the person starting the loop left it in.
 
 Writing a beat: one or two sentences, plain words, no figure that is not on
 screen. A beat with a `stage` is shown when that stage of the demo is seen
@@ -28,15 +31,10 @@ something the stage puts out ("that is the code appearing") takes
 """
 from __future__ import annotations
 
-from .autodemo import Ask, Beat, Builder, Chip, Scene, Skip, Stand, Start, Until, Wait
+from .autodemo import Ask, Beat, Chip, Entry, Scene, Skip, Slot, Stand, Start, Until, Wait
 
-# Scenes that are written but not to be played yet, and why.
-HELD_BACK: dict[str, str] = {
-    # Document Q&A had its pass on 2026-10-09 (the search, the prompt, the
-    # index kept after the folder changed). Object Detection has not, and
-    # the stage has no view yet for a camera picture beside an answer.
-    "seeing-and-answering": "held back until Object Detection has had its proofing pass and the stage has a view for it",
-}
+# Scenes that are written but not to be played yet, by their key, and why.
+HELD_BACK: dict[str, str] = {}
 
 _IGPU, _DGPU, _NPU, _CPU = "Integrated GPU", "Arc Pro B60", "NPU", "CPU"
 
@@ -383,7 +381,14 @@ def seeing_and_answering(stand: Stand, loop: int) -> Scene | Skip:
     if sample is None:
         return Skip(title, "its sample documents could not be found")
     camera = bool(stand.cameras)
-    source = {"source": "camera", "camera_index": stand.cameras[0]} if camera else {"source": "screen"}
+    # Without a camera, a video kept on this machine -- never the screen: on
+    # the stage the screen is this scene, and a detector pointed at its own
+    # picture finds one "tv" and nothing else.
+    clip = None if camera else next(
+        (s for s in stand.samples("object-detection") if s.get("kind") == "file" and s.get("ready") and s.get("path")), None)
+    if not camera and clip is None:
+        return Skip(title, "needs a camera, or its sample video fetched (Prepare models)")
+    source = {"source": "webcam", "camera_index": stand.cameras[0]} if camera else {"source": "file", "path": clip["path"]}
     return Scene(
         id="seeing-and-answering",
         title=title,
@@ -391,62 +396,156 @@ def seeing_and_answering(stand: Stand, loop: int) -> Scene | Skip:
         view="answer",
         beats=(
             Beat(say(
-                ("A camera on this stand is being watched by an object detector. Nothing it sees is recorded. "
-                 if camera else "The screen is being watched by an object detector. ")
-                + "It runs on the integrated GPU.",
-                ("Une caméra de ce stand est surveillée par un détecteur d'objets. Rien de ce qu'elle voit n'est "
-                 "enregistré. " if camera else "L'écran est surveillé par un détecteur d'objets. ")
-                + "Il tourne sur le GPU intégré.",
+                ("The camera of this laptop is watched by an object detector: that is you, in the picture. "
+                 "Nothing it sees is recorded or sent anywhere. " if camera else
+                 "A street video plays from this laptop's disk, and an object detector watches it. ")
+                + "It runs on the integrated GPU, on every frame.",
+                ("La caméra de ce portable est surveillée par un détecteur d'objets : c'est vous, à l'image. "
+                 "Rien de ce qu'elle voit n'est enregistré ni envoyé. " if camera else
+                 "Une vidéo de rue est lue depuis le disque de ce portable, et un détecteur d'objets la surveille. ")
+                + "Il tourne sur le GPU intégré, à chaque image.",
             )),
             Beat(say(
-                "Meanwhile, on the NPU, a language model reads a folder of business documents and answers a question "
+                "Meanwhile, on the NPU, a language model searches a folder of business documents and answers a question "
                 "about them. Two unrelated jobs, two chips, at the same time.",
-                "Pendant ce temps, sur le NPU, un modèle de langage lit un dossier de documents professionnels et "
+                "Pendant ce temps, sur le NPU, un modèle de langage fouille un dossier de documents professionnels et "
                 "répond à une question à leur sujet. Deux tâches sans rapport, deux puces, en même temps.",
-            ), after=10.0),
+            ), stage="default", after=10.0),
             Beat(say(
-                "The answer is written from the documents themselves, and says which file each part came from.",
-                "La réponse est rédigée à partir des documents eux-mêmes, et indique de quel fichier vient chaque partie.",
+                # Measured on the stage (2026-10-10): 24 frames a second
+                # before the answer, while it was written and after. The one
+                # dip, to 14 for a second and a half, is earlier: when the
+                # NPU's models load, which the CPU does.
+                "The answer is in, written from the documents, with the files it came from listed under it. "
+                "And look at the frame rate above the picture: it did not drop while the NPU was writing.",
+                "La réponse est là, rédigée à partir des documents, avec dessous les fichiers dont elle vient. "
+                "Et regardez la cadence au-dessus de l'image : elle n'a pas baissé pendant que le NPU écrivait.",
             ), result=True),
         ),
         chips=(
-            Chip(_IGPU, say("Detects objects · YOLO11s", "Détecte les objets · YOLO11s"), "object-detection"),
+            Chip(_IGPU, say("Detects objects · YOLO11s detector", "Détecte les objets · détecteur YOLO11s"), "object-detection"),
             Chip(_NPU, say("Answers from documents · Qwen2.5 1.5B", "Répond d'après les documents · Qwen2.5 1.5B"), "doc-qa"),
         ),
-        props={"question": sample["question"]},
+        props={"question": sample["question"], "camera": camera, "watching": "" if camera else clip["name"]},
         steps=(
             Start("/api/object-detection/start", {**source, "engine": "openvino", "compute_device": stand.igpu}),
-            Ask("/api/doc-qa/ingest", {"folder": sample["folder"], "engine": "openvino", "compute_device": "NPU"}),
+            # The picture first, alone, with its frame rate: the answer takes
+            # a few seconds, and came before the detector's first frame when
+            # the two were started together.
+            Wait(14.0),
+            # Its answer is not the scene's: only what the question gets is kept for the stage.
+            Ask("/api/doc-qa/ingest", {"folder": sample["folder"], "engine": "openvino", "compute_device": "NPU"}, keep=False),
+            Wait(5.0),
             Ask("/api/doc-qa/ask", {"question": sample["question"]}, cancel="/api/bricks/doc-qa/stop"),
         ),
-        stop=("/api/object-detection/stop",),
-        hold=30.0,
+        # The detector is stopped, and the language model taken off the NPU:
+        # left loaded, it sat there through every other scene of the loop.
+        stop=("/api/object-detection/stop", "/api/bricks/doc-qa/stop"),
+        hold=25.0,
         at_most=240.0,
     )
 
 
-def counting(stand: Stand, loop: int) -> Scene | Skip:
-    """One counting scene a turn of the loop, not two in a row (asked for by
-    the user on 2026-10-09): the streets on the first turn, the herd and the
-    line on the second, the streets again on the third. Two scenes of the
-    same brick back to back read as one long one.
+def video_commentary(stand: Stand, loop: int) -> Scene | Skip:
+    """The experimental commentator: a video watched by a vision model, and
+    its plain sentence said again in one voice after another."""
+    say = lambda english, french: _say(stand, english, french)  # noqa: E731
+    title = say("A video, watched and commented on", "Une vidéo regardée et commentée")
+    if "video-commentary" in HELD_BACK:
+        return Skip(title, HELD_BACK["video-commentary"])
+    if not stand.igpu:
+        return Skip(title, "needs a GPU for the vision model")
+    sample = _sample(stand, "video-commentary", loop - 1, lambda s: s.get("ready") and s.get("path"))
+    if sample is None:
+        return Skip(title, "needs its sample videos fetched (Prepare models)")
+    voice = "NPU" if stand.npu else stand.igpu
+    watches = say("Watches the video · Qwen2.5-VL 7B", "Regarde la vidéo · Qwen2.5-VL 7B")
+    speaks = say("Gives it a voice · Qwen2.5 1.5B", "Lui donne une voix · Qwen2.5 1.5B")
+    if stand.npu:
+        chips = (Chip(_IGPU, watches, "video-commentary", ("vision",)), Chip(_NPU, speaks, "video-commentary", ("mood",)))
+    else:
+        chips = (Chip(_IGPU, say("Watches, then gives a voice · two models", "Regarde, puis donne une voix · deux modèles"),
+                      "video-commentary", ("vision", "mood")),)
+    mood = lambda key: Start("/api/video-commentary/mood", {"mood": key})  # noqa: E731
+    return Scene(
+        id="video-commentary",
+        title=title,
+        demo="video-commentary",
+        view="commentary",
+        beats=(
+            Beat(say(
+                "A video plays from this laptop's disk, and a vision model watches it. Every few seconds it is shown "
+                "one frame and asked a single question: what is happening here?",
+                "Une vidéo est lue depuis le disque de ce portable, et un modèle de vision la regarde. Toutes les "
+                "quelques secondes, on lui montre une image et on lui pose une seule question : que se passe-t-il ?",
+            )),
+            Beat(say(
+                "That is its answer on the picture: one plain sentence, written on the integrated GPU in about a "
+                "second. Nobody labelled this video; the model has never seen it before.",
+                "Voici sa réponse, sur l'image : une phrase simple, écrite sur le GPU intégré en une seconde environ. "
+                "Personne n'a annoté cette vidéo ; le modèle ne l'a jamais vue.",
+            ), stage="vision", figure=True),
+            Beat(say(
+                "Now a second, small model says each sentence again in a voice: a sports commentator first, then a "
+                "nature documentary. " + ("It runs on the NPU, so the vision model never waits for it."
+                                          if stand.npu else "On this machine it shares the graphics chip."),
+                "Un second modèle, tout petit, redit maintenant chaque phrase avec une voix : un commentateur sportif "
+                "d'abord, puis un documentaire animalier. " + ("Il tourne sur le NPU : le modèle de vision ne l'attend jamais."
+                                                               if stand.npu else "Sur cette machine, il partage la puce graphique."),
+            ), stage="mood", figure=True),
+            Beat(say(
+                # Measured: a rider became "brave cowboys", a herd was "on its way to market".
+                "The plain sentence stays under the picture, because the small model embroiders: what it adds is "
+                "style, not something it saw. The comments are in English, whatever language this story is told in.",
+                "La phrase simple reste sous l'image, car le petit modèle brode : ce qu'il ajoute est du style, pas "
+                "quelque chose qu'il a vu. Les commentaires sont en anglais, quelle que soit la langue de ce récit.",
+            ), stage="mood", figure=True),
+        ),
+        chips=chips,
+        props={
+            "video": sample["name"],
+            "moods": {
+                "plain": say("Just what it sees", "Ce qu'il voit, sans plus"),
+                "sports": say("Sports commentator", "Commentateur sportif"),
+                "documentary": say("Nature documentary", "Documentaire animalier"),
+                "upbeat": say("Upbeat", "Enjoué"),
+            },
+        },
+        steps=(
+            Start("/api/video-commentary/start", {
+                # No sound: a stand at a large event is too loud for it.
+                "source": "file", "path": sample["path"], "loop": True, "mood": "plain", "voice": "",
+                "vision_device": stand.igpu, "mood_device": voice,
+            }),
+            # The two models load for a quarter of a minute, more on a cold
+            # machine: the voices wait for the first plain sentence, not for a clock.
+            Until("/api/video-commentary/comments", "commenting", True, timeout=120.0),
+            Wait(12.0),
+            mood("sports"),
+            Wait(20.0),
+            mood("documentary"),
+            Wait(20.0),
+            mood("upbeat"),
+            Wait(12.0),
+        ),
+        stop=("/api/video-commentary/stop",),
+        hold=0.0,
+        at_most=210.0,
+    )
 
-    If the one whose turn it is cannot play here -- its videos not fetched,
-    no network for the cameras -- the other plays in its place rather than
-    the loop going a scene short."""
-    streets_turn = loop % 2 == 1
-    # Each is told how many times it has played itself, not which turn of
-    # the loop this is: the streets change chips every time they play.
-    mine = (loop + 1) // 2
-    first, second = (smart_city, herd_and_line) if streets_turn else (herd_and_line, smart_city)
-    scene = first(stand, mine)
-    if isinstance(scene, Skip):
-        instead = second(stand, loop)
-        if isinstance(instead, Scene):
-            return instead
-    return scene
 
-
-# In the order they play. Heavy and light alternate: the 30B model lost a
-# fifth of its speed after many runs in a row (docs/AUTO_DEMO.md).
-PLAYLIST: list[Builder] = [page_agent, expense_extraction, counting, seeing_and_answering]
+# In the order they play, each under the key the start screen ticks it by.
+# Heavy and light alternate: the 30B model lost a fifth of its speed after
+# many runs in a row (docs/AUTO_DEMO.md).
+#
+# The two counting scenes share one place and take turns in it (asked for by
+# the user on 2026-10-09): the streets on the first turn of the loop, the
+# herd and the line on the second, never both in one turn. If one of them
+# cannot play here, or was not chosen, the other plays every turn.
+PLAYLIST: list[Slot] = [
+    Entry("page-agent", page_agent),
+    Entry("expense-extraction", expense_extraction),
+    (Entry("smart-city", smart_city), Entry("herd-and-line", herd_and_line)),
+    Entry("video-commentary", video_commentary),
+    Entry("seeing-and-answering", seeing_and_answering),
+]

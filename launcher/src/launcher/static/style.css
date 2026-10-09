@@ -1168,6 +1168,38 @@ body.stage-big .stage { --beat: clamp(22px, 2.25vw, 46px); }
 .sv-camera-counts { margin: 8px 0 0; font-size: clamp(12.5px, 1vw, 19px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-dim); }
 .sv-camera-counts b { font-weight: 600; color: var(--text); }
 
+/* The commentator: the video with its line on it, and what was said so far. */
+.view-commentary { grid-template-columns: minmax(0, 66fr) minmax(0, 34fr); gap: clamp(10px, 1.2vw, 20px); }
+.sv-subtitle {
+  align-self: end;
+  justify-self: center;
+  z-index: 1;
+  max-width: 92%;
+  margin: 0 0 clamp(8px, 1.6vh, 22px);
+  padding: 0.35em 0.8em;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.74);
+  font-size: clamp(15px, 1.5vw, 30px);
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  color: #fff;
+}
+.sv-watch .sv-camera-counts { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-height: 2.9em; line-height: 1.45; }
+.sv-lines { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: clamp(8px, 1.2vh, 16px); overflow: hidden; }
+.sv-line { animation: sv-in 0.5s ease; }
+.sv-line span { font-size: clamp(10.5px, 0.78vw, 14px); letter-spacing: 0.6px; text-transform: uppercase; color: var(--accent-hover); }
+.sv-line p { margin: 2px 0 0; font-size: clamp(12.5px, 1vw, 20px); line-height: 1.35; color: var(--text-dim); }
+.sv-line:first-child p { color: var(--text); font-weight: 600; }
+
+/* Seeing and answering: the detector's picture beside the question and its answer. */
+.view-answer { grid-template-columns: minmax(0, 60fr) minmax(0, 40fr); gap: clamp(10px, 1.2vw, 20px); }
+.sv-qa > h3:not(:first-child) { margin-top: clamp(8px, 1.4vh, 18px); }
+.sv-question { margin: 0; font-size: clamp(13px, 1.05vw, 21px); line-height: 1.4; font-weight: 600; color: var(--text); }
+.sv-answer { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.sv-answer-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: clamp(12.5px, 0.98vw, 19px); line-height: 1.45; color: var(--text); }
+.sv-sources { margin: 8px 0 0; min-height: 1.3em; font-size: clamp(11px, 0.82vw, 15px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint); }
+
 /* The loop is on hold, and says so in the caption: over nothing the demo shows. */
 .stage-pill {
   flex: 0 0 auto;
@@ -1213,9 +1245,11 @@ body.stage-big .stage { --beat: clamp(22px, 2.25vw, 46px); }
 .autodemo-stand li.missing { color: var(--text-faint); }
 .autodemo-options { display: grid; gap: 6px; margin: 0 0 14px; font-size: 13.5px; }
 .autodemo-options select { margin-left: 6px; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-input); color: var(--text); font: inherit; }
-.autodemo-playlist { margin: 0 0 14px; padding-left: 22px; font-size: 13.5px; }
-.autodemo-playlist li { margin-bottom: 6px; }
-.autodemo-playlist li span { display: block; font-size: 12.5px; color: var(--success); }
+.autodemo-playlist { margin: 0 0 14px; padding: 0; list-style: none; font-size: 13.5px; }
+.autodemo-playlist li { margin-bottom: 7px; }
+.autodemo-playlist label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.autodemo-playlist input:disabled + strong { cursor: default; }
+.autodemo-playlist li span { display: block; margin-left: 25px; font-size: 12.5px; color: var(--success); }
 .autodemo-playlist li.skipped strong { color: var(--text-dim); font-weight: 500; }
 .autodemo-playlist li.skipped span { color: var(--text-faint); }
 

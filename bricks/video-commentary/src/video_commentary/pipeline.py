@@ -21,19 +21,25 @@ the mood can then change without the picture being looked at again.
 The video plays at its own pace on one thread; the commentary takes the
 newest frame whenever it is ready for one. Frames between two comments are
 shown and never looked at: this is a commentator, not a detector.
+
+The line can be said aloud as well (`voices.py`): then a comment is handed
+over with its speech, once the voice has it ready, and the next look at the
+picture waits for the voice to have finished -- two lines are never spoken
+over each other, and a slow voice slows the commentary rather than fall
+behind it.
 """
 from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Iterator
 
 import cv2
 import numpy as np
 from pantherlake_ai_core import video
 
-from . import moods
+from . import moods, voices
 
 SEE_PROMPT = "In one short sentence of at most 20 words, say what is happening in this picture. Only what can be seen."
 # The frame as the vision model is shown it. Wider reads no better for this
@@ -54,6 +60,9 @@ class Comment:
     seeing_seconds: float
     saying_seconds: float
     at: float  # wall-clock time it was ready
+    voice: str = ""  # the voice it is spoken in ("" when it is only written)
+    voicing_seconds: float = 0.0  # what the voice took to have it ready
+    speech_seconds: float = 0.0  # how long it takes to say
 
 
 def shown(frame: np.ndarray) -> np.ndarray:
@@ -143,6 +152,51 @@ class Commentator:
         return Comment(seen=seen, said=said, mood=mood.key, seeing_seconds=seeing, saying_seconds=saying, at=time.time())
 
 
+class Voicing:
+    """Gives a comment its speech, when a voice is on.
+
+    `voice()` is asked for every line, so it can be switched on, off or
+    changed while the video plays. A voice that fails is said once and not
+    tried again until another is chosen: the commentary goes on in writing.
+    `quiet_after` is when the line being spoken will have been said (on
+    `clock`), which the next look at the picture waits for."""
+
+    def __init__(
+        self,
+        speaker: voices.Speaker,
+        voice: Callable[[], str],
+        *,
+        on_work: Callable[[str, bool, object], None] = lambda stage, working, stats: None,
+        on_failed: Callable[[str], None] = lambda message: None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._speaker, self._voice, self._on_work, self._on_failed, self._clock = speaker, voice, on_work, on_failed, clock
+        self._failed = voices.OFF
+        self.quiet_after = 0.0
+
+    def __call__(self, comment: Comment) -> tuple[Comment, voices.Speech | None]:
+        key = voices.get(self._voice())
+        if key != self._failed:
+            self._failed = voices.OFF
+        if not key or key == self._failed:
+            return comment, None
+        self._on_work("voice", True, None)
+        started = time.perf_counter()
+        try:
+            audio, rate = self._speaker.speak(key, comment.said, comment.mood)
+        except Exception as exc:
+            self._failed = key
+            self._on_failed(str(exc))
+            return comment, None
+        finally:
+            self._on_work("voice", False, None)
+        seconds = len(audio) / rate if rate else 0.0
+        self.quiet_after = self._clock() + seconds
+        spoken = replace(comment, voice=key, voicing_seconds=time.perf_counter() - started, speech_seconds=seconds,
+                         at=time.time())
+        return spoken, (audio, rate)
+
+
 def frames_from(
     source: str, *, path: str = "", camera_index: int = 0, screen_index: int = 1, loop: bool = True,
     stop_event: threading.Event | None = None,
@@ -168,20 +222,30 @@ def run(
     vision_device: str,
     mood_device: str,
     mood: Callable[[], str],
+    voice: Callable[[], str] = lambda: voices.OFF,
+    clone: Callable[[str], voices.Speech] | None = None,
     every: float = EVERY_SECONDS,
     on_frame: Callable[[np.ndarray], None] = lambda frame: None,
-    on_comment: Callable[[Comment], None] = lambda comment: None,
+    on_comment: Callable[[Comment, voices.Speech | None], None] = lambda comment, speech: None,
     on_work: Callable[[str, bool, object], None] = lambda stage, working, stats: None,
     on_ready: Callable[[], None] = lambda: None,
     on_downloading: Callable[[], None] | None = None,
+    on_voice_failed: Callable[[str], None] = lambda message: None,
     stop_event: threading.Event | None = None,
 ) -> None:
     """Blocks until the video ends or `stop_event` is set.
 
     `mood()` is asked at every look, so the voice can change while the
     video plays. `on_work(stage, working, stats)` says when the vision
-    model ("vision") and the language model ("mood") start and finish a
-    piece of work, with how fast the finished one went."""
+    model ("vision"), the language model ("mood") and the voice ("voice")
+    start and finish a piece of work, with how fast the finished one went.
+
+    `voice()` is asked for every line: "" and the line is only written,
+    `voices.STUDIO` or `voices.CLONED` and `on_comment` is handed its speech
+    with it -- the samples and their rate, for whoever is listening to play.
+    `clone(text)` is the cloned voice, lent by whoever enrolled one. A voice
+    that fails is said once (`on_voice_failed`) and the commentary goes on
+    in writing: it is the line that matters."""
     from doc_qa.engine_factory import create_llm
     from pantherlake_ai_core.engine import Engine
     from screen_ocr.extractor_openvino import OpenVINOExtractor
@@ -193,7 +257,7 @@ def run(
     moods.get(mood())  # an unknown mood is refused before anything loads
     frames = frames_from(source, path=path, camera_index=camera_index, screen_index=screen_index, loop=loop, stop_event=stop)
     eyes = OpenVINOExtractor(device=vision_device, on_downloading=on_downloading)
-    voice = create_llm(Engine.OPENVINO, device=mood_device, on_downloading=on_downloading)
+    wording = create_llm(Engine.OPENVINO, device=mood_device, on_downloading=on_downloading)
 
     def see(picture: np.ndarray) -> str:
         on_work("vision", True, None)
@@ -211,14 +275,17 @@ def run(
             # The likeliest words, not drawn ones: drawn, the same model put a
             # herd under a clear sky "at night", called its rider Buffalo Bill
             # and had stars twinkle above. It still embroiders; less.
-            text = voice.answer(instruction, line, max_tokens=48, sample=False)
+            text = wording.answer(instruction, line, max_tokens=48, sample=False)
         except Exception:
             on_work("mood", False, None)
             raise
-        on_work("mood", False, getattr(voice, "last_stats", None))
+        on_work("mood", False, getattr(wording, "last_stats", None))
         return text
 
     commentator = Commentator(see, say)
+    voiced = Voicing(
+        voices.Speaker(clone=clone, on_downloading=on_downloading), voice, on_work=on_work, on_failed=on_voice_failed,
+    )
     newest: list[np.ndarray | None] = [None]
     ended = threading.Event()
     failed: list[BaseException] = []
@@ -250,16 +317,18 @@ def run(
             started = time.monotonic()
             comment = commentator.consider(frame, mood())
             if comment is not None:
-                on_comment(comment)
+                on_comment(*voiced(comment))
             # Until the next look, a change of mood is answered at once: the
             # same sentence in the new voice, which only the small model has
-            # to say again.
-            until = started + max(every, 0.1)
-            while not asked_to_stop.is_set() and not ended.is_set() and time.monotonic() < until:
+            # to say again. And the next look waits for a line being spoken
+            # to have been said.
+            while not asked_to_stop.is_set() and not ended.is_set():
+                if time.monotonic() >= max(started + max(every, 0.1), voiced.quiet_after):
+                    break
                 if commentator.mood and mood() != commentator.mood:
                     again = commentator.revoice(mood())
                     if again is not None:
-                        on_comment(again)
+                        on_comment(*voiced(again))
                 asked_to_stop.wait(0.2)
     finally:
         stop.set()
