@@ -35,8 +35,65 @@ _SYSTEM_PROMPT = (
     'total paid, or null), "currency" (explicit ISO currency code, or null if ambiguous), '
     '"category" (one of: "Meals", "Travel", "Lodging", '
     '"Office Supplies", "Software", "Other"). Never guess missing fields. '
-    "A bare $ does not establish USD. If the text is not a receipt, return null fields."
+    "A bare $ does not establish USD. If the text is not a receipt, return null fields. "
+    # What follows was measured on the fourteen sample receipts that have a
+    # checked answer, with Qwen2.5-1.5B on the NPU (2026-10-09). Without it:
+    # vendor 5 of 14, category 7 of 14. With it, and with the two rules
+    # below: vendor 13, date 14, category 12. Said last and in plain
+    # sentences: the same hints inside the list of keys cost three categories.
+    "The vendor is the business that issued the receipt, named at its top. "
+    "Categories: a cafe, a restaurant, food or drink is Meals; a flight, a train, a taxi, a transfer or "
+    "parking is Travel; a hotel stay is Lodging; physical goods such as equipment, hardware, cables, "
+    "adapters or stationery are Office Supplies, and so is a refund of them; "
+    "Software is only for a subscription, a licence or an online service."
 )
+
+# A receipt names two parties, and the small model took the one after a label
+# for the vendor on every sample receipt that has one ("Billed to: Meridian
+# Robotics": nine of nine, measured 2026-10-09). An expense line has no use
+# for the buyer, so the model is not shown that line.
+_BUYER_LINE = re.compile(
+    r"^\s*(billed to|bill to|invoiced? to|sold to|ship(ped)? to|deliver(ed)? to|customer|client|guest|attn|attention"
+    r"|factur[ée]e? [àa]|adress[ée]e? [àa]|livr[ée]e? [àa])\b\s*[:\-]",
+    re.IGNORECASE,
+)
+_ISO_DATE = re.compile(r"(?<!\d)(\d{4}-\d{2}-\d{2})(?!\d)")
+_NUMERIC_DATE = re.compile(r"(?<![\d/.\-])(\d{1,2})([/.\-])(\d{1,2})\2(\d{4})(?!\d)")
+
+
+def _for_the_model(raw_text: str) -> str:
+    return "\n".join(line for line in raw_text.splitlines() if not _BUYER_LINE.match(line))
+
+
+def _the_one_printed_date(raw_text: str, currency: str | None = None) -> str:
+    """The receipt's date when it prints exactly one, in figures
+    ("2026-09-03", "12/09/2026"): read by rule, since the model returned
+    none for four of the nine sample receipts that say "Date: 2026-09-0x",
+    and read "12/09/2026" on a French till receipt as the 9th of December.
+    Day first, as everywhere but on a US receipt, unless only the other way
+    round is a date. Two different dates (a hotel stay) are a question for
+    the model, or for a person."""
+    found = set()
+    for match in _ISO_DATE.findall(raw_text):
+        try:
+            date.fromisoformat(match)
+        except ValueError:
+            continue
+        found.add(match)
+    for first, _separator, second, year in _NUMERIC_DATE.findall(raw_text):
+        first, second = int(first), int(second)
+        month_first = second > 12 >= first or (currency == "USD" and first <= 12 and second <= 12)
+        day, month = (second, first) if month_first else (first, second)
+        try:
+            found.add(date(int(year), month, day).isoformat())
+        except ValueError:
+            continue
+    return found.pop() if len(found) == 1 else ""
+
+
+def _day_and_month_swapped(one: str, other: str) -> bool:
+    return one[:4] == other[:4] and one[5:7] == other[8:10] and one[8:10] == other[5:7] and one != other
+
 
 # Small enough to bound memory, large enough that a faster OCR stage can
 # get ahead of a slower LLM stage instead of stalling on every item.
@@ -57,7 +114,7 @@ def _structure(llm, raw_text: str, source_name: str) -> ExpenseLine:
             raw_text=raw_text or "", error="No text detected by OCR",
         )
 
-    reply = llm.answer(_SYSTEM_PROMPT, raw_text, max_tokens=200)
+    reply = llm.answer(_SYSTEM_PROMPT, _for_the_model(raw_text), max_tokens=200)
     parsed = parse_expense_json(reply)
     if parsed is None:
         return ExpenseLine(
@@ -80,13 +137,17 @@ def _structure(llm, raw_text: str, source_name: str) -> ExpenseLine:
     elif not any(coerce_amount(token) == amount for token in re.findall(r"-?\d[\d., \u00a0\u202f]*\d|-?\d", raw_text)):
         reasons.append("Amount could not be matched to the receipt text")
     date_text = str(parsed.get("date") or "")
+    printed = _the_one_printed_date(raw_text, currency)
     try:
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_text):
             raise ValueError
         date.fromisoformat(date_text)
+        if printed and _day_and_month_swapped(date_text, printed):
+            date_text = printed
     except ValueError:
-        reasons.append("Date is missing or invalid")
-        date_text = ""
+        date_text = printed
+        if not date_text:
+            reasons.append("Date is missing or invalid")
     if not parsed.get("vendor"):
         reasons.append("Vendor is missing")
     category = str(parsed.get("category") or "Other")
