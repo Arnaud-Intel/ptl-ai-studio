@@ -19,7 +19,7 @@ a new one or the deferred list, and moves its original wording to
 
 <!-- - [ ] **Title.** Short description. (filed YYYY-MM-DD, source) -->
 
-- [ ] **The studio's voice takes the launcher down when it is put on the
+- [x] **The studio's voice takes the launcher down when it is put on the
   NPU, and is unusable on a GPU.** Seen while measuring voices for the
   Video Commentator, in a script of its own: `voice_model.
   accelerate_tts_with_openvino(tts, device="NPU")` -- what the Voice
@@ -42,6 +42,19 @@ a new one or the deferred list, and moves its original wording to
   So choosing the NPU for either demo in the launcher takes the launcher
   down. The README no longer lists the NPU for them and says so under
   "Good to know"; the menus still offer it.
+  *Fixed the same day, at the user's request.* Tried part by part, one
+  process each: the speaker ends the process on the NPU with or without
+  bounded shapes; the tone converter is refused there with an ordinary
+  error; on a GPU both work and are compiled again for every new length
+  (16 to 22 s and 5 s); on the CPU they take 0.2 and 0.5 s. So the voice
+  models are never handed to the NPU: `voice_model.compile_device` refuses
+  it by name before anything is imported or loaded, and treats "AUTO" as
+  the CPU. The Voice Assistant listens and answers on the chip chosen and
+  speaks from the CPU, with a row of its own in the hardware panel; the
+  Voice Clone Studio shows the NPU greyed out with the reason, and its
+  routes answer 400. Checked with the two scripts that used to exit with
+  127: the assistant now loads on the NPU and speaks, the clone is refused
+  with the message. Not run in the launcher with a microphone.
 - [ ] **A cloned voice is slowed threefold by a video playing beside it.**
   Chatterbox made a line in 8 to 11 s alone and in 18 to 30 s inside the
   Video Commentator, where a 1080p video is decoded and re-encoded for the

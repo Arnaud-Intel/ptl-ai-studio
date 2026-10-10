@@ -11,7 +11,7 @@ There are **two models**, and they trade off against each other:
 | | **Chatterbox Turbo** (default) | **OpenVoice** |
 | --- | --- | --- |
 | Speaker similarity to a real human reference | **0.648** | 0.287 |
-| Runs on | CPU only | CPU, **iGPU, NPU** |
+| Runs on | CPU only | CPU; a GPU works, slower. **Not the NPU** (see below) |
 | Speed on this CPU | ~2.5x realtime | ~1.5x realtime |
 | Download | 536 MB | ~500 MB |
 | Controls | paralinguistic tags in the text | 9 delivery styles + tone strength |
@@ -46,8 +46,22 @@ quantizations. OpenVINO reads the fp16 ones but compiles them for CPU
 alone -- the GPU and NPU plugins both reject their dynamic shapes -- and
 fp16 is the *slow* path on a CPU with no native fp16 compute: 1584 MB at
 14.1x realtime, against q4f16's 536 MB at 2.5x. So this model runs on ONNX
-Runtime at q4f16, and OpenVoice remains the one that lights up the NPU and
-iGPU. Picking a model is picking which of those two things you want.
+Runtime at q4f16, and OpenVoice remains the one with an OpenVINO engine
+and delivery styles.
+
+**Where OpenVoice runs, measured (2026-10-10).** Its two models take a
+sentence of any length, which only the CPU does well:
+
+| | CPU | GPU | NPU |
+| --- | --- | --- | --- |
+| The speaker (text to speech) | 0.2 s a sentence | 16 to 22 s for every sentence of a length it has not seen | the compiler ends the whole program |
+| The tone converter | 0.5 s | 5 s for every new length | refused with an error |
+
+Giving the shapes an upper bound changes neither NPU result. So the NPU is
+refused by name before anything is loaded (`voice_model.compile_device`) --
+choosing it in the launcher used to take the launcher down -- the launcher
+shows it greyed out with why, and "Auto" is the CPU. An earlier version of
+this page listed the NPU as supported; on today's runtime it is not.
 
 ### Paralinguistic tags
 
@@ -66,12 +80,12 @@ has no equivalent; it has `--style` instead.
 
 - **`portable`** (default) -- plain PyTorch, CPU only.
 - **`openvino`** -- the identical checkpoints, converted to OpenVINO IR,
-  targeting `CPU`, `GPU` (iGPU), or `NPU` explicitly.
+  targeting `CPU` or a `GPU` explicitly (not the `NPU`: see above).
 
 Following Intel's own [OpenVoice -> OpenVINO conversion notebook](https://github.com/openvinotoolkit/openvino_notebooks/blob/latest/notebooks/openvoice/openvoice.ipynb)
 as the reference path (see **A real technical finding** below for where it
 needed a fix) confirmed both engines produce near-identical output from the
-same checkpoints -- switching engines there is purely a CPU-vs-NPU/iGPU
+same checkpoints -- switching engines there is purely a CPU-vs-GPU
 latency comparison, the same story `webcam-effects` tells for segmentation.
 
 ## Setup
@@ -107,10 +121,10 @@ Clone a voice from a clip and speak a line (Chatterbox by default):
 uv run voice-clone-studio --reference me.wav --text "Hello from my own voice. [laugh]"
 ```
 
-The older model, on the NPU:
+The older model, through OpenVINO, with a delivery style:
 
 ```bash
-uv run voice-clone-studio --reference me.wav --text "Hello." \n    --model openvoice --engine openvino --compute-device NPU --style cheerful
+uv run voice-clone-studio --reference me.wav --text "Hello." \n    --model openvoice --engine openvino --compute-device CPU --style cheerful
 ```
 
 Enroll from a file and speak a sentence in that voice:
@@ -126,10 +140,10 @@ file:
 uv run voice-clone-studio --record 15 --text "This is what I sound like." --output cloned.wav
 ```
 
-Run both stages on the Intel NPU via OpenVINO:
+Run both stages through OpenVINO:
 
 ```bash
-uv run voice-clone-studio --reference my_voice.wav --text "Hello from the NPU." --engine openvino --compute-device NPU --output cloned.wav
+uv run voice-clone-studio --reference my_voice.wav --text "Hello from OpenVINO." --engine openvino --compute-device CPU --output cloned.wav
 ```
 
 ## Options
@@ -143,7 +157,7 @@ uv run voice-clone-studio --reference my_voice.wav --text "Hello from the NPU." 
 | `--tau FLOAT` | Tone-conversion strength -- higher tracks the reference tone more closely. Default: `0.3`. |
 | `--output PATH` | Output WAV path. Default: `cloned.wav`. |
 | `--engine {portable,openvino}` | Inference backend. Default: `portable`. |
-| `--compute-device NAME` | `openvino` engine only: `AUTO`, `CPU`, `GPU`, `NPU`. |
+| `--compute-device NAME` | `openvino` engine only: `CPU` or `GPU`. `AUTO` is the CPU, where it is fastest; the `NPU` is refused. |
 | `--model-path PATH` | Reserved for a future local-checkpoint override (currently unused -- checkpoints always come from Hugging Face). |
 | `--list-devices` | List microphones and inference devices, then exit. |
 

@@ -43,7 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--compute-device", default=None,
-        help="openvino engine only: AUTO, CPU, GPU, or NPU. Default: AUTO.",
+        help="openvino engine only: AUTO, CPU, GPU, or NPU, for listening and answering. The voice itself is "
+             "always made on the CPU. Default: AUTO.",
     )
     p.add_argument(
         "--no-speak", action="store_true",

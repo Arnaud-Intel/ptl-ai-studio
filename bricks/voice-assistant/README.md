@@ -64,7 +64,8 @@ uv run voice-assistant
 Say "Hey Jarvis", pause briefly, then ask your question. Press `Ctrl+C` to
 stop.
 
-Run every heavy stage on the Intel NPU via OpenVINO:
+Listen and answer on the Intel NPU via OpenVINO (the voice itself is always made on the CPU: its model does not
+compile for the NPU, and on a GPU it is compiled again for every sentence):
 
 ```bash
 uv run voice-assistant --engine openvino --compute-device NPU
@@ -85,7 +86,7 @@ uv run voice-assistant --no-speak
 | `--audio-device NAME` | Substring to match a specific microphone. |
 | `--engine {portable,openvino}` | Backend for speech-to-text, the LLM, and text-to-speech. Default: `portable`. |
 | `--whisper-model NAME` | Whisper model size override. |
-| `--compute-device NAME` | `openvino` engine only: `AUTO`, `CPU`, `GPU`, `NPU`. |
+| `--compute-device NAME` | `openvino` engine only: `AUTO`, `CPU`, `GPU`, `NPU` -- for listening and answering. The voice is made on the CPU. |
 | `--no-speak` | Print replies instead of speaking them out loud. |
 | `--list-devices` | List microphones and inference devices, then exit. |
 

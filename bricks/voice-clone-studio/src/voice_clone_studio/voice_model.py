@@ -17,6 +17,46 @@ from ._openvoice.api import BaseSpeakerTTS, OpenVoiceBaseClass, ToneColorConvert
 
 REPO_ID = "myshell-ai/OpenVoice"
 SAMPLE_RATE = 22050
+
+# Where the two models can be compiled. Both take a sentence of any length,
+# which the CPU does not mind and the other two chips do. Measured on the
+# XPS 14 (2026-10-10, OpenVINO 2025, one attempt per process, because one
+# of them does not come back):
+#
+#                         CPU      GPU                            NPU
+#   the speaker (TTS)     0.2 s    16 to 22 s for every sentence  the compiler ends the whole
+#                                  of a length it has not seen    program ("LLVM ERROR"): no
+#                                                                 Python error to catch
+#   the tone converter    0.5 s    5 s for every new length       refused with an error
+#
+# Giving the shapes an upper bound changes neither NPU result. So the NPU
+# is refused here, by name, before anything is compiled -- choosing it in
+# the launcher used to take the launcher down -- and a brick that only
+# wants a voice beside its other models (the voice assistant, the video
+# commentator) makes it on `TTS_DEVICE` whatever chip the rest is on.
+TTS_DEVICE = "CPU"
+NPU_REASON = (
+    "The voice model does not compile for the NPU: it takes sentences of any length, which the NPU's compiler "
+    "cannot do. Choose the CPU, which says a sentence in half a second."
+)
+
+
+def validate_device(device: str) -> None:
+    """Refuse a chip the voice models cannot be compiled for, as a
+    ValueError (a 400 in the launcher) -- never by trying."""
+    if npu.is_npu(device):
+        raise ValueError(NPU_REASON)
+
+
+def compile_device(device: str) -> str:
+    """The chip a voice model is compiled for when `device` was asked for:
+    that chip, checked -- or, left to the app ("AUTO"), the one it is
+    fastest on. OpenVINO's own AUTO is never handed the choice: it may
+    take a chip these models end the program on."""
+    if not device or device.upper() == "AUTO":
+        return TTS_DEVICE
+    validate_device(device)
+    return device
 STYLES = [
     "default", "whispering", "shouting", "excited", "cheerful",
     "terrified", "angry", "sad", "friendly",
@@ -79,7 +119,11 @@ def load_tts_only(local_dir: str | None = None, on_downloading: Callable[[], Non
 def accelerate_tts_with_openvino(tts: BaseSpeakerTTS, device: str = "CPU") -> None:
     """Patches `tts.model.infer` in place to run via cached OpenVINO IR
     instead of native PyTorch -- the TTS half of what OpenVINOCloner does,
-    for a caller (like voice-assistant) that never needs tone conversion."""
+    for a caller (like voice-assistant) that never needs tone conversion.
+
+    Not on the NPU (see `NPU_REASON`): that is a ValueError here. A caller
+    whose own chip may be the NPU passes `TTS_DEVICE`."""
+    device = compile_device(device)  # before anything is imported or compiled: the NPU is refused, never tried
     from openvino import Core
 
     ir_path = ir_cache_dir() / "openvoice_en_tts.xml"

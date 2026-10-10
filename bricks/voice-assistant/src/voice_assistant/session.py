@@ -49,8 +49,14 @@ class VoiceAssistantSession:
         self.llm = create_llm(engine, device=device)
 
         self.tts = vc_voice_model.load_tts_only()
+        # The voice is made on the CPU whatever chip the rest is on: its
+        # model does not compile for the NPU (giving it the NPU ended the
+        # whole program), and on a GPU it is compiled again for every
+        # sentence of a new length, 16 to 22 s each. On the CPU a reply is
+        # ready in half a second. Listening and answering stay on `device`.
+        self.voice_device = vc_voice_model.TTS_DEVICE if engine == Engine.OPENVINO else "CPU"
         if engine == Engine.OPENVINO:
-            vc_voice_model.accelerate_tts_with_openvino(self.tts, device=device)
+            vc_voice_model.accelerate_tts_with_openvino(self.tts, device=self.voice_device)
 
     def ask(self, question: str, *, max_tokens: int = 200) -> str:
         return self.llm.answer(_SYSTEM_PROMPT, question, max_tokens=max_tokens)

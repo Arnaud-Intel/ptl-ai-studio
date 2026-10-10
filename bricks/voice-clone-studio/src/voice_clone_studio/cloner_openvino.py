@@ -10,10 +10,14 @@ class OpenVINOCloner:
     """Same checkpoints as the portable engine, but the two heaviest
     forward passes -- BaseSpeakerTTS's phoneme-to-waveform synthesis and
     ToneColorConverter's tone transform -- run as OpenVINO IR models
-    instead of native PyTorch, on CPU/GPU/NPU. Converted IR is cached on
-    disk (voice_model.ir_cache_dir()) since conversion itself takes
-    several seconds and only needs to happen once per machine; the
-    compiled form is cached too (ov_config_for) on the NPU."""
+    instead of native PyTorch, on the CPU or a GPU. Converted IR is
+    cached on disk (voice_model.ir_cache_dir()) since conversion itself
+    takes several seconds and only needs to happen once per machine.
+
+    Not on the NPU: neither model compiles there, and one of the two takes
+    the whole program down trying (voice_model.NPU_REASON). It is refused
+    before anything is loaded. A GPU works and is slow: both models are
+    compiled again for every sentence of a new length."""
 
 
     # OpenVoice speaks through one of nine base voices before the tone
@@ -22,6 +26,8 @@ class OpenVINOCloner:
     supports_tags = False
 
     def __init__(self, device="CPU", model_path=None, on_downloading=None):
+        device = voice_model.compile_device(device)
+        self.device = device
         self.tts, self.converter, self.source_se = voice_model.load_models(
             local_dir=model_path, on_downloading=on_downloading
         )

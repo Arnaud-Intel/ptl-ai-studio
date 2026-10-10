@@ -66,6 +66,11 @@ def create_cloner(
 
         return PortableCloner(model_path=model_path, on_downloading=on_downloading)
 
+    # The NPU is refused here, by name, before a model is loaded: handed to
+    # the compiler, it ends the whole program (voice_model.NPU_REASON).
+    from . import voice_model
+
+    device = voice_model.compile_device(device)
     from .cloner_openvino import OpenVINOCloner
 
     return OpenVINOCloner(device=device, model_path=model_path, on_downloading=on_downloading)

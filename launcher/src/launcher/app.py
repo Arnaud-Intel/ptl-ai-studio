@@ -505,6 +505,15 @@ def demo_devices(demo_id: str) -> JSONResponse:
         payload["openvino_unsupported"] = {
             d: GPU_REASON for d in ["AUTO", *payload["openvino_devices"]] if d == "AUTO" or d.startswith("GPU")
         }
+    if demo_id == "voice-clone-studio":
+        from voice_clone_studio.voice_model import NPU_REASON, TTS_DEVICE
+
+        # The voice models do not compile for the NPU, and trying took the
+        # launcher down: it is shown greyed out with why. Left to the app,
+        # the voice is made on the CPU, where it is fastest.
+        payload["openvino_unsupported"] = {d: NPU_REASON for d in payload["openvino_devices"] if npu.is_npu(d)}
+        if payload["openvino_devices"]:
+            payload["auto_device"] = TTS_DEVICE
     if demo_id in ("live-translation", "meeting-notes"):
         # What the "Spoken language" menu offers after "Detect automatically".
         payload["spoken_languages"] = [{"code": code, "name": name} for code, name in SPOKEN_LANGUAGES.items()]
@@ -1279,6 +1288,15 @@ def _voice_clone_engine(model: str, engine: str | None, device: str | None) -> t
     if engine is None and len(allowed) == 1:
         only = allowed[0]
         return only, device or default_device(only)
+    from voice_clone_studio import voice_model
+
+    chosen = resolve_engine(engine)
+    if chosen == Engine.OPENVINO:
+        if not device or device.upper() == "AUTO":
+            # Left to the app: the CPU, which says a sentence in half a
+            # second where a GPU compiles the models again for each one.
+            return chosen, voice_model.TTS_DEVICE
+        voice_model.validate_device(device)  # the NPU: refused here, never tried
     return resolve(engine, device)
 
 

@@ -48,7 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--compute-device", default=None,
-        help="openvino engine only: AUTO, CPU, GPU, or NPU. Default: AUTO.",
+        help="openvino engine only: CPU or GPU (AUTO is the CPU, where it is fastest; the voice models do not "
+             "compile for the NPU). Default: AUTO.",
     )
     p.add_argument("--model-path", default=None, help="Use a local model instead of downloading the default.")
     p.add_argument(

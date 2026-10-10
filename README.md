@@ -160,8 +160,8 @@ videos, prompts.
 | --- | --- | --- |
 | **Live Speech Translation** | Any spoken language to English text, live | CPU · GPU · NPU |
 | **Live Meeting Notes** | Transcribes a call; summary and action items on demand | CPU · GPU · NPU |
-| **Local Voice Assistant** | Wake word, question, spoken answer | CPU · GPU |
-| **Voice Clone Studio** | Enrol a short voice sample, then speak any text in that voice | CPU |
+| **Local Voice Assistant** | Wake word, question, spoken answer | CPU · GPU · NPU (the voice itself on the CPU) |
+| **Voice Clone Studio** | Enrol a short voice sample, then speak any text in that voice | CPU (GPU possible, slower) |
 | **Webcam Background Effects** | Background blur or replacement, live | CPU · NPU |
 | **Object Detection Overlay** | Labelled boxes on a video file, a webcam or the screen | CPU · GPU · NPU |
 | **Screen / Image Text Extraction** | Reads the text in a screenshot or a photo, and can translate it | CPU · GPU |
@@ -197,9 +197,10 @@ uv run expense-extract ./receipts --ocr-engine openvino --ocr-device GPU --llm-e
 - **A first run is slow.** A demo downloads its model, then compiles it for
   the chip; the status line says which. The Activity Log (top right) has
   the history, errors included.
-- **Known limit.** The Voice Assistant and the Voice Clone Studio's
-  OpenVoice model must not be given the NPU for now: their voice model
-  does not compile there and takes the Studio down with it. Use the CPU.
+- **Voices are made on the CPU.** The speech-synthesis models do not
+  compile for the NPU, so the Voice Assistant listens and answers on the
+  chip you pick and speaks from the CPU, and the Voice Clone Studio shows
+  the NPU greyed out with the reason.
 - **Port taken?** A Studio is already running: `stop_launcher.bat`, or
   start another with `uv run panther-lake-launcher --port 8766`.
 

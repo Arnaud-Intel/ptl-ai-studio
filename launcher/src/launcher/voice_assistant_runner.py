@@ -14,6 +14,8 @@ from voice_assistant import session
 from . import activity, events, metrics, worker
 
 _DEMO_ID = "voice-assistant"
+_VOICE = "voice"
+_VOICE_DEVICE = "CPU"  # voice_clone_studio.voice_model.TTS_DEVICE, without loading the brick to ask
 
 
 class VoiceAssistantRunner:
@@ -52,11 +54,22 @@ class VoiceAssistantRunner:
             events.set_phase(_DEMO_ID, "running", "Listening for the wake word...")
             emit({"type": "ready"})
 
+        # The voice is made on the CPU whatever chip listens and answers
+        # (voice_model.TTS_DEVICE): when that is another chip, the hardware
+        # panel shows the voice on its own row, under the chip it is on.
+        voice_elsewhere = speak_replies and compute_device.upper() != _VOICE_DEVICE
+
         def target() -> None:
             activity.set_active(_DEMO_ID, engine=engine.value, device=compute_device)
+            if voice_elsewhere:
+                activity.set_active(_DEMO_ID, engine=engine.value, device=_VOICE_DEVICE, stage=_VOICE, stage_label="Voice")
             # Four models load before the mic even opens -- say so, rather
             # than claiming to be listening from the very first millisecond.
-            events.set_phase(_DEMO_ID, "loading", f"Loading models (engine={engine.value}, device={compute_device})...")
+            events.set_phase(
+                _DEMO_ID, "loading",
+                f"Loading models (engine={engine.value}, device={compute_device}"
+                + (f"; the voice on the {_VOICE_DEVICE}" if voice_elsewhere else "") + ")...",
+            )
             try:
                 session.run(
                     audio_device=audio_device,
@@ -81,6 +94,7 @@ class VoiceAssistantRunner:
                 events.clear_phase(_DEMO_ID)
             finally:
                 activity.clear_active(_DEMO_ID)
+                activity.clear_active(_DEMO_ID, stage=_VOICE)
                 emit({"type": "stopped"})
 
         self._thread = threading.Thread(target=target, daemon=True)

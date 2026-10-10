@@ -2478,8 +2478,8 @@ const PANELS = {
         styles: true,
         tags: [],
         help: "OpenVoice (MIT). Re-colors the tone of one of nine fixed base voices, so it captures " +
-              "timbre rather than a person's full identity -- but it is the model that runs on the NPU " +
-              "and iGPU, and it is faster (about 1.5x realtime).",
+              "timbre rather than a person's full identity -- but it has delivery styles, and an OpenVINO " +
+              "engine. Fastest on the CPU; a GPU compiles it again for every new sentence, and the NPU cannot run it.",
       },
     },
     modelInfo() {
