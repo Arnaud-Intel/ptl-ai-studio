@@ -117,7 +117,25 @@ actually overlapped rather than strictly alternating.
 | `--ocr-device NAME` | `openvino` OCR engine only: `AUTO`, `CPU`, `GPU`, `NPU`. |
 | `--llm-engine {portable,openvino}` | LLM structuring backend. Default: `portable`. |
 | `--llm-device NAME` | `openvino` LLM engine only: `AUTO`, `CPU`, `GPU`, `NPU`. |
+| `--llm-model {1.5b,8b}` | `openvino` LLM engine only: which language model makes the lines. Default: `1.5b` (see below). |
 | `--list-devices` | List available inference devices, then exit. |
+
+**Which language model.** The lines are made by Qwen2.5-1.5B unless
+`--llm-model 8b` (the **LLM model** menu) asks for Qwen3-8B. On the fourteen
+sample receipts that have a checked answer, both on the NPU (2026-10-10): 66
+fields of 70 right for each, and not the same ones. The 1.5B takes a banner
+("Not For Payment") for one vendor and files a credit note under Software; the
+8B gets those right and loses three amounts -- the fare (38.00) where the
+total was 46.80, a refund without its minus sign, a faded total left empty. A
+wrong amount is the worse fault in an expense line, and the 8B takes 4.3 s a
+receipt against 1.5: the small one stays the default.
+
+**Three rules that do not depend on the model** (`pipeline._structure`): an
+amount that is nowhere on the receipt is the model's own invention and is not
+shown (the reason says so); an amount that is on the receipt but is not the
+one on its TOTAL line is kept and flagged "Amount is not the printed total"; a
+date that reads as two different days (04/09/2026) is flagged when no currency
+says whether the receipt is American.
 
 `--ocr-engine`/`--ocr-device` and `--llm-engine`/`--llm-device` are
 **independent** -- that's deliberate, not an oversight. Every other

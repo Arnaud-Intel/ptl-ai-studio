@@ -53,6 +53,7 @@ class ExpenseExtractRunner:
         ocr_device: str,
         llm_engine: Engine,
         llm_device: str,
+        llm_model: str | None = None,
     ) -> None:
         worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
@@ -108,6 +109,7 @@ class ExpenseExtractRunner:
                     ocr_device=ocr_device,
                     llm_engine=llm_engine,
                     llm_device=llm_device,
+                    llm_model=llm_model,
                     on_ocr_start=on_ocr_start,
                     on_structured=on_structured,
                     on_llm_device=on_llm_device,

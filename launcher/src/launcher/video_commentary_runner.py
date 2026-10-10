@@ -127,7 +127,7 @@ class VideoCommentaryRunner:
     def start(
         self, *, source: str, path: str, camera_index: int, screen_index: int, loop: bool,
         vision_device: str, mood_device: str, mood: str, every: float, voice: str | None = None,
-        frames=None, people: bool = False,
+        frames=None, people: bool = False, mood_model: str | None = None,
     ) -> None:
         worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
         self.set_mood(mood)
@@ -208,6 +208,7 @@ class VideoCommentaryRunner:
                 pipeline.run(
                     source=source, path=path.strip(), camera_index=camera_index, screen_index=screen_index, loop=loop,
                     vision_device=vision_device, mood_device=mood_device, mood=lambda: self._mood, every=every,
+                    mood_model=mood_model,
                     voice=lambda: self._voice, clone=clone, frames=frames, people=people,
                     on_frame=on_frame, on_comment=on_comment, on_work=on_work, on_ready=on_ready,
                     on_downloading=on_downloading, on_voice_failed=on_voice_failed, stop_event=stop_event,

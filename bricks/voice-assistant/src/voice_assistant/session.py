@@ -13,6 +13,7 @@ import threading
 from typing import Callable
 
 import numpy as np
+from doc_qa import language_models
 from doc_qa.engine_factory import create_llm
 from live_translation.transcriber import create_translator
 from pantherlake_ai_core import audio
@@ -21,6 +22,8 @@ from pantherlake_ai_core.segmenter import VADConfig, segment_stream
 from voice_clone_studio import voice_model as vc_voice_model
 
 from .wake_word import DEFAULT_WAKE_WORD, WakeWordDetector
+
+DEFAULT_MODEL = language_models.DEFAULT
 
 _SYSTEM_PROMPT = (
     "You are a helpful voice assistant running entirely on this device. "
@@ -41,12 +44,15 @@ class VoiceAssistantSession:
         device: str,
         wake_word: str = DEFAULT_WAKE_WORD,
         wake_threshold: float = 0.5,
+        model: str | None = None,
     ):
         self.engine = engine
         self.device = device
         self.wake_detector = WakeWordDetector(wake_word=wake_word, threshold=wake_threshold)
         self.transcriber = create_translator(engine, whisper_model_size, device, task="transcribe")
-        self.llm = create_llm(engine, device=device)
+        # Which language model answers, by its key in doc-qa's language_models.
+        self.model = language_models.get(model or DEFAULT_MODEL).key
+        self.llm = create_llm(engine, device=device, model_repo=language_models.repo_for(self.model, engine, device))
 
         self.tts = vc_voice_model.load_tts_only()
         # The voice is made on the CPU whatever chip the rest is on: its
@@ -74,6 +80,7 @@ def run(
     compute_device: str,
     wake_word: str = DEFAULT_WAKE_WORD,
     wake_threshold: float = 0.5,
+    llm_model: str | None = None,
     on_wake: Callable[[], None] = lambda: None,
     on_heard: Callable[[str], None] = lambda text: None,
     on_reply: Callable[[str], None] = lambda text: None,
@@ -99,6 +106,7 @@ def run(
         device=compute_device,
         wake_word=wake_word,
         wake_threshold=wake_threshold,
+        model=llm_model,
     )
     if on_ready is not None:
         on_ready()

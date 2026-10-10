@@ -16,6 +16,19 @@ Two models, each on its own chip, neither of them new to the studio:
 The mood can change while the video plays: the last sentence is said again
 in the new voice at once, without the picture being looked at again.
 
+**Which model says it** can be chosen (`--mood-model`, **Says with** in the
+launcher), and the two are different commentators. Measured on twelve
+sentences the vision model wrote of the sample videos, each in the four moods,
+on the NPU (2026-10-10): Qwen2.5-1.5B has the voice and adds something that
+was not seen in about 18 lines of 48 ("Sealed 200 bottles per minute", a
+parked car's "wheels spinning silently"); Qwen3-8B adds something in about 4
+and sounds plainer -- its sports commentator says "a herd of cattle charges
+down a road, guided by a rider on horseback" -- and takes 2.2 s a line against
+0.8. Given the 1.5B's rules it handed 29 sentences of 48 back unchanged, so it
+has rules of its own (`moods.py`), under which it repeats 12. The default is
+the 1.5B: the mood is the point of this demo, and the plain line is shown
+under each for what was really seen.
+
 The line can also be **said aloud** (off by default), in one of two voices,
 both from [`voice-clone-studio`](../voice-clone-studio/README.md):
 
@@ -136,6 +149,7 @@ uv run video-commentary --speak              # said aloud, in the studio's voice
 | `--every SECONDS` | Seconds between two looks. Default: 4. |
 | `--vision-device NAME` | Where the vision model runs. Default: a GPU. It does not compile for the NPU on this hardware. |
 | `--mood-device NAME` | Where the language model runs. Default: the NPU if there is one. |
+| `--mood-model {1.5b,8b}` | Which language model says the line in a mood. Default: `1.5b`. |
 | `--once` | Play the file once instead of in a loop. |
 | `--speak` | Say each line aloud through the speakers, in the studio's voice (made on the CPU). |
 | `--voice-reference CLIP` | Say each line in the voice of this clip (5 to 30 s of clear speech), cloned as the Voice Clone Studio does. Slow: ten to thirty seconds a line. |

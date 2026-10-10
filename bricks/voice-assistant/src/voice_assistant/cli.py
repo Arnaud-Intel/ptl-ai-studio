@@ -51,6 +51,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print replies instead of speaking them out loud (e.g. for a machine with no speakers).",
     )
     p.add_argument(
+        "--llm-model", choices=("1.5b", "8b"), default=None,
+        help="openvino engine: which language model answers. Default: 1.5b -- the voice waits for the whole answer, "
+             "and the 8b takes three times as long to write one.",
+    )
+    p.add_argument(
         "--list-devices", action="store_true",
         help="List available microphones and inference devices, then exit.",
     )
@@ -91,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
             compute_device=compute_device,
             wake_word=args.wake_word,
             wake_threshold=args.wake_threshold,
+            llm_model=args.llm_model,
             on_wake=handle_wake,
             on_heard=handle_heard,
             on_reply=handle_reply,

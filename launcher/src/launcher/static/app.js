@@ -387,6 +387,50 @@ const OCR_MODEL_UNSUPPORTED = { NPU: "this OCR model doesn't compile for the NPU
 // OpenVINO option is only enabled when this brick actually has a device, the
 // device list follows the chosen engine (AUTO + every OpenVINO device, or the
 // portable engine's fixed choices), and GPU ids get their friendly names.
+// The Model menu of a brick that answers with a small language model
+// (data.language_models, from its /devices route). Its first entry leaves the
+// choice to the brick and says which model that is on the chip chosen: a
+// model comes in one build for the NPU and another for the rest, and a brick
+// that prefers the larger one takes it only where this laptop has it -- a
+// better answer is not worth gigabytes fetched in front of an audience.
+// `autoDevice()` is the chip the brick's "Auto" stands for, when it is known.
+function wireLanguageModel(select, data, { engine = null, device, autoDevice = () => null }) {
+  const choice = data.language_models;
+  const field = select.closest(".field");
+  if (field) field.hidden = !choice;
+  if (!choice) return;
+  const names = Object.fromEntries(choice.models.map((model) => [model.key, model.name]));
+  const fill = () => {
+    const kept = select.value;
+    if (engine && engine.value !== "openvino") {
+      // The portable engine has the one model.
+      fillSelect(select, [{ value: "", label: names[choice.portable] || choice.portable }]);
+      select.dataset.auto = "";
+      return;
+    }
+    const chip = !device.value || device.value === "AUTO" ? autoDevice() || "" : device.value;
+    const kind = String(chip).toUpperCase().startsWith("NPU") ? "npu" : "other";
+    select.dataset.auto = choice.default[kind];
+    fillSelect(select, [
+      { value: "", label: `Auto (${names[choice.default[kind]]})` },
+      ...choice.models.map((model) => ({
+        value: model.key,
+        label: `${model.name} -- ${model.says}` + (model.on_disk[kind] ? "" : " (not on this laptop yet: downloaded first)"),
+      })),
+    ]);
+    if ([...select.options].some((o) => o.value === kept)) select.value = kept;
+  };
+  if (engine) engine.addEventListener("change", fill);
+  device.addEventListener("change", fill);
+  fill();
+}
+
+// The model a Model menu stands for now, by name, for a request: what was
+// picked, or what "Auto" means on the chip chosen. null leaves it to the brick.
+function languageModelOf(select) {
+  return select.value || select.dataset.auto || null;
+}
+
 function wireEngineAndDevice(engineSelect, deviceSelect, data, options = {}) {
   const {
     portableDevices = ["cpu"],
@@ -1452,7 +1496,7 @@ const PANELS = {
     prefix: "va",
     transport: "ws",
     statusKey: "voice-assistant",
-    controls: ["va-audio-device", "va-wake-word", "va-engine", "va-compute-device", "va-speak"],
+    controls: ["va-audio-device", "va-wake-word", "va-engine", "va-compute-device", "va-model", "va-speak"],
     populate(data) {
       fillSelect(el("va-audio-device"), [
         { value: "", label: "Default microphone" },
@@ -1460,12 +1504,14 @@ const PANELS = {
       ]);
       fillSelect(el("va-wake-word"), (data.wake_words || []).map((w) => ({ value: w, label: w.replace(/_/g, " ") })));
       wireEngineAndDevice(el("va-engine"), el("va-compute-device"), data);
+      wireLanguageModel(el("va-model"), data, { engine: el("va-engine"), device: el("va-compute-device") });
     },
     body() {
       return {
         audio_device: el("va-audio-device").value || null,
         engine: el("va-engine").value,
         compute_device: el("va-compute-device").value,
+        llm_model: languageModelOf(el("va-model")),
         wake_word: el("va-wake-word").value,
         speak_replies: el("va-speak").checked,
       };
@@ -1483,7 +1529,7 @@ const PANELS = {
     prefix: "expx",
     transport: "ws",
     statusKey: "expense-extract:ocr",
-    controls: ["expx-folder", "expx-sample", "expx-ocr-engine", "expx-ocr-device", "expx-llm-engine", "expx-llm-device"],
+    controls: ["expx-folder", "expx-sample", "expx-ocr-engine", "expx-ocr-device", "expx-llm-engine", "expx-llm-device", "expx-llm-model"],
     wireExtra() {
       this.review = new ExpenseReview({
         // The results left the view: so do the run's progress lines and its
@@ -1520,6 +1566,7 @@ const PANELS = {
       const anyGpu = devices.find((d) => d.toUpperCase().startsWith("GPU"));
       if (anyGpu) el("expx-ocr-device").value = anyGpu;
       if (devices.includes("NPU")) el("expx-llm-device").value = "NPU";
+      wireLanguageModel(el("expx-llm-model"), data, { engine: el("expx-llm-engine"), device: el("expx-llm-device") });
       wireSamplePicker("expx-sample", data.samples, { "expx-folder": "folder" });
     },
     body() {
@@ -1533,6 +1580,7 @@ const PANELS = {
         ocr_compute_device: el("expx-ocr-device").value,
         llm_engine: el("expx-llm-engine").value,
         llm_compute_device: el("expx-llm-device").value,
+        llm_model: languageModelOf(el("expx-llm-model")),
       };
     },
     onStarted(data) {
@@ -1820,7 +1868,7 @@ const PANELS = {
     transport: "mjpeg",
     video: "vidcom-video",
     statusKey: "video-commentary",
-    controls: ["vidcom-source", "vidcom-source-device", "vidcom-sample", "vidcom-path", "vidcom-vision-device", "vidcom-mood-device"],
+    controls: ["vidcom-source", "vidcom-source-device", "vidcom-sample", "vidcom-path", "vidcom-vision-device", "vidcom-mood-device", "vidcom-mood-model"],
     lastComment: 0,
     moodNames: {},
     sound: null, // the line being said
@@ -1890,6 +1938,7 @@ const PANELS = {
       // The vision model does not compile for the NPU on this hardware.
       fill("vidcom-vision-device", "vision", (d) => !d.toUpperCase().startsWith("NPU"));
       fill("vidcom-mood-device", "mood", () => true);
+      wireLanguageModel(el("vidcom-mood-model"), data, { device: el("vidcom-mood-device"), autoDevice: () => auto.mood });
       fillSelect(el("vidcom-mood"), (data.moods || []).map((mood) => ({ value: mood.key, label: mood.name })));
       this.moodNames = Object.fromEntries((data.moods || []).map((mood) => [mood.key, mood.name]));
       if (data.default_mood) el("vidcom-mood").value = data.default_mood;
@@ -1957,6 +2006,7 @@ const PANELS = {
         screen_index: source === "screen" ? Number(device || 1) : 1,
         vision_device: el("vidcom-vision-device").value,
         mood_device: el("vidcom-mood-device").value,
+        mood_model: languageModelOf(el("vidcom-mood-model")),
         mood: el("vidcom-mood").value,
         voice: el("vidcom-voice").value,
       };
@@ -2229,6 +2279,8 @@ const PANELS = {
     populate(data) {
       attachRecents("docqa-folder");
       wireEngineAndDevice(el("docqa-engine"), el("docqa-compute-device"), data);
+      wireLanguageModel(el("docqa-model"), data, { engine: el("docqa-engine"), device: el("docqa-compute-device") });
+      this.modelNames = Object.fromEntries(((data.language_models || {}).models || []).map((model) => [model.key, model.name]));
       wireSamplePicker("docqa-sample", data.samples, { "docqa-folder": "folder", "docqa-question": "question" });
     },
     async rehydrate() {
@@ -2255,7 +2307,7 @@ const PANELS = {
       el("docqa-question").disabled = busy || !this.indexed;
       // The sample picker also fills the folder -- usable before indexing, so
       // only gated on busy.
-      for (const id of ["docqa-folder", "docqa-engine", "docqa-compute-device", "docqa-reindex", "docqa-sample"]) {
+      for (const id of ["docqa-folder", "docqa-engine", "docqa-compute-device", "docqa-model", "docqa-reindex", "docqa-sample"]) {
         el(id).disabled = busy;
       }
     },
@@ -2277,6 +2329,7 @@ const PANELS = {
               folder,
               engine: el("docqa-engine").value,
               compute_device: el("docqa-compute-device").value,
+              model: languageModelOf(el("docqa-model")),
               reindex: el("docqa-reindex").checked,
             }),
           done: (r) => this.indexedText(r),
@@ -2305,7 +2358,8 @@ const PANELS = {
           },
         });
         try {
-          const answer = await postJSON("/api/doc-qa/ask", { question, alone });
+          // The model can be changed between two questions: the index stays.
+          const answer = await postJSON("/api/doc-qa/ask", { question, alone, model: languageModelOf(el("docqa-model")) });
           stopFollowing();
           writing.remove();
           appendLine(box, "line-answer", answer.text);
@@ -2323,7 +2377,7 @@ const PANELS = {
             appendLine(
               box,
               "line-note",
-              `Written from ${count} passage${count === 1 ? "" : "s"} of ${passages.size} file${passages.size === 1 ? "" : "s"}: ` +
+              `Written ${(this.modelNames || {})[answer.model] ? `by ${this.modelNames[answer.model]} ` : ""}from ${count} passage${count === 1 ? "" : "s"} of ${passages.size} file${passages.size === 1 ? "" : "s"}: ` +
                 [...passages].map(([file, times]) => (times > 1 ? `${file} (${times})` : file)).join(", "),
             );
           }
@@ -3850,6 +3904,8 @@ const STAGE_TEXT = {
     reasons: {
       "Amount could not be matched to the receipt text": "montant introuvable sur le reçu",
       "Amount is missing or ambiguous": "montant absent ou ambigu",
+      "Amount is not the printed total": "le montant n'est pas le total imprimé",
+      "Date can be read two ways": "date lisible de deux façons",
       "Currency is missing, unsupported or ambiguous": "devise absente ou ambiguë",
       "Date is missing or invalid": "date absente ou invalide",
       "Vendor is missing": "fournisseur absent",

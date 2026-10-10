@@ -27,6 +27,7 @@ import zlib
 from pathlib import Path
 from typing import Callable
 
+from doc_qa import language_models
 from doc_qa.engine_factory import create_llm
 from html_creator import pictures as picture_kit
 from html_creator.session import HtmlCreatorSession
@@ -44,8 +45,8 @@ from .types import Assignment, Check, DrawnPicture, PageResult, PictureStats
 # The planner: the general-purpose model meeting-notes writes with, for the
 # same reasons (see that brick) -- and already on the NPU if notes were asked
 # for. The NPU needs its own build; the standard one does not compile there.
-_PLANNER_REPO = "OpenVINO/Qwen3-8B-int4-ov"
-_PLANNER_REPO_NPU = "OpenVINO/Qwen3-8B-int4-cw-ov"
+# Which build goes on which chip is said in doc-qa's language_models.
+_PLANNER_MODEL = language_models.CAREFUL.key
 _PLAN_MAX_TOKENS = 600  # thirteen lines, six of them a sentence describing a picture: 210 to 270 tokens
 # A page built the studio's way is 5,000 to 5,500 tokens. html-creator's own
 # limit (6,144) would cut one in a few off at the footer, and a page cut off
@@ -72,7 +73,7 @@ MetricReport = Callable[[str, float, str, bool], None]
 
 
 def planner_repo(device: str) -> str:
-    return _PLANNER_REPO_NPU if npu.is_npu(device) else _PLANNER_REPO
+    return language_models.repo_for(_PLANNER_MODEL, Engine.OPENVINO, device)
 
 
 def assign(

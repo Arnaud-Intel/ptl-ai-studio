@@ -448,3 +448,76 @@ def test_upgrade_hands_off_to_the_helper(client, monkeypatch):
     response = client.post("/api/update/upgrade")
     assert response.status_code == 202 and response.json()["to"] == "0.2.47"
     assert len(spawned) == 1 and launcher_app._upgrade_requested.is_set()
+
+
+# --- the language model a brick answers with (BACKLOG R36) ------------------------
+
+
+def test_the_four_bricks_with_a_small_language_model_say_which_ones_they_can_use(client, monkeypatch):
+    from doc_qa import language_models
+
+    # The larger model is on this laptop in its NPU build only.
+    monkeypatch.setattr(language_models, "on_disk", lambda key, engine, device: key == "1.5b" or device == "NPU")
+    for demo, default in (("doc-qa", {"npu": "8b", "other": "1.5b"}), ("expense-extract", {"npu": "1.5b", "other": "1.5b"}),
+                          ("voice-assistant", {"npu": "1.5b", "other": "1.5b"}), ("video-commentary", {"npu": "1.5b", "other": "1.5b"})):
+        offered = client.get(f"/api/{demo}/devices").json()["language_models"]
+        assert [model["key"] for model in offered["models"]] == ["1.5b", "8b"]
+        assert offered["models"][1]["on_disk"] == {"npu": True, "other": False} and offered["models"][1]["name"] == "Qwen3 8B"
+        # What "Auto" means, chip by chip: Document Q&A takes the larger model where it is there, the others do not.
+        assert offered["default"] == default and offered["portable"] == "1.5b"
+    assert "language_models" not in client.get("/api/object-detection/devices").json()
+
+
+def test_a_language_model_that_does_not_exist_is_refused_before_anything_starts(client, monkeypatch):
+    started = []
+    monkeypatch.setattr(launcher_app.voice_assistant_runner, "start", lambda **kwargs: started.append(kwargs))
+    monkeypatch.setattr(launcher_app.expense_extract_runner, "start", lambda **kwargs: started.append(kwargs))
+    monkeypatch.setattr(launcher_app.app.state, "voice_assistant_queue", object(), raising=False)  # the lifespan's, not started here
+
+    refused = client.post("/api/voice-assistant/start", json={"engine": "openvino", "compute_device": "NPU", "llm_model": "gpt-9"})
+    assert refused.status_code == 400 and "Unknown language model 'gpt-9'" in refused.json()["error"]
+    refused = client.post("/api/expense-extract/start", json={"folder": "x", "llm_engine": "portable", "llm_model": "8b"})
+    assert refused.status_code == 400 and "needs the OpenVINO engine" in refused.json()["error"]
+    assert client.post("/api/doc-qa/ask", json={"question": "Who?", "model": "gpt-9"}).status_code == 400
+    assert started == []
+
+    assert client.post("/api/voice-assistant/start", json={"engine": "openvino", "compute_device": "NPU", "llm_model": "8b"}).status_code == 200
+    assert client.post("/api/voice-assistant/start", json={"engine": "openvino", "compute_device": "NPU"}).status_code == 200
+    assert [call["llm_model"] for call in started] == ["8b", None]  # nothing said: the brick's own choice
+
+
+def test_document_qa_changes_its_model_between_two_questions_without_reading_the_folder_again(client, monkeypatch):
+    from launcher import doc_qa_runner
+
+    class Session:
+        made = []
+
+        def __init__(self, engine, *, device, model=None, on_downloading=None):
+            self.model, self.folder = model or "8b", None
+            self.store = type("Store", (), {"size": 3, "sources": ["a.md"]})()
+            self.swaps = []
+            Session.made.append(self)
+
+        def ingest(self, folder, force=False):
+            self.folder = folder
+            return 3
+
+        def use_model(self, model):
+            self.swaps.append(model)
+            self.model = model
+            return True
+
+        def ask(self, question, top_k=4, control=None):
+            return doc_qa_runner.Answer(text=f"answered by {self.model}")
+
+    monkeypatch.setattr(doc_qa_runner, "DocQASession", Session)
+    monkeypatch.setattr(doc_qa_runner, "default_model", lambda engine, device: "8b")
+    monkeypatch.setattr(launcher_app, "doc_qa_runner", doc_qa_runner.DocQARunner())
+
+    read = client.post("/api/doc-qa/ingest", json={"folder": "docs", "engine": "openvino", "compute_device": "NPU"})
+    assert read.status_code == 200 and read.json()["model"] == "8b"  # nobody chose: the brick's own choice, said back
+    assert client.post("/api/doc-qa/ask", json={"question": "Who?"}).json()["text"] == "answered by 8b"
+    answer = client.post("/api/doc-qa/ask", json={"question": "Who?", "model": "1.5b"}).json()
+    assert answer["text"] == "answered by 1.5b" and answer["model"] == "1.5b"
+    assert len(Session.made) == 1 and Session.made[0].swaps == ["1.5b"]  # the same session: the index is the one it had
+    assert client.get("/api/doc-qa/status").json()["model"] == "1.5b"

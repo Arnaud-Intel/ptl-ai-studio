@@ -77,6 +77,7 @@ uv run doc-qa ./my-notes --reindex
 | `folder` | Folder of `.txt`/`.md`/`.pdf` files to index and answer questions about. |
 | `--engine {portable,openvino}` | Inference backend. Default: `portable`. |
 | `--compute-device NAME` | `openvino` engine only: `AUTO`, `CPU`, `GPU`, `NPU`. Ignored for `portable` (CPU only). |
+| `--model {1.5b,8b}` | `openvino` engine only: which language model writes the answers. Default: `8b` if this machine has it, else `1.5b` (see [Two language models](#two-language-models)). |
 | `--reindex` | Rebuild the index even if a cached one exists for this folder+engine. |
 | `--top-k N` | Number of source chunks to retrieve per question. Default: `4`. |
 | `--question TEXT` | Ask a single question and exit, instead of an interactive loop. |
@@ -127,17 +128,50 @@ same one-module-per-backend pattern `live-translation` uses.
 | Chat | [Qwen2.5-1.5B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF) | [Qwen2.5-1.5B-Instruct-int4-ov](https://huggingface.co/OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov) |
 
 These are small (~1B-scale) models chosen for a fast first run, not
-maximum answer quality. To use a different chat/embedding model, edit the
+maximum answer quality; on the OpenVINO engine a larger one writes the
+answers when the machine has it (below). To use a different chat/embedding model, edit the
 `_DEFAULT_REPO`/`_DEFAULT_FILENAME` constants in `llm_portable.py` /
 `embedder_portable.py`, or pass `model_dir=` to `OpenVINOLLM`/
 `OpenVINOEmbedder` for a model you converted yourself with
 `optimum-cli export openvino`.
 
+## Two language models
+
+On the OpenVINO engine the answers can be written by Qwen2.5-1.5B or by
+Qwen3-8B (`--model`, the **Model** menu in the launcher; `language_models.py`
+says which build goes on which chip, for every brick that uses them). Left to
+itself the brick takes the 8B **when it is already on the disk** -- Meeting
+Notes and the Page Agent fetch it -- and the 1.5B otherwise: it does not start
+a download of 4.5 GB because somebody pressed Ask. Named, a model that is
+missing is fetched first. The model can be changed between two questions; the
+index is kept.
+
+Why the larger one, measured on the sample folder with both on the XPS 14's
+NPU (2026-10-10, on battery, one run each):
+
+| | Qwen2.5-1.5B | Qwen3-8B |
+| --- | --- | --- |
+| Ten short questions with an answer in one file | every fact asked for; the deposit and the balance given in dollars where the file says euros | every fact but one figure (the 95% without the 57 of 60); the file named each time |
+| Five with no answer in the files (two never reach a model: no passage is close) | of the other three, two declined and one answered with another product's date | all three declined, that one with the reason ("the October 19 date relates to the cold-storage variant") |
+| The four sample questions, several parts each | two clean. Of the Dock C stop: the safety layer "failed" (it is what stopped the robot), a unit-test pass closes the case (the file says it does not) | two clean; that one right, in four bullets with their sources. One sentence breaks off into the next; refunds "should not be subtracted" (the policy subtracts them) |
+| A short answer | 0.8 s, first word after 0.3 s, 55 tokens/s | 4.0 s, first word after 1.3 s, 16 tokens/s |
+| A sample question's answer | 2 to 3 s | 8 to 13 s |
+
+So the 8B is not right every time either; what it gets wrong is smaller, and
+it does what the instructions ask (it names its files). Its build for the NPU
+was quantised without calibration data, which is the likely reason for the
+sentence that breaks off (see `meeting_notes.session`, and BACKLOG R36).
+
+Asked *without the documents* (the tick in the launcher), the 8B makes things
+up as freely as the 1.5B: of the Lyon pilot's decision it answered with the
+President of the United States. That is what the tick is there to show; the
+Auto Demo's scene keeps to the 1.5B, by name.
+
 ## Notes / current limitations
 
 - Answer quality reflects the small default models -- they can be terse or
-  occasionally miss nuance. Point `PortableLLM`/`OpenVINOLLM` at a bigger
-  model (e.g. `Qwen2.5-7B-Instruct`) if you have the RAM/VRAM for it.
+  occasionally miss nuance, and the 1.5B states things the files do not say
+  (the table above). The portable engine has the 1.5B only.
 - Retrieval is a flat top-k cosine search with no re-ranking. `openvino_genai`
   ships a `TextRerankPipeline` that would be a natural next step if
   precision on larger document sets becomes an issue.

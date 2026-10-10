@@ -547,9 +547,12 @@ def test_the_documents_scene_asks_the_same_question_without_the_files_and_then_w
     assert [(step.path, step.name, step.keep) for step in asked] == [
         ("/api/doc-qa/ask", "alone", False), ("/api/doc-qa/ingest", "read", False), ("/api/doc-qa/ask", "with", True)]
     # First the model alone: nothing is indexed for it, the models are only loaded, on the NPU.
-    assert asked[0].body == {"question": question, "alone": True, "engine": "openvino", "compute_device": "NPU"}
+    # The small model by name: the brick left to itself takes a larger one where the laptop has it, and the
+    # scene was written to the small one's answers.
+    assert asked[0].body == {"question": question, "alone": True, "engine": "openvino", "compute_device": "NPU", "model": "1.5b"}
     # Then the folder, read again each time: "now the folder is read" is said of something happening.
-    assert asked[1].body == {"folder": "C:/samples/meridian-rollout-2026", "engine": "openvino", "compute_device": "NPU", "reindex": True}
+    assert asked[1].body == {
+        "folder": "C:/samples/meridian-rollout-2026", "engine": "openvino", "compute_device": "NPU", "reindex": True, "model": "1.5b"}
     assert asked[2].body == {"question": question}  # the same question, word for word
     assert [type(step) for step in scene.steps] == [Ask, Wait, Ask, Wait, Ask]  # time to read each before the next
     # The story waits for each of the three: alone, read, and the answer.

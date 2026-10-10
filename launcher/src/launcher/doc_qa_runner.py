@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import threading
 
-from doc_qa.pipeline import DocQASession
+from doc_qa import language_models
+from doc_qa.pipeline import DocQASession, default_model
 from doc_qa.types import Answer
 from pantherlake_ai_core.engine import Engine
 
@@ -23,26 +24,38 @@ class DocQARunner:
         self._device: str | None = None
         self._lock = threading.Lock()
 
-    def _load(self, engine: str, device: str) -> None:
-        """The models, the first time or when the engine or the chip changes."""
+    @property
+    def model(self) -> str | None:
+        """The language model that writes the answers now (a key of doc-qa's
+        language_models), or None when nothing is loaded."""
+        return self._session.model if self._session is not None else None
+
+    def _load(self, engine: str, device: str, model: str | None = None) -> None:
+        """The models, the first time or when the engine or the chip changes;
+        the language model alone when only it does (`model`: its key, None
+        for the brick's own choice on this chip). The index is kept then."""
         if self._session is not None and self._engine == engine and self._device == device:
+            wanted = language_models.get(model).key if model else default_model(Engine(engine), device)
+            if wanted != self._session.model:
+                events.set_phase(_DEMO_ID, "loading", f"Loading {language_models.get(wanted).name} on {device}...")
+                self._session.use_model(wanted)
             return
         events.set_phase(_DEMO_ID, "loading", f"Loading model (engine={engine}, device={device})...")
 
         def on_downloading() -> None:
             events.set_phase(_DEMO_ID, "loading", f"Downloading model (first run only, engine={engine})...")
 
-        self._session = DocQASession(Engine(engine), device=device, on_downloading=on_downloading)
+        self._session = DocQASession(Engine(engine), device=device, model=model, on_downloading=on_downloading)
         self._engine = engine
         self._device = device
 
-    def ingest(self, *, folder: str, engine: str, device: str, reindex: bool) -> tuple[int, str]:
+    def ingest(self, *, folder: str, engine: str, device: str, reindex: bool, model: str | None = None) -> tuple[int, str]:
         """Blocking -- loads the embedder/LLM the first time or when the
         engine/device changes, then (re)builds or loads the cached index."""
         with self._lock:
             activity.set_active(_DEMO_ID, engine=engine, device=device)
             try:
-                self._load(engine, device)
+                self._load(engine, device, model)
                 events.set_phase(_DEMO_ID, "running", "Indexing documents...")
                 count = self._session.ingest(folder, force=reindex)
                 events.clear_phase(_DEMO_ID)
@@ -59,15 +72,17 @@ class DocQARunner:
         stall a status request)."""
         session = self._session
         if session is None or session.folder is None:
-            return {"indexed": False, "folder": None, "chunks": 0, "files": []}
+            return {"indexed": False, "folder": None, "chunks": 0, "files": [], "model": self.model}
         return {
             "indexed": session.store.size > 0, "folder": str(session.folder), "chunks": session.store.size,
             # Which files the answers can come from: said, so that it can be checked.
             "files": session.store.sources,
+            "model": session.model,
         }
 
     def ask(
         self, *, question: str, top_k: int, alone: bool = False, engine: str | None = None, device: str | None = None,
+        model: str | None = None,
     ) -> Answer:
         """Blocking. `alone`: the question is put to the language model with
         no document in the conversation -- no folder need be indexed for
@@ -77,13 +92,22 @@ class DocQARunner:
             if alone and engine and device and self._session is None:
                 activity.set_active(_DEMO_ID, engine=engine, device=device)
                 try:
-                    self._load(engine, device)
+                    self._load(engine, device, model)
                 except Exception as exc:
                     events.set_phase(_DEMO_ID, "error", str(exc))
                     activity.clear_active(_DEMO_ID)
                     raise
             if self._session is None:
                 raise Conflict("Ingest a folder first.")
+            if model and language_models.get(model).key != self._session.model:
+                # Another model for this answer and the ones after: the index stays.
+                activity.set_active(_DEMO_ID, engine=self._engine, device=self._device)
+                try:
+                    self._load(self._engine, self._device, model)
+                except Exception as exc:
+                    events.set_phase(_DEMO_ID, "error", str(exc))
+                    activity.clear_active(_DEMO_ID)
+                    raise
             if not alone and self._session.store.size == 0:
                 # The models are there -- a question was asked of them alone -- and no folder is.
                 raise Conflict("Index a folder first: there are no documents to answer from yet.")

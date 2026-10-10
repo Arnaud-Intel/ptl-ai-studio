@@ -38,6 +38,32 @@ MOODS: tuple[Mood, ...] = (
 BY_KEY = {mood.key: mood for mood in MOODS}
 DEFAULT = "upbeat"
 
+# The rules above were written for Qwen2.5-1.5B, which needs holding back.
+# Qwen3-8B (the "8b" of doc-qa's language_models) obeys "add none" to the
+# letter: of 48 lines -- twelve sentences seen in the sample videos, each in
+# the four moods, on the NPU, 2026-10-10 -- it gave 29 back as they were,
+# word for word. Told instead to use new words, it repeated 12 and invented
+# about as little: "parked cars" for cars in the background, "tall
+# buildings". A third wording, the voice first and the facts after, repeated
+# 5 and brought the embroidery back (a person "sprints", a storm drain
+# "peeking through the cracks"). So the second is what the 8B is told.
+#
+# What the two models make of a mood, on those 48: the 1.5B has the voice
+# and adds something that was not seen in about 18 lines ("Sealed 200
+# bottles per minute", a parked car's "wheels spinning silently"); the 8B
+# adds something in about 4 and has less of a voice -- a sports commentator
+# who says "a herd of cattle charges down a road, guided by a rider on
+# horseback". A line takes it 2.2 s against 0.8.
+_RULES_BY_MODEL = {
+    "8b": " One short sentence, in new words: do not repeat the sentence as it is. Say only what the sentence says; "
+          "add no detail that is not in it. Reply with the sentence only.",
+}
+
+
+def worded_for(instruction: str, model: str) -> str:
+    """`instruction` as the language model `model` should be given it."""
+    return instruction.replace(_RULES, _RULES_BY_MODEL.get(model, _RULES))
+
 
 def get(key: str) -> Mood:
     try:

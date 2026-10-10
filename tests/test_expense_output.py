@@ -85,3 +85,49 @@ def test_a_date_printed_once_is_read_by_rule_when_the_model_gave_none_or_swapped
 def test_no_date_at_all_or_several_and_none_from_the_model_is_for_a_person():
     assert structure(date=None, raw="Cafe\nTotal 12,50 EUR").needs_review
     assert structure(date=None, raw="Cafe\n11/09/2026 - 13/09/2026\nTotal 12,50 EUR").needs_review
+
+
+def test_an_amount_that_is_nowhere_on_the_receipt_is_not_shown():
+    """Asked for a total too faded to have been read, the small model wrote
+    one (324.00 for a hotel folio whose amounts are blank, 2026-10-10). The
+    line used to keep it, flagged: an invented number in front of whoever
+    reads the line. It keeps none now, and says why."""
+    folio = "ATELIER QUAY HOTEL\nDate: 13/09/2026\n2 nuits x 180,00 EUR\nTOTAL TTC EUR\nMontant regle EUR\nSolde EUR"
+    line = structure(amount="324.00", date="2026-09-13", raw=folio)
+    assert line.amount is None and line.needs_review
+    assert line.review_reasons == ["Amount could not be matched to the receipt text"]
+    assert totals_by_currency([line]) == {}
+    assert line.to_dict()["amount"] is None
+
+
+@pytest.mark.parametrize("receipt,said,flagged", [
+    # The fare where the total was asked for: on the receipt, and not what was paid.
+    ("Rive Transfer\nDate: 2026-09-03\nDemo station\nEUR 38,00\nEvening supplement\nEUR 8,80\nTOTAL PAID\nEUR 46,80", "38,00", True),
+    ("Rive Transfer\nDate: 2026-09-03\nDemo station\nEUR 38,00\nEvening supplement\nEUR 8,80\nTOTAL PAID\nEUR 46,80", "46,80", False),
+    ("Cafe\n2026-09-10\nSOUS-TOTAL 35,30\nRemise -3,00\nTOTAL EUR 32,30\nCB 32,30", "35,30", True),  # the sub-total is not the total
+    ("Cafe\n2026-09-10\nSOUS-TOTAL 35,30\nRemise -3,00\nTOTAL EUR 32,30\nCB 32,30", "32,30", False),
+    ("Workbench\n2026-09-05\nReturned cable\nEUR -18,00\nTOTAL REFUND\nEUR -18,00", "-18,00", False),  # a refund's total is negative
+    # Nothing to go by: two totals that differ, a total of another kind, a total that could not be read.
+    ("Cafe\n2026-09-10\nTotal HT 10,00 EUR\nTotal TTC 12,00 EUR", "10,00", False),
+    ("Cafe\n2026-09-10\nTotal items: 3\nA payer 12,00 EUR", "12,00", False),
+    ("Hotel\n2026-09-10\nChambre 12,00 EUR\nTOTAL TTC EUR\nMontant regle EUR", "12,00", False),
+])
+def test_an_amount_that_is_not_the_printed_total_is_for_a_person(receipt, said, flagged):
+    """Qwen3-8B on the NPU gave 38.00 for a transfer whose total line says
+    46,80 -- a figure that is on the receipt, so nothing flagged it. The
+    line a receipt opens with "TOTAL" settles it when it carries one amount
+    of money. The model's figure is kept beside the flag, to be compared."""
+    line = structure(amount=said, raw=receipt)
+    assert ("Amount is not the printed total" in line.review_reasons) == flagged
+    assert line.amount is not None and line.needs_review == flagged
+
+
+def test_a_date_that_reads_two_ways_is_for_a_person_when_no_currency_says_which():
+    """Day first everywhere but on a US receipt, and the currency is what
+    tells them apart. "$24.00" is not a currency: 04/09/2026 is then the 4th
+    of September or the 9th of April, and nobody at this desk knows which."""
+    kiosk = structure(amount="24.00", currency=None, date="2026-09-04", raw="Harbor Kiosk\n04/09/2026\nTOTAL PAID\n$24.00")
+    assert "Date can be read two ways" in kiosk.review_reasons and kiosk.date == "2026-09-04"
+    assert "Date can be read two ways" not in structure(amount="24,00", raw="Kiosk\n04/09/2026\nTOTAL 24,00 EUR").review_reasons
+    assert "Date can be read two ways" not in structure(
+        amount="24.00", currency=None, date="2026-09-25", raw="Kiosk\n25/09/2026\nTOTAL PAID\n$24.00").review_reasons

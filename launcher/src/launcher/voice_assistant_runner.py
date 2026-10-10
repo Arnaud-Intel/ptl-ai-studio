@@ -40,6 +40,7 @@ class VoiceAssistantRunner:
         wake_word: str,
         wake_threshold: float,
         speak_replies: bool,
+        llm_model: str | None = None,
     ) -> None:
         worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
@@ -78,6 +79,7 @@ class VoiceAssistantRunner:
                     compute_device=compute_device,
                     wake_word=wake_word,
                     wake_threshold=wake_threshold,
+                    llm_model=llm_model,
                     on_wake=lambda: emit({"type": "wake"}),
                     on_heard=lambda text: emit({"type": "heard", "text": text}),
                     on_reply=lambda text: emit({"type": "reply", "text": text}),

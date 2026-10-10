@@ -24,6 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mood", choices=[mood.key for mood in moods.MOODS], default=moods.DEFAULT, help=f"The voice. Default: {moods.DEFAULT}.")
     p.add_argument("--every", type=float, default=pipeline.EVERY_SECONDS, help="Seconds between two looks. Default: %(default)s.")
     p.add_argument("--vision-device", help="Where the vision model runs. Default: a GPU.")
+    p.add_argument("--mood-model", choices=("1.5b", "8b"), default=None,
+                   help="Which language model says the line in a mood. Default: 1.5b, which has the voice and embroiders; "
+                        "the 8b keeps to what was seen and sounds plainer.")
     p.add_argument("--mood-device", help="Where the language model runs. Default: the NPU if there is one.")
     p.add_argument("--once", action="store_true", help="Play the file once instead of in a loop.")
     p.add_argument("--speak", action="store_true", help="Say each line aloud, in the studio's voice (made on the CPU).")
@@ -79,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         pipeline.run(
             source=args.source, path=path or "", camera_index=args.camera, screen_index=args.screen, loop=not args.once,
-            vision_device=vision, mood_device=voice, mood=lambda: args.mood, every=args.every,
+            vision_device=vision, mood_device=voice, mood=lambda: args.mood, every=args.every, mood_model=args.mood_model,
             voice=lambda: speaks, clone=clone,
             on_comment=on_comment, on_voice_failed=lambda message: print(f"The voice failed: {message}", file=sys.stderr),
             stop_event=stop,

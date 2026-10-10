@@ -87,6 +87,7 @@ uv run voice-assistant --no-speak
 | `--engine {portable,openvino}` | Backend for speech-to-text, the LLM, and text-to-speech. Default: `portable`. |
 | `--whisper-model NAME` | Whisper model size override. |
 | `--compute-device NAME` | `openvino` engine only: `AUTO`, `CPU`, `GPU`, `NPU` -- for listening and answering. The voice is made on the CPU. |
+| `--llm-model {1.5b,8b}` | `openvino` engine only: which language model answers -- Qwen2.5-1.5B (default) or Qwen3-8B. On twelve spoken questions on the NPU (2026-10-10) the 8B took 2.7 s an answer against 0.7 s, before the voice starts; it knew how long to boil an egg where the 1.5B did not, got the same sum wrong, and asked what was decided in yesterday's meeting it made a decision up where the 1.5B asked for details. |
 | `--no-speak` | Print replies instead of speaking them out loud. |
 | `--list-devices` | List microphones and inference devices, then exit. |
 

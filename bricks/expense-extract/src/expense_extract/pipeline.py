@@ -17,12 +17,16 @@ from pathlib import Path
 from typing import Callable
 
 import cv2
+from doc_qa import language_models
 from doc_qa.engine_factory import create_llm
 from pantherlake_ai_core.engine import Engine
 from screen_ocr.pipeline import OcrSession
 
 from .parsing import CURRENCIES, coerce_amount, currency_from_text, parse_expense_json
 from .types import ExpenseLine
+
+# The language model that makes a line of what was read (doc-qa's language_models).
+DEFAULT_MODEL = language_models.DEFAULT
 
 SUPPORTED_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 
@@ -95,6 +99,47 @@ def _day_and_month_swapped(one: str, other: str) -> bool:
     return one[:4] == other[:4] and one[5:7] == other[8:10] and one[8:10] == other[5:7] and one != other
 
 
+def _a_date_reads_two_ways(raw_text: str) -> bool:
+    """Whether the receipt prints a date in figures that is one day read
+    day first and another read month first ("04/09/2026")."""
+    return any(
+        int(first) <= 12 and int(second) <= 12 and first != second
+        for first, _separator, second, _year in _NUMERIC_DATE.findall(raw_text)
+    )
+
+
+_AMOUNT_TOKEN = r"-?\d[\d.,   ]*\d|-?\d"
+# A line that opens on the word: "TOTAL PAID", "Total EUR 32,30", "TOTAL
+# REFUND". A sub-total opens on something else ("SOUS-TOTAL", "Subtotal").
+_TOTAL_LINE = re.compile(r"^\s*total\b(?P<rest>.*)$", re.IGNORECASE)
+_MONEY_MARK = re.compile(r"[€£$¥]|\b(" + "|".join(sorted(CURRENCIES)) + r")\b", re.IGNORECASE)
+
+
+def _the_printed_total(raw_text: str):
+    """The amount printed on the receipt's total line -- beside the word, or
+    on the line under it -- when the receipt has one such amount. None when
+    it has none that can be read (a faded total) or several that differ."""
+    lines = raw_text.splitlines()
+    found = set()
+    for index, line in enumerate(lines):
+        match = _TOTAL_LINE.match(line)
+        if not match:
+            continue
+        below = next((later for later in lines[index + 1:] if later.strip()), "")
+        for place in (match.group("rest"), below):
+            # Money, not any figure: "Total items: 3" is a total of another kind.
+            priced = bool(_MONEY_MARK.search(place))
+            amounts = [
+                coerce_amount(token) for token in re.findall(_AMOUNT_TOKEN, place)
+                if priced or re.search(r"[.,]\d{2}$", token)
+            ]
+            amounts = [amount for amount in amounts if amount is not None]
+            if amounts:
+                found.add(amounts[-1])
+                break
+    return found.pop() if len(found) == 1 else None
+
+
 # Small enough to bound memory, large enough that a faster OCR stage can
 # get ahead of a slower LLM stage instead of stalling on every item.
 _QUEUE_SIZE = 3
@@ -134,8 +179,23 @@ def _structure(llm, raw_text: str, source_name: str) -> ExpenseLine:
         reasons.append("Amount is missing or ambiguous")
     elif currency in {"JPY", "KRW"} and amount != amount.to_integral_value():
         reasons.append("Fractional amount for a zero-decimal currency")
-    elif not any(coerce_amount(token) == amount for token in re.findall(r"-?\d[\d., \u00a0\u202f]*\d|-?\d", raw_text)):
+    elif not any(coerce_amount(token) == amount for token in re.findall(_AMOUNT_TOKEN, raw_text)):
+        # A figure that is nowhere on the receipt is the model's own: asked
+        # for a total too faded to have been read, it wrote one (324.00 for a
+        # hotel folio whose three amounts are blank). It used to be kept with
+        # this flag beside it, which still put an invented number in front of
+        # whoever reads the line. None is shown; the reason says why.
         reasons.append("Amount could not be matched to the receipt text")
+        amount = None
+    else:
+        # On the receipt, and still not what was paid: the fare instead of the
+        # fare with its supplement (Qwen3-8B on the NPU, 2026-10-10: 38.00 for
+        # a transfer whose total line says 46,80, with nothing to say so).
+        # The line a receipt opens with "TOTAL" settles it when it carries
+        # one amount; the model's figure stays, for a person to compare.
+        printed_total = _the_printed_total(raw_text)
+        if printed_total is not None and printed_total != amount:
+            reasons.append("Amount is not the printed total")
     date_text = str(parsed.get("date") or "")
     printed = _the_one_printed_date(raw_text, currency)
     try:
@@ -148,6 +208,11 @@ def _structure(llm, raw_text: str, source_name: str) -> ExpenseLine:
         date_text = printed
         if not date_text:
             reasons.append("Date is missing or invalid")
+    # Day first is the rule everywhere but on a US receipt, and the currency
+    # is what tells one from the other. With no currency established there is
+    # nothing to tell them apart by: the date stands, and is for a person.
+    if date_text and currency is None and _a_date_reads_two_ways(raw_text):
+        reasons.append("Date can be read two ways")
     if not parsed.get("vendor"):
         reasons.append("Vendor is missing")
     category = str(parsed.get("category") or "Other")
@@ -173,6 +238,7 @@ def run(
     ocr_device: str,
     llm_engine: Engine,
     llm_device: str,
+    llm_model: str | None = None,
     on_ocr_start: Callable[[Path, int, int], None] = lambda path, index, total: None,
     on_structured: Callable[[ExpenseLine], None] = lambda line: None,
     on_llm_device: Callable[[str], None] = lambda device: None,
@@ -186,13 +252,17 @@ def run(
     `on_llm_device(device)` fires if the structuring model ends up on a
     chip other than `llm_device`: the NPU can be reset under a running
     model, and the model then carries on elsewhere (see core's `npu`
-    module) rather than fail every receipt that is left."""
+    module) rather than fail every receipt that is left.
+
+    `llm_model`: which language model makes the lines, by its key in
+    doc-qa's `language_models` (None for this brick's default)."""
+    llm_repo = language_models.repo_for(llm_model or DEFAULT_MODEL, llm_engine, llm_device)
     images = list_receipt_images(folder)
     if not images:
         raise ValueError(f"No receipt images found under {folder} ({', '.join(sorted(SUPPORTED_SUFFIXES))})")
 
     ocr_session = OcrSession(ocr_engine, device=ocr_device)
-    llm = create_llm(llm_engine, device=llm_device)
+    llm = create_llm(llm_engine, device=llm_device, model_repo=llm_repo)
 
     llm_on = [llm_device]
 

@@ -97,9 +97,13 @@ MODELS: tuple[ModelSpec, ...] = (
               (*(demo for demo in _TEXT if demo != "meeting-notes"), "video-commentary"), OPENVINO,
               "OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov"),
     ModelSpec("notes-8b-ov", "Qwen3 8B (meeting notes, page plans)", ("meeting-notes", "page-agent"), OPENVINO,
-              "OpenVINO/Qwen3-8B-int4-ov", note="For the page agent, only when its plan is not written on the NPU."),
+              "OpenVINO/Qwen3-8B-int4-ov",
+              note="For the page agent, only when its plan is not written on the NPU. Document Q&A answers with it "
+                   "too when it is here, and three other demos can be told to."),
     ModelSpec("notes-8b-npu-ov", "Qwen3 8B, NPU build (meeting notes, page plans)", ("meeting-notes", "page-agent"),
-              OPENVINO, "OpenVINO/Qwen3-8B-int4-cw-ov", note="What writes notes and page plans on the NPU."),
+              OPENVINO, "OpenVINO/Qwen3-8B-int4-cw-ov",
+              note="What writes notes and page plans on the NPU. Document Q&A answers with it too when it is here, "
+                   "and three other demos can be told to."),
     ModelSpec("flux-schnell-ov", "FLUX.1-schnell (draws pictures)", ("page-agent",), OPENVINO,
               "OpenVINO/FLUX.1-schnell-int4-ov", note="About 9 GB."),
     ModelSpec("llm-1.5b-portable", "Qwen2.5 1.5B GGUF (text)", _TEXT, PORTABLE, "Qwen/Qwen2.5-1.5B-Instruct-GGUF",

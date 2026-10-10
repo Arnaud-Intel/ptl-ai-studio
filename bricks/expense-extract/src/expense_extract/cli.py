@@ -45,6 +45,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="openvino LLM engine only: AUTO, CPU, GPU, or NPU. Default: AUTO.",
     )
     p.add_argument(
+        "--llm-model", choices=("1.5b", "8b"), default=None,
+        help="openvino LLM engine: which language model makes the lines. Default: 1.5b, which reads amounts better "
+             "than the 8b on the NPU and is three times faster.",
+    )
+    p.add_argument(
         "--list-devices", action="store_true",
         help="List available inference devices, then exit.",
     )
@@ -94,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
             ocr_device=ocr_device,
             llm_engine=llm_engine,
             llm_device=llm_device,
+            llm_model=args.llm_model,
             on_ocr_start=handle_ocr_start,
             on_structured=handle_structured,
         )

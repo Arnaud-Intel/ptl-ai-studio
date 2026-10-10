@@ -475,6 +475,58 @@ def system_gpu_devices() -> JSONResponse:
     return JSONResponse([{"id": gd.id, "full_name": gd.full_name} for gd in list_gpu_devices()])
 
 
+# The bricks that answer with a small language model, and the model each
+# takes when nobody chose (doc-qa's language_models has the two).
+def _preferred_language_models() -> dict[str, str]:
+    from doc_qa import pipeline as doc_qa_pipeline
+    from expense_extract import pipeline as expense_pipeline
+    from video_commentary import pipeline as commentary_pipeline
+    from voice_assistant import session as voice_session
+
+    return {
+        "doc-qa": doc_qa_pipeline.PREFERRED_MODEL,
+        "expense-extract": expense_pipeline.DEFAULT_MODEL,
+        "voice-assistant": voice_session.DEFAULT_MODEL,
+        "video-commentary": commentary_pipeline.DEFAULT_MOOD_MODEL,
+    }
+
+
+def _language_models(demo_id: str) -> dict[str, Any] | None:
+    """What the brick's Model menu offers on the OpenVINO engine, or None
+    for a brick that has no such choice. A model comes in two builds, one
+    for the NPU and one for the other chips, so whether it is on this
+    laptop -- and so which one "left to the app" means -- is said for each."""
+    wanted = _preferred_language_models().get(demo_id)
+    if wanted is None:
+        return None
+    from doc_qa import language_models
+
+    kinds = {"npu": "NPU", "other": "GPU"}
+    return {
+        "models": [
+            {
+                "key": model.key, "name": model.name, "says": model.says,
+                "on_disk": {kind: language_models.on_disk(model.key, Engine.OPENVINO, device) for kind, device in kinds.items()},
+            }
+            for model in language_models.choices(Engine.OPENVINO)
+        ],
+        "default": {kind: language_models.preferred(wanted, Engine.OPENVINO, device) for kind, device in kinds.items()},
+        "portable": language_models.DEFAULT,
+    }
+
+
+def _language_model(key: str | None, engine: Engine, device: str) -> str | None:
+    """`key` as a brick takes it: None when the choice is left to the brick,
+    refused here (a ValueError, so a 400) when it names no model or one the
+    engine does not have -- before a thread is started to find that out."""
+    if not key:
+        return None
+    from doc_qa import language_models
+
+    language_models.repo_for(key, engine, device)
+    return language_models.get(key).key
+
+
 def _wake_words() -> list[str]:
     from voice_assistant.wake_word import AVAILABLE_WAKE_WORDS
 
@@ -502,6 +554,9 @@ def demo_devices(demo_id: str) -> JSONResponse:
     if demo is None or demo.status != "available":
         return JSONResponse({"error": f"unknown demo '{demo_id}'"}, status_code=404)
     payload: dict[str, Any] = {"openvino_devices": list_openvino_devices()}
+    choice = _language_models(demo_id)
+    if choice is not None:
+        payload["language_models"] = choice
     if demo_id == "webcam-effects":
         from webcam_effects.capabilities import GPU_REASON
 
@@ -622,6 +677,9 @@ class DocQAIngestRequest(BaseModel):
     engine: str | None = None
     compute_device: str | None = None
     reindex: bool = False
+    # Which language model writes the answers: a key of doc-qa's
+    # language_models, or nothing for the brick's own choice on that chip.
+    model: str | None = None
 
 
 @app.post("/api/doc-qa/ingest")
@@ -629,11 +687,14 @@ async def doc_qa_ingest(req: DocQAIngestRequest) -> JSONResponse:
     try:
         engine, device = resolve(req.engine, req.compute_device)
         count, folder = await run_in_threadpool(
-            doc_qa_runner.ingest, folder=req.folder, engine=engine.value, device=device, reindex=req.reindex
+            doc_qa_runner.ingest, folder=req.folder, engine=engine.value, device=device, reindex=req.reindex,
+            model=_language_model(req.model, engine, device),
         )
     except Exception as exc:
         return error_response(exc)
-    return JSONResponse({"chunks": count, "folder": folder, "files": doc_qa_runner.status()["files"]})
+    return JSONResponse({
+        "chunks": count, "folder": folder, "files": doc_qa_runner.status()["files"], "model": doc_qa_runner.model,
+    })
 
 
 @app.get("/api/doc-qa/status")
@@ -654,6 +715,9 @@ class DocQAAskRequest(BaseModel):
     alone: bool = False
     engine: str | None = None
     compute_device: str | None = None
+    # Another language model for this answer and the ones after it (the
+    # index stays): a key of doc-qa's language_models. Nothing: as it is.
+    model: str | None = None
 
 
 @app.post("/api/doc-qa/ask")
@@ -665,14 +729,23 @@ async def doc_qa_ask(req: DocQAAskRequest) -> JSONResponse:
         if req.alone and (req.engine or req.compute_device):
             resolved, device = resolve(req.engine, req.compute_device)
             engine = resolved.value
+        model = None
+        if req.model:
+            from doc_qa import language_models
+
+            # An unknown name stops here; whether the engine that is loaded
+            # has the model is for the session to say.
+            model = language_models.get(req.model).key
         answer = await run_in_threadpool(
             doc_qa_runner.ask, question=req.question, top_k=req.top_k, alone=req.alone, engine=engine, device=device,
+            model=model,
         )
     except Exception as exc:
         return error_response(exc)
     return JSONResponse(
         {
             "alone": req.alone,
+            "model": doc_qa_runner.model,
             "text": answer.text,
             "sources": [
                 {"source": r.chunk.source, "chunk_index": r.chunk.chunk_index, "score": r.score}
@@ -944,6 +1017,8 @@ class VideoCommentaryStartRequest(BaseModel):
     # Clone Studio), or "" for silence. Not said: as it was last left.
     voice: str | None = None
     every: float = 4.0  # seconds between two looks at the picture
+    # Which language model says the line in a mood: a key of doc-qa's language_models.
+    mood_model: str | None = None
 
 
 class VideoCommentaryMoodRequest(BaseModel):
@@ -974,6 +1049,7 @@ async def start_video_commentary(req: VideoCommentaryStartRequest) -> JSONRespon
             source=req.source, path=path, camera_index=req.camera_index, screen_index=req.screen_index, loop=req.loop,
             vision_device=sees, mood_device=says, mood=req.mood or video_commentary_runner.mood,
             every=min(max(req.every, 2.0), 30.0), voice=req.voice, frames=frames, people=people,
+            mood_model=_language_model(req.mood_model, Engine.OPENVINO, says),
         )
     except Exception as exc:
         return error_response(exc)
@@ -1408,12 +1484,15 @@ class VoiceAssistantStartRequest(BaseModel):
     wake_word: str = "hey_jarvis"
     wake_threshold: float = 0.5
     speak_replies: bool = True
+    # Which language model answers: a key of doc-qa's language_models.
+    llm_model: str | None = None
 
 
 @app.post("/api/voice-assistant/start")
 async def start_voice_assistant(req: VoiceAssistantStartRequest) -> JSONResponse:
     try:
         engine, device = resolve(req.engine, req.compute_device)
+        llm_model = _language_model(req.llm_model, engine, device)  # a wrong one stops here
         voice_assistant_runner.start(
             loop=asyncio.get_running_loop(),
             queue=app.state.voice_assistant_queue,
@@ -1424,6 +1503,7 @@ async def start_voice_assistant(req: VoiceAssistantStartRequest) -> JSONResponse
             wake_word=req.wake_word,
             wake_threshold=req.wake_threshold,
             speak_replies=req.speak_replies,
+            llm_model=llm_model,
         )
     except Exception as exc:
         return error_response(exc)
@@ -1450,6 +1530,8 @@ class ExpenseExtractStartRequest(BaseModel):
     ocr_compute_device: str | None = None
     llm_engine: str | None = None
     llm_compute_device: str | None = None
+    # Which language model makes the lines: a key of doc-qa's language_models.
+    llm_model: str | None = None
 
 
 @app.post("/api/expense-extract/start")
@@ -1457,6 +1539,7 @@ async def start_expense_extract(req: ExpenseExtractStartRequest) -> JSONResponse
     try:
         ocr_engine, ocr_device = resolve(req.ocr_engine, req.ocr_compute_device, large_model=True)
         llm_engine, llm_device = resolve(req.llm_engine, req.llm_compute_device)
+        llm_model = _language_model(req.llm_model, llm_engine, llm_device)  # a wrong one stops here
         expense_extract_runner.start(
             loop=asyncio.get_running_loop(),
             queue=app.state.expense_extract_queue,
@@ -1465,6 +1548,7 @@ async def start_expense_extract(req: ExpenseExtractStartRequest) -> JSONResponse
             ocr_device=ocr_device,
             llm_engine=llm_engine,
             llm_device=llm_device,
+            llm_model=llm_model,
         )
     except Exception as exc:
         return error_response(exc)

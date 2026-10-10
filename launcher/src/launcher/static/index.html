@@ -148,6 +148,10 @@
             <span>Compute device</span>
             <select id="docqa-compute-device"></select>
           </label>
+          <label class="field">
+            <span>Model</span>
+            <select id="docqa-model" title="Which language model writes the answers. It can be changed between two questions: the index stays."></select>
+          </label>
         </div>
         <div class="run-row">
           <button id="docqa-ingest" class="btn btn-primary" type="button">Index folder</button>
@@ -255,6 +259,10 @@
           <label class="field">
             <span>Says on</span>
             <select id="vidcom-mood-device" title="Where the small language model gives the line its mood."></select>
+          </label>
+          <label class="field">
+            <span>Says with</span>
+            <select id="vidcom-mood-model" title="Which language model gives the line its mood."></select>
           </label>
           <label class="field field-wide" id="vidcom-path-field">
             <span>Video file on this machine</span>
@@ -507,6 +515,10 @@
             <span>Compute device</span>
             <select id="va-compute-device"></select>
           </label>
+          <label class="field">
+            <span>Model</span>
+            <select id="va-model" title="Which language model answers. The voice waits for the whole answer before it speaks."></select>
+          </label>
         </div>
         <div class="run-row">
           <button id="va-start" class="btn btn-primary" type="button">Start listening</button>
@@ -633,6 +645,10 @@
           <label class="field">
             <span>LLM device</span>
             <select id="expx-llm-device"></select>
+          </label>
+          <label class="field">
+            <span>LLM model</span>
+            <select id="expx-llm-model" title="Which language model makes an expense line of what was read."></select>
           </label>
           <p class="field-help">
             OCR and the LLM run at the same time, each on the device you pick -- for example OCR on a GPU

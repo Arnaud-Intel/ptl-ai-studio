@@ -9,7 +9,7 @@ from typing import Callable
 
 from pantherlake_ai_core.engine import Engine
 
-from . import documents
+from . import documents, language_models
 from .engine_factory import TEMPLATE_TOKENS, create_embedder, create_llm
 from .store import VectorStore, cache_dir_for
 from .types import Answer
@@ -49,6 +49,37 @@ NOTHING_CLOSE = (
 ALONE_PROMPT = "Answer the question in two or three sentences. If you do not have the information, say so."
 
 
+# Which language model writes the answers when nobody chose: Qwen3-8B, on a
+# laptop that has it; this brick's small default otherwise.
+#
+# Measured on the sample folder, both on the XPS 14's NPU, on battery
+# (2026-10-10). Fifteen short questions, ten with an answer in one file and
+# five with none: the 1.5B gave every fact asked for and two that are wrong
+# (the deposit and the balance in dollars where the file says euros; "October
+# 19" as the date of a release the file says has none -- it is another
+# product's); the 8B gave none that is wrong, named the file each answer came
+# from, as its instructions ask, and said of the release "the documents do
+# not say... the October 19 date relates to the cold-storage variant". The
+# four sample questions of this brick, each in several parts: the 1.5B wrote
+# of the Dock C stop that the collision-avoidance layer "failed" (it is what
+# stopped the robot) and that a unit-test pass closes the case (the file says
+# it does not); the 8B got that one right in four bullets with their sources,
+# and has faults of its own -- a sentence that breaks off into the next
+# ("by September  Capitalizing on..."), and refunds that "should not be
+# subtracted" where the policy says they are. Two answers of four clean for
+# each; what the 8B gets wrong is smaller.
+#
+# What it costs: a short answer in 4.0 s where the 1.5B takes 0.8 (16 tokens
+# a second against 55, the first one after 1.3 s against 0.3), a sample
+# question's in 8 to 13 s against 2 to 3, and 4.5 GB on the disk.
+PREFERRED_MODEL = language_models.CAREFUL.key
+
+
+def default_model(engine: Engine, device: str) -> str:
+    """The key of the model that answers on `device` when none is named."""
+    return language_models.preferred(PREFERRED_MODEL, engine, device)
+
+
 class DocQASession:
     """Holds one loaded embedder + LLM + index. Ingest once, ask many times."""
 
@@ -58,13 +89,37 @@ class DocQASession:
         *,
         device: str = "AUTO",
         model_dir: str | None = None,
+        model: str | None = None,
         on_downloading: Callable[[], None] | None = None,
     ):
+        """`model`: which language model writes the answers, by its key in
+        `language_models`; None for this brick's own choice (`default_model`).
+        The passages are found by the same embedder whichever it is."""
         self.engine = engine
+        self.device = device
+        self._model_dir = model_dir
+        self._on_downloading = on_downloading
+        self.model = language_models.get(model).key if model else default_model(engine, device)
+        repo = language_models.repo_for(self.model, engine, device)  # refused here, before anything loads
         self.embedder = create_embedder(engine, device=device, model_dir=model_dir, on_downloading=on_downloading)
-        self.llm = create_llm(engine, device=device, model_dir=model_dir, on_downloading=on_downloading)
+        self.llm = create_llm(engine, device=device, model_dir=model_dir, model_repo=repo, on_downloading=on_downloading)
         self.store = VectorStore()
         self.folder: Path | None = None
+
+    def use_model(self, model: str | None) -> bool:
+        """Have another language model write the answers from here on; the
+        index and the embedder stay as they are. True if a model was loaded,
+        False if it was the one already there."""
+        key = language_models.get(model).key if model else default_model(self.engine, self.device)
+        if key == self.model:
+            return False
+        repo = language_models.repo_for(key, self.engine, self.device)
+        self.llm = None  # the one model's memory is given back before the other takes its own
+        self.llm = create_llm(
+            self.engine, device=self.device, model_dir=self._model_dir, model_repo=repo, on_downloading=self._on_downloading,
+        )
+        self.model = key
+        return True
 
     def ingest(
         self,

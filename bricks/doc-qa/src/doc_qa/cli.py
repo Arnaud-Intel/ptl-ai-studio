@@ -34,6 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--question", default=None, help="Ask a single question and exit, instead of an interactive loop.")
     p.add_argument("--sample", default=None, help="Use a named example question instead (see --list-samples).")
     p.add_argument(
+        "--model", choices=("1.5b", "8b"), default=None,
+        help="openvino engine: which language model writes the answers -- Qwen2.5 1.5B, the fastest, or Qwen3 8B, "
+             "three times slower and closer to what it reads. Default: the 8B if this machine has it, else the 1.5B.",
+    )
+    p.add_argument(
         "--list-samples", action="store_true",
         help="List available example questions, then exit.",
     )
@@ -75,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     engine = engine_mod.resolve_engine(args.engine)
     device = args.compute_device or engine_mod.default_device(engine)
 
-    session = DocQASession(engine, device=device)
+    session = DocQASession(engine, device=device, model=args.model)
 
     print(f"Indexing '{args.folder}' (engine={engine.value})... this downloads models on first use.")
     count = session.ingest(args.folder, force=args.reindex)

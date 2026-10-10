@@ -14,6 +14,7 @@ import re
 import threading
 from typing import Callable
 
+from doc_qa import language_models
 from doc_qa.engine_factory import TEMPLATE_TOKENS, create_llm
 from live_translation import pipeline as live_translation_pipeline
 from pantherlake_ai_core import npu
@@ -50,8 +51,9 @@ _MIN_WORDS_FOR_NOTES = 25
 # `"dataset": null`, the standard build's says wikitext2): a calibrated
 # channel-wise build is what would close the gap, and nobody publishes one.
 # The portable engine keeps doc-qa's small default.
-_OPENVINO_NOTES_REPO = "OpenVINO/Qwen3-8B-int4-ov"
-_OPENVINO_NOTES_REPO_NPU = "OpenVINO/Qwen3-8B-int4-cw-ov"
+# Which build goes on which chip is said in doc-qa's language_models, for
+# every brick that uses this model.
+NOTES_MODEL = language_models.CAREFUL.key
 
 
 def notes_model_repo(engine: Engine, device: str) -> str | None:
@@ -59,7 +61,7 @@ def notes_model_repo(engine: Engine, device: str) -> str | None:
     backend's own default."""
     if engine != Engine.OPENVINO:
         return None
-    return _OPENVINO_NOTES_REPO_NPU if npu.is_npu(device) else _OPENVINO_NOTES_REPO
+    return language_models.repo_for(NOTES_MODEL, engine, device)
 
 
 def default_notes_device(engine: Engine, compute_device: str, devices: list[str] | None = None) -> str:

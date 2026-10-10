@@ -96,6 +96,8 @@ PEOPLE_STILL_SECONDS = 10.0
 # question and costs time: 0.8 s at 448, 0.9 at 672, 1.3 at 1280.
 PICTURE_WIDTH = 672
 EVERY_SECONDS = 4.0
+# The language model that says a line in a mood: a key of doc-qa's language_models.
+DEFAULT_MOOD_MODEL = "1.5b"
 # A picture that has not changed is not commented on again -- until this
 # long has passed, when a still scene gets a fresh look all the same.
 STILL_SECONDS = 20.0
@@ -272,6 +274,7 @@ def run(
     vision_device: str,
     mood_device: str,
     mood: Callable[[], str],
+    mood_model: str | None = None,
     frames: Callable[[threading.Event], Iterator[np.ndarray]] | None = None,
     people: bool = False,
     voice: Callable[[], str] = lambda: voices.OFF,
@@ -304,6 +307,7 @@ def run(
     `clone(text)` is the cloned voice, lent by whoever enrolled one. A voice
     that fails is said once (`on_voice_failed`) and the commentary goes on
     in writing: it is the line that matters."""
+    from doc_qa import language_models
     from doc_qa.engine_factory import create_llm
     from pantherlake_ai_core.engine import Engine
     from screen_ocr.extractor_openvino import OpenVINOExtractor
@@ -313,6 +317,8 @@ def run(
     # leaves, so that a video is never left playing to nobody.
     stop = threading.Event()
     moods.get(mood())  # an unknown mood is refused before anything loads
+    mood_model = language_models.get(mood_model or DEFAULT_MOOD_MODEL).key  # so is an unknown model
+    mood_repo = language_models.repo_for(mood_model, Engine.OPENVINO, mood_device)
     if frames is not None:
         pictures = frames(stop)
     else:
@@ -340,8 +346,10 @@ def run(
             # herd under a clear sky "at night", called its rider Buffalo Bill
             # and had stars twinkle above. It still embroiders; less.
             if not wording:
-                wording.append(create_llm(Engine.OPENVINO, device=mood_device, on_downloading=on_downloading))
-            text = wording[0].answer(instruction, line, max_tokens=48, sample=False)
+                wording.append(create_llm(
+                    Engine.OPENVINO, device=mood_device, model_repo=mood_repo, on_downloading=on_downloading,
+                ))
+            text = wording[0].answer(moods.worded_for(instruction, mood_model), line, max_tokens=48, sample=False)
         except Exception:
             on_work("mood", False, None)
             raise

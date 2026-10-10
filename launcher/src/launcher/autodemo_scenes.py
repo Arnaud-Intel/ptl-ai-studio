@@ -383,6 +383,7 @@ _DOCUMENT_QUESTIONS = (
     "What happened near Dock C during the Lyon workshop?",
 )
 _DOCUMENT_FOLDER = "meridian-rollout-2026"
+_DOCUMENT_MODEL = "1.5b"  # a key of doc-qa's language_models
 
 
 def documents(stand: Stand, loop: int) -> Scene | Skip:
@@ -441,12 +442,20 @@ def documents(stand: Stand, loop: int) -> Scene | Skip:
         props={"question": question, "files": files, "folder": _DOCUMENT_FOLDER},
         steps=(
             # Alone: no folder is indexed for it, only the models loaded.
-            Ask("/api/doc-qa/ask", {"question": question, "alone": True, "engine": "openvino", "compute_device": device},
+            # The small model by name, whatever the brick would choose by
+            # itself: the scene's story was written to its answers, it
+            # gives one in a second, and what the larger one made up when
+            # asked alone (2026-10-10: the President of the United States,
+            # after terrorist attacks) is not for a stand.
+            Ask("/api/doc-qa/ask",
+                {"question": question, "alone": True, "engine": "openvino", "compute_device": device, "model": _DOCUMENT_MODEL},
                 cancel=cancel, keep=False, name="alone"),
             Wait(10.0),
             # Read again each time, a second's work: "now the folder is read"
             # is said of something that is happening.
-            Ask("/api/doc-qa/ingest", {"folder": sample["folder"], "engine": "openvino", "compute_device": device, "reindex": True},
+            Ask("/api/doc-qa/ingest",
+                {"folder": sample["folder"], "engine": "openvino", "compute_device": device, "reindex": True,
+                 "model": _DOCUMENT_MODEL},
                 keep=False, name="read"),
             Wait(10.0),
             Ask("/api/doc-qa/ask", {"question": question}, cancel=cancel, name="with"),

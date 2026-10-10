@@ -105,8 +105,8 @@ Fifteen demos and the Auto Demo, on 2026-10-10.
 | Screen OCR | C2 (joules per read), C3 (7B vision-language model, 6 GB on the iGPU) | 7 to 9 s an image; a 4B model read as much in 5 s, on the next OpenVINO (R37) |
 | Smart city | C1 (a chip per feed), C5 | Counts run high, and small people in a crowd are mostly missed (R03) |
 | Video commentator (experimental) | C1, C3, C5 | The mood model embroiders on what was seen; its lines are too long to be said in time (R23) |
-| Document Q&A | C4 | The 1.5B model falls for a trick question and garbles a long answer (R36) |
-| Expense extraction | C1 (two stages, two chips), C4 | Refunds misfiled, day-first dates read month-first, an invented total still shown as a number (R36) |
+| Document Q&A | C4 | Answers with the 8B where the laptop has it: 4 s a short answer, and one sentence in four long answers breaks off (R36, its calibrated build) |
+| Expense extraction | C1 (two stages, two chips), C4 | 66 fields of 70 on the samples: a credit note filed under Software, a banner taken for a vendor (R36) |
 | Code review, HTML creator | C2 (joules per answer), C3 (30B model on the iGPU, ~40 tokens/s), C4 | Each loads its own copy of the model (R11); HTML Creator can run a page into a loop (R47) |
 | Page agent (experimental) | C1 (three models, two or three chips), C3 | Page length unbounded, one skeleton, pictures never looked at (R39) |
 | Screen memory | C1, C4 | Out of the pilot until retention lands (R08); its search reads the embedding model the old way (R06) |
@@ -483,6 +483,70 @@ were here before.
   adopted, or dropped with its figures.
   **Estimate:** 3-4 days, plus 1-2 for the export. **Depends on:** R17 for the
   model's place in the inventory. (filed 2026-10-10, from six Inbox entries)
+  **Status 2026-10-11: steps (1) and (2) are done, and the premise held for
+  one brick of four.** Measured on 2026-10-10 on the XPS 14's NPU -- on
+  battery at 79%, the B60 unplugged -- with each brick's own prompt and the
+  studio's own samples, one run a cell, both models in turn:
+
+  | Brick | Asked | Qwen2.5-1.5B | Qwen3-8B |
+  | --- | --- | --- | --- |
+  | Document Q&A | 15 short questions: 10 with an answer in one file, 5 with none | every fact; 2 wrong ones beside (euros given as dollars; another product's date for a release that has none); 0.8 s | no wrong fact; names its file; 4.0 s |
+  | | its 4 sample questions, several parts each | 2 clean; a safety layer that "failed" when it is what worked; 2 to 3 s | 2 clean; one sentence that breaks off, one rule turned round; 8 to 13 s |
+  | Expense Extractor | 14 receipts with a checked answer, 70 fields | 66: vendor 13, date 14, amount 13, currency 14, category 12; 1.5 s | 66: vendor 14, date 14, amount 11, currency 14, category 13; 4.3 s |
+  | Voice Assistant | 12 spoken questions | 2 wrong (17 x 12; a hard-boiled egg in 6 minutes); 0.7 s | 2 wrong (17 x 12; a decision made up for "yesterday's meeting"); 2.7 s |
+  | Commentator | 12 sentences seen in the sample videos, in 4 moods | something not seen in about 18 lines of 48; 0.8 s | in about 4; 29 of 48 handed back unchanged; 2.2 s |
+
+  Speeds: 48 to 55 tokens/s and the first after 0.3 to 0.4 s for the 1.5B; 16
+  to 19 and 1.1 to 1.3 s for the 8B; loaded from the compile cache in 4 s and
+  10 s.
+  *Two figures in the ticket above were already out of date when it was
+  written.* The 1.5B fills in 66 expense fields of 70, not 47: 47 was the
+  trial of 2026-10-05, before the prompt and the rules of 2026-10-09. And the
+  day-first date had been read by rule since that same day (the two French
+  receipts come back as 12 September, from either model).
+  *Decided from the table.* Every one of the four takes the model's key
+  (`doc_qa.language_models`, where which build goes on which chip is now said
+  once, for Meeting Notes and the Page Agent too): a **Model** menu in the
+  four panels, `--model` / `--llm-model` / `--mood-model` on the tools.
+  **Document Q&A** answers with the 8B when nobody chose -- where the laptop
+  already has it, and with the 1.5B where it does not: no brick starts a
+  download of 4.5 GB because somebody pressed Ask. Its model can be changed
+  between two questions without reading the folder again. **The Expense
+  Extractor keeps the 1.5B**: the 8B put the vendors and the categories right
+  and got three amounts wrong, one of them with nothing to say so (the fare,
+  38.00, where the total line reads 46,80). **The Voice Assistant keeps the
+  1.5B**: the voice waits for the whole answer, and the 8B was no more right.
+  **The commentator keeps the 1.5B**: the 8B keeps to what was seen, which is
+  what R23 wanted of it, and says it in no voice to speak of. It has rules of
+  its own now (`moods.py`: "in new words", 12 lines of 48 unchanged instead of
+  29; a third wording brought the embroidery back). The Auto Demo's documents
+  scene names the 1.5B: its story was written to that model's answers, and
+  asked alone the 8B answered a question about the Lyon pilot with the
+  President of the United States and terrorist attacks, which is not for a
+  stand.
+  *Step (2), three rules that hold whichever model writes the line.* An amount
+  that is nowhere on the receipt is not shown, and the reason says why (the
+  faded hotel folio: 324.00 from the 1.5B, nothing from the 8B). An amount
+  that is on the receipt and is not the one on its TOTAL line is kept and
+  flagged "Amount is not the printed total" -- which catches the 8B's 38.00. A
+  date that reads as two different days is flagged when no currency says
+  whether the receipt is American (no sample is one: a test stands for it).
+  *Checked in the app* (headless browser, launcher on the NPU): the four menus
+  and what "Auto" means on each chip; the question about Fleet OS's release
+  put to Document Q&A three times -- Auto and the 8B declined it with the
+  reason, the 1.5B answered October 19 -- with the index kept across the
+  changes of model. 5.7 s an answer with the 8B loaded, 10.6 s when it had to
+  be loaded again. The full test suite passes.
+  *Left.* Step (3), the calibrated export of the 8B for the NPU, is not
+  started: it needs a download of 16 GB, an hour or more of CPU and an account
+  to host the result, none of which were asked for. It is now the most likely
+  cure for the two faults seen in the 8B's long answers. Also: nothing here
+  was measured on mains, on a GPU's build of the 8B, or more than once; the
+  Voice Assistant was not spoken to (R35); both models get 17 x 12 wrong;
+  Meeting Notes is as it was (11 of 20 on the NPU); and whether Document Q&A
+  should take the 8B at 16 tokens/s where the panel used to show 55 is a
+  choice about what the demo is for -- one constant, `PREFERRED_MODEL` in
+  `doc_qa/pipeline.py`.
 
 - [ ] **R38 · P2 · Voices that keep up with the talk.** *Proves C5.*
   The Voice Assistant writes its whole answer, then speaks it. The commentator
