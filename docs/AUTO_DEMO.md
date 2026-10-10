@@ -193,7 +193,8 @@ overflowed, nothing failed, nothing was left running or loaded.
   of words and will miss some; it is there because asking was not enough.
   The scene does not play without the camera, or with it left out.
 
-Not built yet, most useful first:
+Not built yet, most useful first (tracked as R34 in
+[BACKLOG.md](../BACKLOG.md) since 2026-10-10):
 
 - **A run of several hours** on the real machine, watched through the
   activity log. The loop has been round a few times, not a day.
