@@ -101,7 +101,24 @@ def test_a_copy_that_cant_fast_forward_cleanly_says_why(monkeypatch, override, e
 def test_without_uv_there_is_no_in_place_upgrade(monkeypatch):
     fake_git(monkeypatch, BEHIND)
     monkeypatch.setattr(updates.shutil, "which", lambda name: None)
+    monkeypatch.delenv("UV", raising=False)  # `uv run pytest` names its uv to what it starts
+    monkeypatch.setattr(updates, "REPO_ROOT", updates.REPO_ROOT / "no-such-copy")  # and no copy kept in the project
     assert "uv isn't on PATH" in updates.check().blocked_reason
+
+
+def test_an_installer_kept_in_the_project_is_enough_to_upgrade(monkeypatch, tmp_path):
+    """Set up from nothing, a laptop has uv in the project's .tools folder
+    and not on the PATH: that copy is the one an upgrade uses."""
+    monkeypatch.setattr(updates.shutil, "which", lambda name: None)
+    monkeypatch.delenv("UV", raising=False)
+    monkeypatch.setattr(updates, "REPO_ROOT", tmp_path)
+    assert updates.uv_command() is None
+    local = tmp_path / ".tools" / "uv" / ("uv.exe" if updates.os.name == "nt" else "uv")
+    local.parent.mkdir(parents=True)
+    local.write_bytes(b"")
+    assert updates.uv_command() == str(local)
+    monkeypatch.setattr(updates.shutil, "which", lambda name: "C:/tools/uv.exe")
+    assert updates.uv_command() == "C:/tools/uv.exe"  # the one on the PATH first
 
 
 def test_the_prompt_is_offered_once_per_launcher_start(monkeypatch):

@@ -52,33 +52,50 @@ Lake. One launcher, no cloud.**
 
 ## Install on a new device
 
-You need Windows 11, an internet connection for the installation, and
-disk space for the models you want: 150 MB for a first speech demo, about
-45 GB for all of them. No administrator rights.
+Nothing has to be installed first: no Python, no git, no administrator
+rights. You need Windows 11, an internet connection for the installation,
+and disk space: 2 GB for the Studio, then the models you choose, from 2 GB
+for a first look to nearly 50 GB for all of them.
 
 1. **Update the Intel drivers** (graphics and NPU), for instance with the
    [Intel Driver & Support Assistant](https://www.intel.com/content/www/us/en/support/detect.html).
-   The installer does not touch drivers, and the NPU demos need a recent one.
-2. **Get the project.** With git (this is what lets the app upgrade itself
-   later):
+   The assistant does not touch drivers, and the NPU demos need a recent one.
+2. **Get the project.** **Code > Download ZIP** on this page, then
+   right-click the ZIP and **Extract All**. Or, with git, which is what
+   lets the app upgrade itself later:
    ```bash
    git clone https://github.com/Arnaud-Intel/ptl-ai-studio.git
    ```
-   Or **Code > Download ZIP** on this page, and extract all of it.
-3. **Double-click `first_launch.bat`** in the project folder. It walks
-   through five steps and asks before each download:
-   1. finds [`uv`](https://docs.astral.sh/uv/), or offers to install it (uv brings its own Python);
-   2. installs the environment with the OpenVINO engines (a few minutes);
-   3. lists the chips it found -- CPU, GPU, NPU -- and the free disk space;
-   4. fetches models: a speech starter, one demo's, or all of them, sizes shown first, then the sample videos (113 MB);
-   5. starts the Studio and opens `http://127.0.0.1:8765`.
-4. **From then on, double-click `start_launcher.bat`.** Close its window
-   to stop the Studio, or run `stop_launcher.bat`.
+3. **Double-click `first_launch.bat`** in the extracted folder. Windows
+   may warn about a file that came from the internet: *More info*, then
+   *Run anyway*. A setup page opens in the browser and walks through six
+   steps; it shows what it found, asks before each download, and when a
+   step fails it says what to do about it.
 
-The helper can be run again: what is already downloaded is kept. Its log
-is in `logs/first-launch-*.log`. On a company network, a proxy or
-certificate error is for your IT team to settle; the helper changes no
-security setting.
+   | Step | What happens |
+   | --- | --- |
+   | 1. This laptop | Processor, memory, disk, drivers, the folder and the internet are checked; what would stop the installation is said before anything is downloaded |
+   | 2. The installer | [`uv`](https://docs.astral.sh/uv/) is found, or fetched: with winget, or into the project folder (25 MB) |
+   | 3. The Studio | Python and the AI runtimes are installed into the project folder: 2 GB, from two minutes to a quarter of an hour |
+   | 4. The chips | The runtime that was just installed is asked which of CPU, GPU and NPU it can really use |
+   | 5. The models | You choose a set, with its size: a small start, the Auto Demo, everything, or demo by demo |
+   | 6. Ready | A desktop shortcut if you want one, and the Studio opens on `http://127.0.0.1:8765` |
+
+4. **From then on, double-click `start_launcher.bat`** (or the shortcut).
+   Close its window to stop the Studio, or run `stop_launcher.bat`.
+
+<p align="center">
+  <img src="docs/screenshot-setup.png" alt="The setup assistant at its fifth step: four steps ticked on the left, and four sets of models to choose from with their sizes, from 2.2 GB to 48 GB" width="860" />
+</p>
+
+The assistant can be run again: what is already downloaded is kept, and
+each step's log is in `logs/setup-*.log`. It changes no security setting,
+and what it installs stays in the project folder and in your own profile
+(Python, the installer's cache, the models). On a company network that inspects
+secure connections, it offers to try again with the certificates Windows
+trusts; a proxy that blocks the downloads is for your IT team to settle.
+`first_launch.bat console` does the same steps as questions in the black
+window, and is what you get if the page cannot be served.
 
 <details>
 <summary><b>Installing by hand, offline use, updates</b></summary>
@@ -101,8 +118,8 @@ uv run panther-lake-launcher
   the new version with what changed; **Upgrade** in the footer does the
   rest and restarts. A copy from a ZIP is updated by downloading it again.
 - **YouTube city cameras** in the Smart City demo also need Deno or Node;
-  the helper checks and offers to install Deno. Everything else works
-  without. See the [Smart City notes](bricks/smart-city-monitor/README.md#connection-recovery-and-setup-checks).
+  `first_launch.bat console` checks and offers to install Deno. Everything
+  else works without. See the [Smart City notes](bricks/smart-city-monitor/README.md#connection-recovery-and-setup-checks).
 
 </details>
 

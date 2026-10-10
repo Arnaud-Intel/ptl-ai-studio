@@ -357,9 +357,12 @@ def api_version() -> JSONResponse:
     you. When they differ the UI says so, because "am I running the latest?"
     is otherwise unanswerable from the page."""
     on_disk = read_version_file()
-    return JSONResponse(
-        {"version": RUNNING_VERSION, "on_disk": on_disk, "restart_needed": on_disk != RUNNING_VERSION}
-    )
+    return JSONResponse({
+        "version": RUNNING_VERSION, "on_disk": on_disk, "restart_needed": on_disk != RUNNING_VERSION,
+        # Which copy of the project this is: the setup assistant must not
+        # take a Studio started from another folder for the one it installed.
+        "root": str(updates.REPO_ROOT),
+    })
 
 
 @app.get("/api/telemetry")

@@ -3,7 +3,16 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from launcher import upgrade_helper as helper
+
+
+@pytest.fixture(autouse=True)
+def uv_by_name(monkeypatch):
+    """The installer under its plain name, wherever this machine keeps it:
+    the sequences below are told apart by the first word of each command."""
+    monkeypatch.setattr(helper, "uv_command", lambda repo: "uv")
 
 
 def _args(tmp_path):
@@ -62,3 +71,24 @@ def test_the_commits_before_and_after_are_recorded_for_the_changelog(tmp_path):
     assert (result["from_commit"], result["to_commit"]) == ("aaa111", "bbb222")
     saved = json.loads((tmp_path / "logs" / "upgrade-result.json").read_text(encoding="utf-8"))
     assert saved["from_commit"] == "aaa111" and saved["to_commit"] == "bbb222"
+
+
+def test_the_installer_is_found_on_the_path_named_by_uv_or_kept_in_the_project(tmp_path, monkeypatch):
+    """A laptop set up from nothing has uv in the project's own .tools folder
+    and nowhere else: an upgrade must not ask for "uv" and find nothing."""
+    import shutil
+
+    monkeypatch.undo()  # the real lookup, not the fixture's stand-in
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.delenv("UV", raising=False)
+    assert helper.uv_command(tmp_path) == "uv"  # none found: the step fails in the system's own words
+    local = tmp_path / ".tools" / "uv" / ("uv.exe" if helper.os.name == "nt" else "uv")
+    local.parent.mkdir(parents=True)
+    local.write_bytes(b"")
+    assert helper.uv_command(tmp_path) == str(local)
+    named = tmp_path / "named-uv.exe"
+    named.write_bytes(b"")
+    monkeypatch.setenv("UV", str(named))  # what `uv run` tells the programs it starts
+    assert helper.uv_command(tmp_path) == str(named)
+    monkeypatch.setattr(shutil, "which", lambda name: "C:/tools/uv.exe")
+    assert helper.uv_command(tmp_path) == "C:/tools/uv.exe"

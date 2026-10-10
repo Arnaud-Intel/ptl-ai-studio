@@ -38,5 +38,10 @@ sample-data/videos/*
 # What the in-app upgrade last did (see launcher/updates.py); its log is *.log.
 logs/upgrade-result.json
 
+# What the setup assistant leaves on a laptop (see setup/): the installer it
+# downloaded for a machine that had none, and what the chips check last found.
+.tools/
+logs/setup-probe.json
+
 # Films of the Auto Demo made for sharing: large, and not source.
 recordings/

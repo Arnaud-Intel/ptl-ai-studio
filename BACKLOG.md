@@ -577,6 +577,50 @@ a new one or the deferred list, and moves its original wording to
   hour with the hardware panel's power line on screen before the next long
   demo, and a line in the presenter's notes either way. (filed 2026-10-08,
   page-agent pages)
+- [x] **A setup assistant for a laptop with nothing installed.** Asked for
+  on 2026-10-10: the first launch as a guided, visual page, sure to work
+  from a fresh laptop. `first_launch.bat` now opens a page served by
+  Windows PowerShell (`setup/`): six steps -- this laptop, the installer,
+  the Studio, the chips, the models, ready -- each saying what it found,
+  asking before a download and, when it fails, what to do. The console
+  helper stays behind it (`first_launch.bat console`, and by itself when
+  the page cannot be served). `start_launcher.bat` and the in-app upgrade
+  find an installer kept in the project (`.tools\uv`), and the command
+  files are committed with Windows line endings so that a ZIP from GitHub
+  runs.
+  *How it was checked.* No fresh laptop and no Windows Sandbox were at
+  hand, so one was imitated on the XPS 14: a clean copy of the project in a
+  folder 87 characters deep, an empty user profile, and a PATH with Windows
+  alone on it (no uv, no Python, no git, no winget). From there
+  `first_launch.bat` was walked to the end in a headless browser with real
+  downloads: uv 0.13.0 fetched and its SHA-256 checked in 8 s, the
+  environment installed in 80 s, the chips found (CPU, two GPUs, NPU) after
+  a first check of 76 s, the Studio answering 104 s after its first start,
+  the four sets sized at 2.2, 6.9, 37 and 48 GB with none of 21 models
+  present, one model fetched, the Studio opened. `start_launcher.bat` and
+  `stop_launcher.bat` were then run from the same bare PATH, and
+  `first_launch.bat` alone in an empty folder, as Windows runs it from
+  inside a ZIP. The failures were scripted and read on the page: too
+  little disk, a host that does not answer, winget and the download both
+  failing, a certificate refused (and the retry with Windows' own), a
+  missing NPU, a package that does not load.
+  *Not checked, and worth a real new laptop:* Windows' own warning on a
+  downloaded `.bat`; a company laptop's rules (scripts forbidden, a proxy);
+  a laptop without the Visual C++ runtime -- the assistant looks for it in
+  step 1 and links to Microsoft's installer, which could only be shown with
+  a scripted report here, since this laptop has it; a Lunar Lake laptop.
+  Models read from a folder with accents in its name were tried and load.
+  (filed 2026-10-10, user request)
+- [ ] **The Page Agent's models failed to load on the GPU twice, while the
+  receipts demo was at work.** From `logs/events.log`, 2026-10-09 at 13:24
+  and 13:26: `[GPU] ProgramBuilder build failed!` with `clWaitForEvents,
+  error code: -58 CL_INVALID_EVENT`, both times as the Page Agent loaded
+  its image model on GPU.0 and its coding model on GPU.1 and the Expense
+  Report Extractor was reading receipts. Two events in one afternoon of
+  tests, not reproduced since and not looked into: it may be memory (a
+  17 GB model arriving beside a vision model), or the B60's cable. If it
+  comes back, note what else was running and how much memory was free.
+  (filed 2026-10-10, events.log review)
 
 ## What we are showing
 

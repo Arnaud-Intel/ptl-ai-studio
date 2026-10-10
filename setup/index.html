@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Panther Lake AI Studio - Setup</title>
+<link rel="icon" href="/static/intel-core-ultra.png" />
+<!--
+  The setup assistant's page. Served by setup\assistant.ps1 on this laptop
+  only; it asks that script how things are (GET /api/state) and what to do
+  next (POST /api/action), and draws the answer. Everything is in this one
+  file and nothing is loaded from the web: it has to work on a laptop that
+  has nothing yet.
+-->
+<style>
+  :root {
+    --bg: #000; --bg-elevated: #0a0b0d; --bg-card: #111317; --bg-input: #0d0f13;
+    --border: #262a33; --border-strong: #3a4150;
+    --text: #f4f6fa; --text-dim: #b3bccb; --text-faint: #8b95a7;
+    --accent: #0068b5; --accent-strong: #0d6fbf; --accent-hover: #3fa9f5; --accent-soft: rgba(0, 104, 181, 0.18);
+    --success: #4ade80; --danger: #e2604f; --warning: #f5a623; --warning-soft: rgba(245, 166, 35, 0.12);
+    font-family: "Segoe UI", -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: radial-gradient(1200px 500px at 50% -10%, #06223a 0%, #000 60%) #000; color: var(--text); font-size: 15px; line-height: 1.5; display: flex; flex-direction: column; }
+  a { color: var(--accent-hover); }
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px clamp(16px, 4vw, 48px) 10px; }
+  header.top img.partner { height: 26px; }
+  header.top .brand { display: flex; align-items: center; gap: 16px; }
+  header.top .brand img { height: 58px; }
+  header.top .brand span { font-size: 13px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--accent-hover); border-left: 1px solid var(--border-strong); padding-left: 16px; }
+  main.layout { flex: 1 1 auto; display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 26px; width: min(1180px, 100%); margin: 0 auto; padding: 14px clamp(16px, 4vw, 48px) 26px; align-items: start; }
+  @media (max-width: 820px) { main.layout { grid-template-columns: 1fr; } }
+
+  /* the steps, down the left */
+  nav.steps { position: sticky; top: 14px; display: flex; flex-direction: column; gap: 2px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-elevated); }
+  .step { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: center; padding: 10px 8px; border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .step:disabled { cursor: default; opacity: 0.5; }
+  .step.current { background: var(--accent-soft); }
+  .step .dot { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--border-strong); font-weight: 700; font-size: 14px; color: var(--text-dim); }
+  .step.ok .dot { border-color: var(--success); color: var(--success); }
+  .step.warn .dot { border-color: var(--warning); color: var(--warning); }
+  .step.error .dot { border-color: var(--danger); color: var(--danger); }
+  .step.skipped .dot { border-color: var(--text-faint); color: var(--text-faint); }
+  .step.running .dot { border-color: var(--accent-hover); border-top-color: transparent; color: transparent; animation: spin 0.9s linear infinite; }
+  .step b { display: block; font-weight: 600; }
+  .step small { display: block; color: var(--text-faint); font-size: 12.5px; line-height: 1.3; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* the step in hand */
+  section.panel { min-width: 0; padding: clamp(18px, 2.4vw, 30px); border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); }
+  .kicker { margin: 0 0 4px; font-size: 12.5px; letter-spacing: 1.6px; text-transform: uppercase; color: var(--accent-hover); }
+  h1 { margin: 0 0 6px; font-size: clamp(22px, 2.4vw, 30px); line-height: 1.2; }
+  .lead { margin: 0 0 18px; color: var(--text-dim); max-width: 64ch; }
+  .rows { display: grid; gap: 8px; margin: 0 0 18px; }
+  .row { display: grid; grid-template-columns: 26px 150px minmax(0, 1fr); gap: 4px 12px; padding: 11px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-input); }
+  .row .mark { grid-row: span 2; font-size: 17px; line-height: 1.3; font-weight: 700; }
+  .row .label { color: var(--text-faint); }
+  .row .value { font-weight: 600; overflow-wrap: anywhere; }
+  .row .help { grid-column: 2 / -1; font-size: 13.5px; color: var(--text-dim); }
+  .ok > .mark, .mark.ok { color: var(--success); }
+  .warn > .mark, .mark.warn { color: var(--warning); }
+  .error > .mark, .mark.error { color: var(--danger); }
+  .info > .mark, .mark.info { color: var(--accent-hover); }
+  .row.warn { border-color: rgba(245, 166, 35, 0.55); background: var(--warning-soft); }
+  .row.error { border-color: rgba(226, 96, 79, 0.7); background: rgba(226, 96, 79, 0.1); }
+  @media (max-width: 620px) { .row { grid-template-columns: 26px minmax(0, 1fr); } .row .help { grid-column: 2; } }
+
+  .hosts { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin: 0 0 18px; }
+  .host { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-input); font-size: 13.5px; }
+  .host b { display: block; }
+  .host span { color: var(--text-faint); }
+  .host.bad { border-color: rgba(226, 96, 79, 0.7); }
+
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }
+  button.btn { padding: 10px 18px; border-radius: 9px; border: 1px solid var(--border-strong); background: var(--bg-input); color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+  button.btn:hover:not(:disabled) { border-color: var(--accent-hover); }
+  button.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.btn.primary:hover:not(:disabled) { background: var(--accent-strong); }
+  button.btn:disabled { opacity: 0.45; cursor: default; }
+  button.link { border: 0; background: none; color: var(--accent-hover); font: inherit; cursor: pointer; padding: 6px 2px; text-decoration: underline; }
+  .note { margin: 12px 0 0; font-size: 13.5px; color: var(--text-faint); max-width: 70ch; }
+  .card { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-input); }
+  .card.problem { border-color: rgba(226, 96, 79, 0.7); background: rgba(226, 96, 79, 0.1); }
+  .card.good { border-color: rgba(74, 222, 128, 0.5); background: rgba(74, 222, 128, 0.07); }
+  .card h2 { margin: 0 0 4px; font-size: 16px; }
+  .card p { margin: 0; color: var(--text-dim); }
+  .working { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; font-weight: 600; }
+  .spinner { width: 20px; height: 20px; border-radius: 50%; border: 3px solid var(--accent-hover); border-top-color: transparent; animation: spin 0.9s linear infinite; flex: none; }
+  pre.log { margin: 0 0 16px; padding: 12px 14px; max-height: 250px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: #05070a; color: var(--text-dim); font: 12.5px/1.5 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 18px; color: var(--text-dim); font-size: 13.5px; }
+  .facts b { color: var(--text); }
+
+  /* the chips */
+  .chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 0 0 18px; }
+  .chip { padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-input); opacity: 0.6; }
+  .chip.found { opacity: 1; border-color: var(--accent-hover); box-shadow: 0 0 0 1px var(--accent-soft), 0 0 26px rgba(63, 169, 245, 0.16); }
+  .chip strong { display: flex; justify-content: space-between; font-size: 20px; }
+  .chip p { margin: 6px 0 0; font-size: 13.5px; color: var(--text-dim); }
+  .chip.found strong span { color: var(--success); }
+  .chip:not(.found) strong span { color: var(--warning); }
+
+  /* the models */
+  .sets { display: grid; gap: 8px; margin: 0 0 16px; }
+  .set { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 2px 12px; align-items: start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-input); cursor: pointer; }
+  .set.on { border-color: var(--accent-hover); background: var(--accent-soft); }
+  .set input { margin-top: 5px; }
+  .set b { font-weight: 600; }
+  .set small { grid-column: 2; color: var(--text-dim); font-size: 13.5px; }
+  .set .size { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .set .size.have { color: var(--success); font-weight: 600; }
+  .demos { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 6px 14px; margin: 0 0 16px; padding: 12px 14px; border: 1px dashed var(--border-strong); border-radius: 10px; }
+  .demos label { display: flex; gap: 8px; align-items: baseline; font-size: 14px; cursor: pointer; }
+  .demos label span { margin-left: auto; color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .bar { height: 12px; margin: 0 0 8px; border-radius: 999px; background: #1b1f27; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-hover)); transition: width 0.6s ease; }
+  .progress-line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; margin: 0 0 14px; font-size: 13.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .modellist { display: grid; gap: 4px; margin: 0 0 16px; font-size: 13.5px; }
+  .modellist div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .modellist .ready { color: var(--success); }
+  .modellist .failed { color: var(--danger); }
+
+  footer { padding: 12px clamp(16px, 4vw, 48px) 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 20px; color: var(--text-faint); font-size: 12.5px; }
+  .banner { margin: 0 auto 10px; width: min(1180px, calc(100% - 32px)); padding: 12px 16px; border: 1px solid rgba(226, 96, 79, 0.7); border-radius: 10px; background: rgba(226, 96, 79, 0.12); }
+</style>
+</head>
+<body>
+<header class="top">
+  <img class="partner" src="/static/intel-logo.png" alt="Intel" />
+  <div class="brand"><img src="/static/panther_lake_ai_studio_darkbg.png" alt="Panther Lake AI Studio" /><span>Setup assistant</span></div>
+  <img class="partner" src="/static/dell-logo.png" alt="Dell Technologies" />
+</header>
+<div id="banner" class="banner" role="alert" hidden></div>
+<main class="layout">
+  <nav class="steps" id="steps" aria-label="Steps"></nav>
+  <section class="panel" id="panel" aria-live="polite"><p class="lead">Looking at this laptop...</p></section>
+</main>
+<footer><span id="foot-left"></span><span>Keep the black window that opened this page open while it works.</span></footer>
+
+<script>
+"use strict";
+const TOKEN = "__SETUP_TOKEN__";
+const DRIVERS = "https://www.intel.com/content/www/us/en/support/detect.html";
+const STEPS = [
+  { id: "system", title: "This laptop", sub: "What it has, and what is in the way" },
+  { id: "tools", title: "The installer", sub: "A small tool called uv" },
+  { id: "environment", title: "The Studio", sub: "Python and the AI runtimes" },
+  { id: "chips", title: "The chips", sub: "CPU, GPU and NPU, as the Studio sees them" },
+  { id: "models", title: "The models", sub: "Choose what to download" },
+  { id: "ready", title: "Ready", sub: "Open the Studio" },
+];
+// The sets of models offered, by the keys of the Studio's own catalogue
+// (core's models.py; a test checks that every key and demo here exists).
+const SETS = [
+  { id: "small", title: "Start small", keys: ["llm-1.5b-ov", "embed-ov", "yolo11s-ov", "street-videos", "whisper-base-ov", "openvoice", "wake-word"],
+    text: "Document Q&A, Object Detection, the Smart City Monitor on its sample videos, and the Voice Assistant. Enough to see the three chips work." },
+  { id: "auto-light", title: "The Auto Demo, without the page builder",
+    keys: ["llm-1.5b-ov", "embed-ov", "vlm-7b-ov", "yolo11s-ov", "street-videos"],
+    text: "Five of its six scenes: the camera, the receipts, the street videos, the documents and the video commentator." },
+  { id: "auto", title: "The whole Auto Demo",
+    keys: ["llm-1.5b-ov", "embed-ov", "vlm-7b-ov", "yolo11s-ov", "street-videos", "flux-schnell-ov", "coder-30b-ov", "PLANNER"],
+    text: "All six scenes, with the page built from one request. The largest models: it needs the memory for them (about 17 GB for one)." },
+  { id: "all", title: "Everything", keys: null, text: "Every model of every demo, on both engines. Nothing left to download in front of an audience." },
+  { id: "custom", title: "Choose demo by demo", keys: [], text: "Tick the demos you want; their models are fetched." },
+];
+const DEMOS = {
+  "live-translation": "Live Speech Translation", "meeting-notes": "Live Meeting Notes", "voice-assistant": "Local Voice Assistant",
+  "voice-clone-studio": "Voice Clone Studio", "webcam-effects": "Webcam Background Effects", "object-detection": "Object Detection Overlay",
+  "screen-ocr": "Screen / Image Text Extraction", "smart-city-monitor": "Smart City Monitor", "video-commentary": "Video Commentator",
+  "doc-qa": "Local Document Q&A", "expense-extract": "Expense Report Extractor", "smart-recall": "Local Screen Memory",
+  "code-review-assist": "Commit & Code Review Assistant", "html-creator": "HTML Creator", "page-agent": "Page Agent",
+};
+
+let state = null;          // what the script last said
+let view = null;           // the step on screen
+let visited = new Set();
+let lost = 0;              // looks at the script that went unanswered
+let finished = false;
+let drawn = "";            // what the panel was last drawn from
+let models = null;         // the Studio's model inventory, once it is up
+let chosenSet = "small";
+let chosenDemos = new Set(["doc-qa", "object-detection"]);
+let shortcut = true;
+let asked = { probe: false, studio: 0 };  // the Studio: when it was last asked to start
+let busy = false;          // an order is on its way
+
+const $ = (id) => document.getElementById(id);
+const esc = (text) => String(text === null || text === undefined ? "" : text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const MARK = { ok: "✓", warn: "!", error: "✕", info: "i", skipped: "–", running: "" };
+const step = (id) => state.steps.find((entry) => entry.id === id);
+const settled = (id) => ["ok", "warn", "skipped"].includes(step(id).state);
+
+function gb(bytes) {
+  if (bytes === null || bytes === undefined) return "?";
+  if (bytes >= 1e9) return (bytes / 1e9).toFixed(bytes >= 1e10 ? 0 : 1) + " GB";
+  if (bytes >= 1e6) return Math.round(bytes / 1e6) + " MB";
+  return Math.max(1, Math.round(bytes / 1e3)) + " KB";
+}
+function clock(seconds) {
+  if (seconds === null || seconds === undefined) return "";
+  const s = Math.max(0, Math.round(seconds));
+  if (s >= 3600) return Math.floor(s / 3600) + " h " + Math.round((s % 3600) / 60) + " min";
+  if (s >= 60) return Math.floor(s / 60) + " min " + String(s % 60).padStart(2, "0") + " s";
+  return s + " s";
+}
+
+async function call(path, options) {
+  const response = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json", "X-Setup-Token": TOKEN } }, options || {}));
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "The request failed (" + response.status + ").");
+  return data;
+}
+async function act(name, option) {
+  if (busy) return;
+  busy = true;
+  try {
+    state = await call("/api/action", { method: "POST", body: JSON.stringify({ name, option: option === undefined ? null : option }) });
+    $("banner").hidden = true;
+  } catch (error) {
+    $("banner").textContent = error.message;
+    $("banner").hidden = false;
+  } finally {
+    busy = false;
+    draw(true);
+  }
+}
+
+// ---------------------------------------------------------------- following the script
+
+async function look() {
+  if (finished) return;
+  try {
+    const response = await fetch("/api/state", { cache: "no-store" });
+    state = await response.json();
+    lost = 0;
+  } catch (error) {
+    lost += 1;
+    if (lost >= 4) {
+      $("banner").textContent = "The setup window is no longer answering. If it was closed, start first_launch.bat again: what was installed or downloaded is kept.";
+      $("banner").hidden = false;
+    }
+    return;
+  }
+  // Always from the first step: what the laptop has is worth a look before
+  // anything is installed on it, settled or not.
+  if (view === null) view = "system";
+  autopilot();
+  draw(false);
+}
+
+// The first step that is not settled: where somebody coming back picks up.
+function firstOpen() {
+  for (const entry of STEPS) if (!settled(entry.id) || entry.id === "ready") return entry.id;
+  return "ready";
+}
+function reachable(id) {
+  const index = STEPS.findIndex((entry) => entry.id === id);
+  return visited.has(id) || STEPS.slice(0, index).every((entry) => settled(entry.id));
+}
+function go(id) {
+  if (!reachable(id)) return;
+  view = id;
+  draw(true);
+  autopilot();
+}
+function next() {
+  const index = STEPS.findIndex((entry) => entry.id === view);
+  if (index < STEPS.length - 1) go(STEPS[index + 1].id);
+}
+
+// What needs no permission is done without being asked: looking at the chips
+// once the Studio is installed, and starting the Studio when its models are
+// to be chosen. Anything that downloads waits for a click.
+function autopilot() {
+  if (!state || busy) return;
+  const running = state.job && state.job.running;
+  if (view === "chips" && step("environment").state === "ok" && step("chips").state === "pending" && !running && !asked.probe) {
+    asked.probe = true;
+    act("probe");
+  }
+  // Asked again if it was closed meanwhile, but not in a loop: a Studio
+  // that will not start says so, and waits for a click.
+  if ((view === "models" || view === "ready") && settled("chips") && state.studio.state === "stopped" && !running && Date.now() - asked.studio > 20000) {
+    asked.studio = Date.now();
+    models = null;
+    act("studio-start");
+  }
+}
+
+// ---------------------------------------------------------------- drawing
+
+function draw(force) {
+  if (!state) return;
+  visited.add(view);
+  $("foot-left").textContent = (state.version ? "Version " + state.version + " · " : "") + state.root;
+  $("steps").innerHTML = STEPS.map((entry, index) => {
+    const current = step(entry.id);
+    const mark = current.state === "pending" ? String(index + 1) : MARK[current.state] || String(index + 1);
+    return `<button type="button" class="step ${esc(current.state)}${entry.id === view ? " current" : ""}" data-go="${entry.id}"${reachable(entry.id) ? "" : " disabled"}>` +
+      `<span class="dot">${mark}</span><span><b>${esc(entry.title)}</b><small>${esc(entry.sub)}</small></span></button>`;
+  }).join("");
+  const html = PANELS[view]();
+  const key = view + "|" + html;
+  if (!force && key === drawn) return;
+  drawn = key;
+  const log = $("panel").querySelector("pre.log");
+  const pinned = !log || log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+  $("panel").innerHTML = html;
+  const fresh = $("panel").querySelector("pre.log");
+  if (fresh && pinned) fresh.scrollTop = fresh.scrollHeight;
+}
+
+function head(index, title, lead) {
+  return `<p class="kicker">Step ${index} of ${STEPS.length}</p><h1>${esc(title)}</h1><p class="lead">${lead}</p>`;
+}
+// A piece of advice, with the addresses it names made into links: on a laptop
+// with nothing, what is missing is one click away rather than to be typed.
+function told(text) {
+  return esc(text).replace(/\b((?:aka\.ms|docs\.astral\.sh|www\.intel\.com)\/[^\s),]*[^\s),.])/g,
+    (address) => `<a href="https://${address}" target="_blank" rel="noopener">${address}</a>`);
+}
+function row(check) {
+  return `<div class="row ${esc(check.state)}"><span class="mark">${MARK[check.state] || ""}</span><span class="label">${esc(check.label)}</span>` +
+    `<span class="value">${esc(check.value)}</span><span class="help">${told(check.help)}</span></div>`;
+}
+function jobOf(stepId) {
+  return state.job && state.job.step === stepId ? state.job : null;
+}
+// A command at work: what it is doing now, for how long, and its last lines.
+function working(job, what) {
+  const tail = job.tail || [];
+  return `<p class="working"><span class="spinner"></span>${esc(what)} · ${clock(job.seconds)}</p>` +
+    (tail.length ? `<pre class="log">${esc(tail.join("\n"))}</pre>` : "") +
+    `<div class="actions"><button class="btn" data-act="cancel">Stop</button></div>`;
+}
+// A command that failed: what to do about it first, then its own words.
+function failed(job, retry) {
+  const hint = job.hint || { title: "This step failed", text: "The last lines below say why. Trying again is safe.", option: "" };
+  const tail = job.tail || [];
+  return `<div class="card problem"><h2>${esc(hint.title)}</h2><p>${told(hint.text)}</p></div>` +
+    (tail.length ? `<pre class="log">${esc(tail.join("\n"))}</pre>` : "") +
+    `<div class="actions">${retry(hint)}</div><p class="note">The whole log is in ${esc(job.log)}, in the project folder.</p>`;
+}
+
+const PANELS = {
+  system() {
+    const checks = state.checks || [];
+    const hosts = state.net || [];
+    const blocked = step("system").state === "error";
+    const drivers = checks.some((check) => ["graphics", "npu"].includes(check.id) && check.state !== "ok");
+    const net = state.net_pending && !hosts.length
+      ? `<p class="working"><span class="spinner"></span>Checking the internet connection...</p>`
+      : `<div class="hosts">` + hosts.map((host) =>
+          `<div class="host${host.ok ? "" : " bad"}"><b><span class="mark ${host.ok ? "ok" : "error"}">${host.ok ? MARK.ok : MARK.error}</span> ${esc(host.name)}</b>` +
+          `<span>${esc(host.ok ? "For " + host.what : "Not reachable: needed for " + host.what + (host.detail ? ". " + host.detail : ""))}</span></div>`).join("") + `</div>`;
+    return head(1, "This laptop", "Nothing has been installed yet. This is what the Studio will find, and what could get in its way.") +
+      `<div class="rows">${checks.map(row).join("")}</div>` +
+      `<p class="kicker">The internet, for the downloads</p>${net}` +
+      (drivers ? `<p class="note">Drivers: the <a href="${DRIVERS}" target="_blank" rel="noopener">Intel Driver &amp; Support Assistant</a> updates the graphics and NPU drivers. Restart the laptop afterwards, then start first_launch.bat again.</p>` : "") +
+      (blocked ? `<div class="card problem"><h2>Something has to be settled first</h2><p>The lines in red above stop the installation. Fix them, then check again.</p></div>` : "") +
+      `<div class="actions"><button class="btn primary" data-next ${blocked || state.net_pending ? "disabled" : ""}>Continue</button>` +
+      `<button class="btn" data-act="recheck">Check again</button></div>`;
+  },
+
+  tools() {
+    const job = jobOf("tools");
+    const intro = "uv is a small, open-source tool that installs Python and the Studio's packages, into this folder. It is the only thing the Studio needs to be there before it.";
+    if (job && job.running) return head(2, "The installer", intro) + working(job, job.action === "uv-winget" ? "Installing uv with winget" : "Downloading uv");
+    if (state.uv.path) {
+      return head(2, "The installer", intro) +
+        `<div class="card good"><h2>uv is here</h2><p>${esc(state.uv.version)} · ${esc(state.uv.path)}</p></div>` +
+        `<div class="actions"><button class="btn primary" data-next>Continue</button></div>`;
+    }
+    const buttons = (state.uv.winget
+      ? `<button class="btn primary" data-act="uv-winget">Install uv with winget</button><button class="btn" data-act="uv-download">Download it into this folder instead (25 MB)</button>`
+      : `<button class="btn primary" data-act="uv-download">Download uv into this folder (25 MB)</button>`) +
+      `<button class="link" data-act="uv-recheck">I installed it myself: check again</button>`;
+    const ways = state.uv.winget
+      ? "With winget, Windows' own installer, uv is installed for your account like any program. Downloaded into this folder instead, it stays inside the project (a .tools subfolder) and is removed with it. Either way no administrator right is needed."
+      : "It is fetched from uv's own releases on GitHub, checked against its published checksum, and kept inside the project (a .tools subfolder): nothing is installed elsewhere, and no administrator right is needed.";
+    return head(2, "The installer", intro) +
+      (job && job.exit !== null && job.exit !== 0 && !job.running ? failed(job, () => buttons) :
+        `<div class="card"><h2>uv is not on this laptop yet</h2><p>${ways}</p></div><div class="actions">${buttons}</div>`) +
+      (step("tools").message && !job ? `<p class="note">${esc(step("tools").message)}</p>` : "");
+  },
+
+  environment() {
+    const job = jobOf("environment");
+    const current = step("environment");
+    const intro = "Python and the AI runtimes (OpenVINO among them) are installed into this folder: about 2 GB on the disk. It takes from two minutes on a fast connection to a quarter of an hour on a slow one, most of it downloading.";
+    if (!state.uv.path) return head(3, "The Studio", intro) + `<div class="card"><h2>The installer comes first</h2><p>Step 2 gets it.</p></div><div class="actions"><button class="btn primary" data-go="tools">Go to step 2</button></div>`;
+    if (job && job.running) return head(3, "The Studio", intro) + working(job, "Installing") + `<p class="note">A line that does not move for a minute is a large file coming down. Keep the laptop plugged in and awake.</p>`;
+    if (current.state === "ok") {
+      return head(3, "The Studio", intro) + `<div class="card good"><h2>Installed</h2><p>${esc(current.message || "The environment is in place.")}</p></div>` +
+        `<div class="actions"><button class="btn primary" data-next>Continue</button><button class="btn" data-act="sync">Install again</button></div>`;
+    }
+    if (job && job.exit !== null && job.exit !== 0) {
+      return head(3, "The Studio", intro) + failed(job, (hint) =>
+        `<button class="btn primary" data-act="sync">Try again</button>` +
+        (hint.option === "certs" ? `<button class="btn" data-act="sync" data-option="certs">Try again with Windows' certificates (company network)</button>` : ""));
+    }
+    const again = state.environment.present;
+    return head(3, "The Studio", intro) +
+      (again ? `<div class="card"><h2>An installation is already here</h2><p>Installing again brings it up to date with this version of the project. It only fetches what changed.</p></div>` : "") +
+      `<div class="actions"><button class="btn primary" data-act="sync">${again ? "Bring it up to date" : "Install"}</button></div>` +
+      (current.message && !again ? `<p class="note">${esc(current.message)}</p>` : "") +
+      `<p class="note">What is installed outside this folder: Python itself, which uv keeps for your account, and a cache of the downloaded packages. Nothing needs an administrator.</p>`;
+  },
+
+  chips() {
+    const job = jobOf("chips");
+    const intro = "The AI runtime that was just installed is asked which chips it can really use. This is the check that counts: a chip it does not list cannot run a demo.";
+    if (step("environment").state !== "ok" && !state.probe) {
+      return head(4, "The chips", intro) + `<div class="card"><h2>The Studio comes first</h2><p>Step 3 installs it.</p></div><div class="actions"><button class="btn primary" data-go="environment">Go to step 3</button></div>`;
+    }
+    if (job && job.running) return head(4, "The chips", intro) + working(job, "Asking the AI runtime") + `<p class="note">The first time, this takes about a minute: every package is opened once.</p>`;
+    const probe = state.probe;
+    if (!probe) {
+      return head(4, "The chips", intro) + (job && job.exit ? failed(job, () => `<button class="btn primary" data-act="probe">Check again</button>`) :
+        `<div class="actions"><button class="btn primary" data-act="probe">Check the chips</button></div>`);
+    }
+    const missing = probe.chips.filter((chip) => !chip.found);
+    const chips = `<div class="chips">` + probe.chips.map((chip) =>
+      `<div class="chip${chip.found ? " found" : ""}"><strong>${esc(chip.name)}<span>${chip.found ? MARK.ok : "!"}</span></strong><p>${esc(chip.detail)}</p></div>`).join("") + `</div>`;
+    const errors = probe.errors.map((error) =>
+      `<div class="card problem"><h2>${esc(error.name)} does not load</h2><p>${told(error.help)}</p></div><pre class="log">${esc(error.error)}</pre>`).join("");
+    return head(4, "The chips", intro) + chips + errors +
+      (missing.length && !probe.errors.length ? `<div class="card"><h2>A chip is missing</h2><p>The Studio works without it: its demos use another chip, and the option is greyed out. To get it, update the driver with the <a href="${DRIVERS}" target="_blank" rel="noopener">Intel Driver &amp; Support Assistant</a>, restart, and start first_launch.bat again.</p></div>` : "") +
+      `<p class="facts"><span>Python <b>${esc(probe.python)}</b></span>` + probe.packages.filter((p) => ["openvino", "torch", "onnxruntime"].includes(p.name)).map((p) => `<span>${esc(p.name)} <b>${esc(p.version.split("-")[0])}</b></span>`).join("") + `</p>` +
+      `<div class="actions"><button class="btn primary" data-next ${probe.errors.length ? "disabled" : ""}>Continue</button><button class="btn" data-act="probe">Check again</button></div>`;
+  },
+
+  models() {
+    const intro = "A demo needs its model on the disk before it can run. Fetch them now, on a good connection, rather than in front of an audience. They are kept outside the project, in your profile, and found again by any later version.";
+    const studio = state.studio;
+    if (!settled("chips")) return head(5, "The models", intro) + `<div class="card"><h2>The chips come first</h2><p>Step 4 checks them.</p></div><div class="actions"><button class="btn primary" data-go="chips">Go to step 4</button></div>`;
+    if (studio.state === "failed") {
+      return head(5, "The models", intro) + `<div class="card problem"><h2>The Studio did not start</h2><p>${esc(studio.message)}</p></div>` +
+        `<div class="actions"><button class="btn primary" data-act="studio-start">Try again</button><button class="btn" data-skip>Skip the models for now</button></div>`;
+    }
+    if (studio.state !== "running" || !models) {
+      return head(5, "The models", intro) + `<p class="working"><span class="spinner"></span>Starting the Studio, which does the downloading. Its very first start takes up to two minutes...</p>` +
+        `<div class="actions"><button class="btn" data-skip>Skip the models for now</button></div>`;
+    }
+    const all = models.models;
+    const have = (keys) => keys.every((key) => (all.find((model) => model.key === key) || {}).cached);
+    // What is left to fetch of a set: its size, or that it is small when its host gave none.
+    const left = (keys) => (have(keys) ? "ready" : weight(keys) ? gb(weight(keys)) : "a few MB");
+    const weight = (keys) => keys.reduce((sum, key) => { const model = all.find((entry) => entry.key === key); return sum + (model && !model.cached ? model.size_bytes || 0 : 0); }, 0);
+    const wanted = keysOf(chosenSet);
+    const need = weight(wanted);
+    const missing = wanted.length > 0 && !have(wanted);  // something to fetch, whatever its host says it weighs
+    const free = state.probe && state.probe.model_cache_free_gb;
+    if (models.running) {
+      const total = models.run_total_bytes || 0;
+      const share = total ? Math.min(100, (models.done_bytes / total) * 100) : 0;
+      const current = all.find((model) => model.key === models.current);
+      return head(5, "The models", intro) +
+        `<p class="working"><span class="spinner"></span>Downloading ${esc(current ? current.label : "the models")}</p>` +
+        `<div class="bar"><i style="width:${share.toFixed(1)}%"></i></div>` +
+        `<p class="progress-line"><span>${gb(models.done_bytes)} of ${gb(total)}</span><span>${gb(models.bytes_per_second)}/s</span><span>${models.eta_seconds ? clock(models.eta_seconds) + " left" : ""}</span></p>` +
+        `<div class="modellist">` + all.filter((model) => model.state !== "ready" || wanted.includes(model.key)).filter((model) => model.state !== "missing").map((model) =>
+          `<div><span>${esc(model.label)}</span><span class="${model.state === "ready" ? "ready" : ""}">${esc(model.state === "ready" ? "ready" : model.state)}</span></div>`).join("") + `</div>` +
+        `<div class="actions"><button class="btn" data-models="stop">Stop</button></div><p class="note">Keep the laptop plugged in and awake. Stopped or interrupted, a download takes up where it left off.</p>`;
+    }
+    const errors = Object.entries(models.errors || {});
+    const sets = SETS.map((set) => {
+      const keys = keysOf(set.id);
+      const amount = weight(keys);
+      const done = keys.length > 0 && have(keys);
+      return `<label class="set${set.id === chosenSet ? " on" : ""}"><input type="radio" name="set" value="${set.id}"${set.id === chosenSet ? " checked" : ""} />` +
+        `<b>${esc(set.title)}</b><span class="size${done ? " have" : ""}">${done ? "on this laptop" : set.id === "custom" && !keys.length ? "" : amount ? gb(amount) : "a few MB"}</span><small>${esc(set.text)}</small></label>`;
+    }).join("");
+    const demos = chosenSet !== "custom" ? "" : `<div class="demos">` + Object.entries(DEMOS).map(([id, name]) => {
+      const keys = keysOfDemo(id);
+      return `<label><input type="checkbox" data-demo="${id}"${chosenDemos.has(id) ? " checked" : ""} /> ${esc(name)}<span>${left(keys)}</span></label>`;
+    }).join("") + `</div>`;
+    const tight = free !== null && free !== undefined && need / 1e9 > free - 2;
+    return head(5, "The models", intro) +
+      (errors.length ? `<div class="card problem"><h2>${errors.length === 1 ? "One model" : errors.length + " models"} did not come down</h2><p>${esc(errors.map(([key, why]) => (all.find((m) => m.key === key) || { label: key }).label + ": " + why).join(" · "))} Downloading again takes up where it stopped.</p></div>` : "") +
+      `<div class="sets">${sets}</div>${demos}` +
+      `<p class="facts"><span>To download: <b>${need ? gb(need) : missing ? "a few MB" : wanted.length ? "nothing, it is all here" : "nothing chosen"}</b></span>` +
+      (free !== null && free !== undefined ? `<span>Free on the disk: <b>${free} GB</b></span>` : "") +
+      `<span>On this laptop already: <b>${models.ready_count} of ${models.total_count}</b> models</span></p>` +
+      (tight ? `<div class="card problem"><h2>Not enough room for this set</h2><p>It needs ${gb(need)} and the disk has ${free} GB free. Choose a smaller set, or free some space.</p></div>` : "") +
+      `<div class="actions"><button class="btn primary" data-models="start" ${!missing || tight ? "disabled" : ""}>Download ${need ? gb(need) : ""}</button>` +
+      `<button class="btn${missing ? "" : " primary"}" data-models="done">${missing ? "Continue without them" : "Continue"}</button></div>` +
+      `<p class="note">Sizes are what is still to download; a size the model's host could not give counts as nothing. A demo whose model is missing fetches it the first time it is started, and says so.</p>`;
+  },
+
+  ready() {
+    const studio = state.studio;
+    const probe = state.probe;
+    const chips = probe ? probe.chips.filter((chip) => chip.found).map((chip) => chip.name).filter((name, index, list) => list.indexOf(name) === index).join(", ") : "";
+    const intro = "The Studio is installed on this laptop. From now on it starts with start_launcher.bat, and works with the network off once its models are here.";
+    if (finished) {
+      return `<p class="kicker">Done</p><h1>The Studio is open</h1><p class="lead">It opened in another tab. This page has done its work and can be closed. The black window is the Studio now: closing it stops the Studio.</p>` +
+        `<div class="actions"><a class="btn primary" style="text-decoration:none;display:inline-block" href="${esc(studio.url)}">Go to the Studio</a></div>`;
+    }
+    if (!settled("chips")) return head(6, "Ready", intro) + `<div class="card"><h2>Not quite</h2><p>The earlier steps are not finished.</p></div><div class="actions"><button class="btn primary" data-go="${firstOpen()}">Take up where it stopped</button></div>`;
+    const waiting = studio.state !== "running";
+    return head(6, "Ready", intro) +
+      `<div class="rows">` +
+      row({ state: "ok", label: "Chips", value: chips || "CPU", help: "Each demo lets you pick one, and the panel on the right of the Studio shows which is working." }) +
+      row({ state: models && models.ready_count ? "ok" : "info", label: "Models", value: models ? models.ready_count + " of " + models.total_count + " on this laptop" : "none fetched yet",
+        help: "More can be fetched at any time with Prepare models, at the bottom of the Studio." }) +
+      row({ state: "info", label: "First thing to try", value: "Auto Demo", help: "On the start screen: the Studio plays its demos by itself and says what each chip is doing. Manual demo opens every demo with its settings." }) +
+      `</div>` +
+      (studio.state === "failed" ? `<div class="card problem"><h2>The Studio did not start</h2><p>${esc(studio.message)}</p></div>` : "") +
+      `<p><label style="cursor:pointer"><input type="checkbox" id="shortcut"${shortcut ? " checked" : ""} /> Put a shortcut to the Studio on the desktop</label></p>` +
+      `<div class="actions"><button class="btn primary" data-open ${waiting && studio.state !== "failed" ? "disabled" : ""}>${waiting && studio.state !== "failed" ? "Starting the Studio (up to two minutes the first time)..." : "Open the Studio"}</button>` +
+      (studio.state === "failed" ? `<button class="btn" data-act="studio-start">Try starting it again</button>` : "") + `</div>` +
+      `<p class="note">Next time: double-click start_launcher.bat in the project folder (or the desktop shortcut). To update or repair the installation, run first_launch.bat again.</p>`;
+  },
+};
+
+// ---------------------------------------------------------------- the models
+
+function keysOfDemo(id) {
+  // What a demo needs to run on the Intel chips: its models, but for the
+  // stand-ins the CPU-only engine uses in their place.
+  return models.models.filter((model) => model.demos.includes(id) && !model.key.endsWith("-portable")).map((model) => model.key);
+}
+function keysOf(setId) {
+  if (!models) return [];
+  const set = SETS.find((entry) => entry.id === setId);
+  if (set.keys === null) return models.models.map((model) => model.key);
+  if (setId === "custom") return [...new Set([...chosenDemos].flatMap(keysOfDemo))];
+  // The page builder's planner: the NPU's own build where there is an NPU.
+  const npu = !!(state.probe && state.probe.chips.some((chip) => chip.name === "NPU" && chip.found));
+  return set.keys.map((key) => (key === "PLANNER" ? (npu ? "notes-8b-npu-ov" : "notes-8b-ov") : key)).filter((key) => models.models.some((model) => model.key === key));
+}
+async function lookAtModels() {
+  if (finished || !state || state.studio.state !== "running" || !["models", "ready"].includes(view)) return;
+  try {
+    models = await call("/studio/api/models");
+    draw(false);
+  } catch (error) {
+    // The Studio is busy starting, or was closed: the next look will tell.
+  }
+}
+async function modelsOrder(what) {
+  try {
+    if (what === "start") await call("/studio/api/models/prefetch", { method: "POST", body: JSON.stringify({ keys: keysOf(chosenSet) }) });
+    if (what === "stop") await call("/studio/api/models/prefetch/stop", { method: "POST", body: "{}" });
+    if (what === "done") { await act("mark", { step: "models", state: models && models.ready_count ? "ok" : "skipped" }); next(); return; }
+    $("banner").hidden = true;
+  } catch (error) {
+    $("banner").textContent = error.message;
+    $("banner").hidden = false;
+  }
+  await lookAtModels();
+}
+
+// ---------------------------------------------------------------- clicks
+
+document.addEventListener("click", async (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  if (!target) return;
+  const stepButton = target.closest("[data-go]");
+  if (stepButton) return go(stepButton.dataset.go);
+  if (target.closest("[data-next]")) return next();
+  const order = target.closest("[data-act]");
+  if (order) return act(order.dataset.act, order.dataset.option || null);
+  const modelOrder = target.closest("[data-models]");
+  if (modelOrder) return modelsOrder(modelOrder.dataset.models);
+  if (target.closest("[data-skip]")) { await act("mark", { step: "models", state: "skipped" }); return next(); }
+  if (target.closest("[data-open]")) {
+    if (shortcut) await act("shortcut");
+    await act("open-studio");
+    finished = true;
+    draw(true);
+    // The script is told last: it stops answering once it has heard.
+    try { await call("/api/action", { method: "POST", body: JSON.stringify({ name: "finish", option: null }) }); } catch (error) { /* it has gone, as asked */ }
+  }
+});
+document.addEventListener("change", (event) => {
+  const target = event.target;
+  if (target.name === "set") { chosenSet = target.value; draw(true); }
+  if (target.dataset && target.dataset.demo) { if (target.checked) chosenDemos.add(target.dataset.demo); else chosenDemos.delete(target.dataset.demo); draw(true); }
+  if (target.id === "shortcut") shortcut = target.checked;
+});
+
+setInterval(look, 800);
+setInterval(lookAtModels, 1000);
+look();
+</script>
+</body>
+</html>

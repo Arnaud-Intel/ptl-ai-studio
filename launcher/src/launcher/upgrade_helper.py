@@ -32,6 +32,24 @@ def log(message: str) -> None:
     print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {message}", flush=True)
 
 
+def uv_command(repo: Path) -> str:
+    """The installer, as the launcher finds it (updates.uv_command; said
+    again here because this file may use the standard library only): on the
+    PATH, named by the uv that started the launcher, or kept in the project
+    by the setup assistant. "uv" when none is found: the step then fails
+    with the system's own words."""
+    import shutil
+
+    found = shutil.which("uv")
+    if found:
+        return found
+    named = os.environ.get("UV")
+    if named and Path(named).is_file():
+        return named
+    local = repo / ".tools" / "uv" / ("uv.exe" if os.name == "nt" else "uv")
+    return str(local) if local.is_file() else "uv"
+
+
 def wait_for_exit(pids: list[int], timeout: float) -> bool:
     """True once every pid has exited, False if one is still there at the deadline."""
     deadline = time.monotonic() + timeout
@@ -104,7 +122,7 @@ def start_launcher(repo: Path, host: str, port: int) -> None:
         (repo / "logs").mkdir(exist_ok=True)
         with open(repo / "logs" / "launcher.log", "a", encoding="utf-8") as output:
             subprocess.Popen(
-                ["uv", "run", "panther-lake-launcher", *extra],
+                [uv_command(repo), "run", "panther-lake-launcher", *extra],
                 cwd=repo, stdout=output, stderr=subprocess.STDOUT, start_new_session=True,
             )
     log("Started the launcher again.")
@@ -147,7 +165,7 @@ def upgrade(
     if not waiter(args.wait_pids, _WAIT_SECONDS):
         log(f"The launcher's processes were still running after {_WAIT_SECONDS} s; carrying on anyway.")
 
-    sync = ["uv", "sync"]
+    sync = [uv_command(repo), "sync"]
     for extra in args.extra:
         sync += ["--extra", extra]
     ok = True

@@ -110,6 +110,13 @@ local_demo/
       errors.py                <- Conflict: the "not in a state to do that" error (-> HTTP 409)
       events.py / activity.py <- per-brick lifecycle phase (for /api/status) / device in use (for gauges)
       static/                  <- vanilla HTML/CSS/JS front end, no build step
+  setup/                   <- the setup assistant first_launch.bat opens, for a laptop with nothing installed
+    assistant.ps1           <- serves the page and does what it asks; Windows PowerShell 5.1, plain ASCII
+    index.html              <- the six steps, one file, nothing loaded from the web
+    get_uv.ps1              <- fetches uv into .tools\uv when winget is not there, and checks its SHA-256
+    probe.py                <- run in the new environment: which packages load, which chips OpenVINO lists
+  first_launch.bat         <- opens the assistant; "first_launch.bat console" runs first_launch.ps1 instead
+  start_launcher.bat       <- every later start; finds uv on the PATH or in .tools\uv
 ```
 
 This is a single [`uv` workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/):
@@ -235,6 +242,17 @@ policy, the 409-on-double-start contract). The same suite runs on every
 push and pull request via
 [`.github/workflows/test.yml`](.github/workflows/test.yml), on a plain
 Ubuntu runner with no Intel hardware.
+
+The setup assistant is PowerShell, so its own tests are too
+(`tests/setup_assistant.Tests.ps1`, `tests/first_launch.Tests.ps1`); on
+Windows `tests/test_setup_assistant.py` runs them with the rest, and CI,
+which is Linux, checks only what it can read: that the page's models and
+demos exist, that the command files keep Windows line endings, that the
+scripts are plain ASCII. To walk the page without installing anything,
+start it with a plan that replaces facts and commands:
+`powershell -File setup\assistant.ps1 -NoBrowser -Port 8768 -Plan plan.json`
+(every `Get-Override '<name>'` in the script is something a plan can
+replace: the checks, the internet test, where uv is, and each command).
 
 ### Check it the way CI will, before pushing
 

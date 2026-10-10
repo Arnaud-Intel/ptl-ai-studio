@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -243,9 +244,24 @@ def _upgrade_blocker() -> str | None:
             return f"Files tracked by git have local changes ({names}): commit or discard them first."
     except (GitError, ValueError) as exc:
         return f"Couldn't inspect this checkout: {_first_line(exc)}"
-    if shutil.which("uv") is None:
-        return "uv isn't on PATH, so the dependencies couldn't be updated: upgrade by hand."
+    if uv_command() is None:
+        return "uv isn't on PATH or in the project, so the dependencies couldn't be updated: upgrade by hand."
     return None
+
+
+def uv_command() -> str | None:
+    """Where the installer is: on the PATH; or the one that started this
+    program (uv names itself in the UV variable for what it runs); or the
+    copy the setup assistant keeps inside the project (.tools/uv) for a
+    laptop that had no installer and no way of installing one."""
+    found = shutil.which("uv")
+    if found:
+        return found
+    named = os.environ.get("UV")
+    if named and Path(named).is_file():
+        return named
+    local = REPO_ROOT / ".tools" / "uv" / ("uv.exe" if os.name == "nt" else "uv")
+    return str(local) if local.is_file() else None
 
 
 # --- the launcher's view: checked once in the background, prompted once ----------

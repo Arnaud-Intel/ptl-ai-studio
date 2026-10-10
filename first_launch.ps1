@@ -101,7 +101,7 @@ function Start-FirstLaunch {
 
         Write-Host "`n[1/5] Find the installer (uv)" -ForegroundColor Cyan
         $command = Get-Command uv -CommandType Application -ErrorAction SilentlyContinue
-        $script:Uv = if ($command) { $command.Source } else { Join-Path $env:USERPROFILE '.local/bin/uv.exe' }
+        $script:Uv = if ($command) { $command.Source } elseif (Test-Path "$PSScriptRoot/.tools/uv/uv.exe") { "$PSScriptRoot/.tools/uv/uv.exe" } else { Join-Path $env:USERPROFILE '.local/bin/uv.exe' }
         while (-not (Test-Path $script:Uv)) {
             Write-Host 'uv is missing. It installs the project and the required Python version.'
             Write-Host 'Install uv using your company-approved method: https://docs.astral.sh/uv/getting-started/installation/'
@@ -119,7 +119,8 @@ function Start-FirstLaunch {
             $command = Get-Command uv -CommandType Application -ErrorAction SilentlyContinue
             if ($command) { $script:Uv = $command.Source }
             # winget exposes a link here; a newly installed PATH is not visible in this process.
-            foreach ($candidate in @("$env:USERPROFILE/.local/bin/uv.exe", "$env:LOCALAPPDATA/Microsoft/WinGet/Links/uv.exe")) {
+            # ... and the setup assistant keeps a copy in this folder for a laptop that had none.
+            foreach ($candidate in @("$PSScriptRoot/.tools/uv/uv.exe", "$env:USERPROFILE/.local/bin/uv.exe", "$env:LOCALAPPDATA/Microsoft/WinGet/Links/uv.exe")) {
                 if (Test-Path $candidate) { $script:Uv = $candidate; break }
             }
         }

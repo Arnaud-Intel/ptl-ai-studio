@@ -1,0 +1,7 @@
+# Windows command files reach every machine with Windows line endings, by a
+# clone and by GitHub's "Download ZIP" alike. cmd.exe can lose its place in a
+# file that has bare line feeds (a "goto" that lands nowhere), and a ZIP
+# download is how a laptop with nothing installed gets this project.
+# "-text": kept byte for byte as committed, which is with CR LF.
+*.bat -text
+*.cmd -text
