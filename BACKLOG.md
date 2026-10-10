@@ -30,6 +30,35 @@ a new one or the deferred list, and moves its original wording to
 Sorted on 2026-10-10: nothing is waiting. The twenty-six entries that were
 here are under Original reports, each with the ticket it went into.
 
+- [ ] **Change one place of a generated page, by pointing at it.** Asked for
+  by the user on 2026-10-10, for the Page Agent and the HTML Creator: "target
+  modification on selected area of the page", in "a new tab using the
+  previous page as a starting point where we can point at places to comment
+  and change those". Today the only way to change a page is to build it
+  again: 30 s to over a minute, and everything that was right moves too (a
+  page is not the same twice on the GPU).
+  As understood: beside the page just built, a second tab opens on a copy of
+  it. Clicking a part of the page -- a heading, a card, a section, a picture
+  -- outlines it and pins a comment there ("shorter", "three columns", "a
+  warmer picture"); several can be pinned before anything is run. Applying
+  them gives the model the part pointed at and its comment, not the page: it
+  writes that part again and it is put back where it was, the rest left
+  byte for byte as it stood. For a picture in the Page Agent the comment
+  goes to the image model, by way of the planner. The page before the
+  change stays in the first tab, so the two can be compared, and a change
+  can be undone.
+  Why it suits the app: a section is a few hundred tokens where a page is
+  two to four thousand, so a change should come back in seconds on the
+  integrated GPU; and it shows a model working on what a person points at,
+  which a one-shot page does not. Not known, and to try before building:
+  whether the 30B coder rewrites one fragment well when the stylesheet is
+  somewhere else in the page (it may need to hand back a few rules of its
+  own with the fragment); how a click is caught inside the preview, which is
+  sandboxed (a small script in the copy shown, never in the page saved); what
+  the Page Agent's own checks -- figures carried from the brief, its layout
+  rules -- make of a page edited in pieces. It belongs with R39 for the Page
+  Agent, and is new for the HTML Creator. (filed 2026-10-10, user request)
+
 ## What we are showing
 
 The demo unit is a Dell XPS 14 (DA14260). These are the figures OpenVINO and
