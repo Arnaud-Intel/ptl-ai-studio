@@ -15,13 +15,13 @@ What goes in was decided with the user on 2026-10-08 and -09:
   started. Every sentence here is written in both.
 - Smart City plays only when the internet is reachable.
 - "Seeing and answering" (object detection beside document Q&A) played
-  for a day and was taken apart on 2026-10-11: the user found that nobody
+  for an evening and was taken apart on 2026-10-09: the user found that nobody
   could tell what the Q&A half was showing. Its two halves are scenes of
   their own now -- the documents, asked without the files and then with
   them; and the camera, with the visitor boxed and put into a sentence.
   `HELD_BACK` stays for the next scene written before its demo is ready.
 - Which scenes play is chosen when the loop is started (asked for by the
-  user on 2026-10-10): every scene has a key the start screen ticks, and a
+  user on 2026-10-09): every scene has a key the start screen ticks, and a
   camera is only switched on if the person starting the loop left it in.
 
 Writing a beat: one or two sentences, plain words, no figure that is not on
@@ -373,7 +373,7 @@ def herd_and_line(stand: Stand, loop: int) -> Scene | Skip:
 
 
 # What the documents scene asks. Short enough to be read standing up, about
-# the bundled folder, and checked on 2026-10-11 with the 1.5B model on the
+# the bundled folder, and checked on 2026-10-09 with the 1.5B model on the
 # NPU: with the folder, both get the answer that is in the files; alone, the
 # first is answered "the team's captain, on September 16, 2023" -- made up,
 # word for word the same each time -- and the second "I don't have that
@@ -387,7 +387,7 @@ _DOCUMENT_FOLDER = "meridian-rollout-2026"
 
 def documents(stand: Stand, loop: int) -> Scene | Skip:
     """One question, asked twice of the same model: without the files, then
-    with them. Asked for by the user on 2026-10-11, in place of a scene that
+    with them. Asked for by the user on 2026-10-09, in place of a scene that
     answered a question beside a camera picture: "we can't really understand
     the principle behind the Q&A part"."""
     say = lambda english, french: _say(stand, english, french)  # noqa: E731
@@ -462,7 +462,7 @@ def documents(stand: Stand, loop: int) -> Scene | Skip:
 def camera(stand: Stand, loop: int) -> Scene | Skip:
     """Whoever stands in front of the laptop, boxed by the detector and put
     into a sentence by the vision model. Kept at the user's wish on
-    2026-10-11 ("it feels potentially engaging for people to be interacting
+    2026-10-09 ("it feels potentially engaging for people to be interacting
     with the demo camera"), with the commentary added to it.
 
     The sentence is plain, with no mood: the small model that gives a mood

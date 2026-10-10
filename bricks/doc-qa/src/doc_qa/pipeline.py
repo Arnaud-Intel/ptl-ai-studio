@@ -41,7 +41,7 @@ NOTHING_CLOSE = (
 
 # What the model is told when it is asked without the documents: the same
 # model, the same question, and nothing to read. It is there to show what
-# the documents change. Measured on the sample folder (2026-10-11, the 1.5B
+# the documents change. Measured on the sample folder (2026-10-09, the 1.5B
 # model on the NPU): of three questions about the fictional company it said
 # of two that it did not have the information, and of the third -- who
 # decides on the Lyon pilot, and when -- that it was "the team's captain",

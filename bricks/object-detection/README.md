@@ -107,7 +107,7 @@ Press `Ctrl+C` to stop.
    present a frame" differs per consumer while "how to detect objects in
    it" doesn't.
 
-## What its proofing pass found (2026-10-10)
+## What its proofing pass found (2026-10-09)
 
 The Auto Demo's "Seeing and answering" scene waited for this brick to be
 gone over (the scene has since become "The camera sees you": the detector

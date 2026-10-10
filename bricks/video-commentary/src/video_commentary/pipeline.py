@@ -48,7 +48,7 @@ SEE_PROMPT = "In one short sentence of at most 20 words, say what is happening i
 # guessing at an age or a gender in front of the person is how a stand gets
 # remembered for the wrong thing (see the README: no mood judges anybody).
 #
-# Tried on the laptop's own camera (2026-10-11). It called its one subject
+# Tried on the laptop's own camera (2026-10-09). It called its one subject
 # "a person" every time, and said every time that they were "wearing
 # glasses" -- three lines of three with glasses left out of the list, five
 # of five with glasses in it. Asking is not enough: `about_what_they_do`

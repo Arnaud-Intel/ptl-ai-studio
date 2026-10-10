@@ -4,360 +4,222 @@
 
 <p align="center">
   <a href="https://github.com/Arnaud-Intel/ptl-ai-studio/tags"><img src="https://img.shields.io/github/v/tag/Arnaud-Intel/ptl-ai-studio?label=version&color=0068B5" alt="Version" /></a>
-  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.11%2B-0068B5" alt="Python" /></a>
+  <img src="https://img.shields.io/badge/Intel%20Core%20Ultra-Lunar%20Lake%20%C2%B7%20Panther%20Lake-0068B5" alt="Intel Core Ultra: Lunar Lake and Panther Lake" />
   <a href="https://docs.openvino.ai/"><img src="https://img.shields.io/badge/runtime-OpenVINO-8A2BE2" alt="OpenVINO" /></a>
   <img src="https://img.shields.io/badge/cloud%20calls-zero-4ade80" alt="Cloud calls: zero" />
-  <img src="https://img.shields.io/badge/platform-Windows-0078D6" alt="Platform: Windows" />
+  <img src="https://img.shields.io/badge/platform-Windows%2011-0078D6" alt="Platform: Windows 11" />
   <a href="https://github.com/Arnaud-Intel/ptl-ai-studio/actions/workflows/test.yml"><img src="https://github.com/Arnaud-Intel/ptl-ai-studio/actions/workflows/test.yml/badge.svg" alt="Tests" /></a>
 </p>
 
-**A local AI Studio for Intel Panther Lake -- thirteen on-device AI demos,
-one launcher, zero cloud calls.**
+**Fifteen AI demos that run on the laptop in front of you, and a show that
+plays them by itself. For Intel Core Ultra laptops: Lunar Lake and Panther
+Lake. One launcher, no cloud.**
 
-Speech translation. A voice assistant that talks back in your own voice.
-Live meeting notes. Object detection. Receipt-to-spreadsheet automation
-that runs your CPU and GPU *at the same time*. Every demo here runs
-entirely on the machine in front of you -- no API key, no network call, no
-data that leaves the device -- and every one can be pointed at your Intel
-CPU, integrated GPU, or NPU and show you, on a live gauge, exactly which
-chip is doing the work.
+- **Every demo runs on the machine**: no API key, no account, nothing sent
+  anywhere. Once its models are downloaded it works with the network off.
+- **You choose the chip** -- CPU, integrated GPU or NPU -- and a hardware
+  panel shows which one is working, how fast, and how many watts it costs.
+- **Auto Demo** plays the demos in a loop and tells each one as a short
+  story, in English or French: for a stand, a meeting, or a screen nobody
+  is driving.
 
-This isn't a slide deck about on-device AI. It's thirteen working
-applications that prove it.
+<p align="center">
+  <img src="docs/screenshot-stage-page.png" alt="The Auto Demo's stage: a caption on top, the plan, six generated pictures and the finished web page in the middle, and the NPU, integrated GPU and CPU down the right with what each one did" width="860" />
+</p>
+<p align="center"><sub>One request, one web page: planned on the NPU, illustrated and written on the integrated GPU, in under four minutes, with no graphics card.</sub></p>
 
-## Get it running
+## Which laptops
 
-**First time on Windows? Download and extract the whole project (or clone it),
-then double-click [`first_launch.bat`](first_launch.bat) in the project root.**
-The guided helper finds or offers to install uv, installs the Intel/OpenVINO
-environment, checks device discovery and cache disk space, lets you download
-a speech starter, one demo, or all models, and opens the Studio. It shows
-download sizes before you confirm and offers retry/skip on download failures.
-You can rerun it to reuse existing downloads. Keep the window open while the
-Studio runs; troubleshooting output is saved in `logs/first-launch-*.log`.
-Corporate network or certificate errors may need your IT team's proxy/CA
-configuration. The helper does not change security settings or install drivers.
+| | Lunar Lake | Panther Lake |
+| --- | --- | --- |
+| Processor | Intel Core Ultra 200V series | Intel Core Ultra series 3 |
+| Chips the demos use | CPU, Arc integrated GPU, NPU | CPU, Arc integrated GPU, NPU |
+| System | Windows 11, current Intel graphics and NPU drivers | the same |
 
-For Smart City's YouTube cameras, the helper also checks the JavaScript runtime
-and downloader setup. If the runtime is missing, choose **I** to install Deno
-with winget, **R** to check after a manual installation, or **S** to continue
-without YouTube. The helper refreshes its search path before checking again.
-See [Smart City connection recovery](bricks/smart-city-monitor/README.md#connection-recovery-and-setup-checks)
-for `smart-city-doctor`, cooldowns, and independent camera alternatives.
+- **No graphics card is needed.** A discrete GPU is used when there is one
+  (the Page Agent then runs its two GPU jobs at once) and never required.
+- **Memory decides which demos fit.** The models live in system memory,
+  which the integrated GPU shares. Most demos need a few gigabytes; the
+  three that use the 30B coding model (HTML Creator, Code Review, Page
+  Agent) need about 17 GB for it, and say so on their cards. Code Review
+  and HTML Creator can run a 1.5B model on the CPU instead.
+- **What was measured where.** Every figure and screenshot on this page
+  comes from a Panther Lake laptop (Dell XPS 14, Core Ultra X7 358H, 64 GB).
+  A Lunar Lake laptop runs the same build on the same three chips, at its
+  own speeds.
+- **Another PC?** The demos fall back to their CPU engines, and the options
+  that need an Intel GPU or NPU are greyed out with the reason.
 
-For a manual installation:
+## Install on a new device
 
-The only real prerequisite is [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
--- it fetches a compatible Python itself, so there's no separate Python
-install to get right:
+You need Windows 11, an internet connection for the installation, and
+disk space for the models you want: 150 MB for a first speech demo, about
+45 GB for all of them. No administrator rights.
+
+1. **Update the Intel drivers** (graphics and NPU), for instance with the
+   [Intel Driver & Support Assistant](https://www.intel.com/content/www/us/en/support/detect.html).
+   The installer does not touch drivers, and the NPU demos need a recent one.
+2. **Get the project.** With git (this is what lets the app upgrade itself
+   later):
+   ```bash
+   git clone https://github.com/Arnaud-Intel/ptl-ai-studio.git
+   ```
+   Or **Code > Download ZIP** on this page, and extract all of it.
+3. **Double-click `first_launch.bat`** in the project folder. It walks
+   through five steps and asks before each download:
+   1. finds [`uv`](https://docs.astral.sh/uv/), or offers to install it (uv brings its own Python);
+   2. installs the environment with the OpenVINO engines (a few minutes);
+   3. lists the chips it found -- CPU, GPU, NPU -- and the free disk space;
+   4. fetches models: a speech starter, one demo's, or all of them, sizes shown first, then the sample videos (113 MB);
+   5. starts the Studio and opens `http://127.0.0.1:8765`.
+4. **From then on, double-click `start_launcher.bat`.** Close its window
+   to stop the Studio, or run `stop_launcher.bat`.
+
+The helper can be run again: what is already downloaded is kept. Its log
+is in `logs/first-launch-*.log`. On a company network, a proxy or
+certificate error is for your IT team to settle; the helper changes no
+security setting.
+
+<details>
+<summary><b>Installing by hand, offline use, updates</b></summary>
 
 ```bash
 git clone https://github.com/Arnaud-Intel/ptl-ai-studio.git
 cd ptl-ai-studio
-uv sync --extra openvino
+uv sync --extra openvino      # without --extra: CPU engines only
 uv run panther-lake-launcher
 ```
 
-That opens `http://127.0.0.1:8765` in your browser. On Windows you can
-also just **double-click `start_launcher.bat`** -- same thing, in a window
-you can leave open and close to stop the server.
-
-**Staying up to date.** When the launcher starts it asks GitHub whether a
-newer version exists and, if one does, offers it once in a popup --
-*Upgrade now* or *Later* -- with what changed in each version it would
-jump through, and the same list again once it has upgraded. The footer keeps an
-**Upgrade** button (or says this copy is up to date). Upgrading stops the
-launcher, pulls the new version (`git pull --ff-only`), runs `uv sync` with
-the extras you have installed, and starts it again in a new window; the page
-reloads by itself and says how it went (the full log is `logs/upgrade.log`).
-It won't try what it can't do cleanly -- local changes to tracked files,
-local commits, another branch, a copy that isn't a git checkout, or a demo
-still running -- and says which.
-
-**What changed, and when.** Click the version number in the footer for the
-full history: every version this copy has been through, newest first, with
-the day it shipped and what it changed (a change with more to say opens on
-click). It is read from the copy's own git history, so it works offline.
-
-**Before a show.** The footer's **Prepare models** button lists every model
-the demos load -- what it is for, how big the download is, and whether this
-machine already has it -- and fetches what is missing, showing speed and time
-left. The same thing from a terminal: `uv run panther-lake-prefetch` (add
-`--list` to only look, or `--demo screen-ocr` for one demo's models).
-
-**Running offline.** Every demo infers locally, and the UI loads nothing
-from the web. Two things do need a connection, and both belong before the
-show rather than during it: installing the environment (`uv sync --extra
-openvino`) and fetching a model the first time a demo uses it. After that
-the suite runs with the network off -- `start_launcher.bat` starts from
-what is installed (`uv run --offline`) and only reaches for the network if
-something is missing, so a re-sync can't keep the app from starting.
-Three things still want a connection when they happen: the live city
-cameras (someone else's streams), the update check (it says it couldn't
-check and carries on), and the first run of a demo whose model isn't
-cached yet.
-
-Lost that window? **`stop_launcher.bat`** stops whatever is listening on
-8765 (pass a port to stop a copy elsewhere: `stop_launcher.bat 8766`).
-Worth knowing, because a running launcher keeps serving the code it
-started with: the UI updates when you reload, since static files are read
-per request, but the Python behind it does not. The footer says
-`v0.2.30 -- restart to load v0.2.31` when newer code is sitting on disk
-unstarted, and starting a second copy on a taken port refuses with a
-message instead of quietly leaving you on the old one.
-
-<details>
-<summary><b>What you need, and what the flags mean</b></summary>
-
-- **`uv sync`** installs every demo with its portable (CPU) engine.
-  **`uv sync --extra openvino`** additionally installs the OpenVINO engines
-  -- the ones that can target your iGPU and NPU. Use the `--extra` form on
-  Intel hardware; plain `uv sync` still gives you a fully working suite on
-  CPU. (`uv sync` makes the environment match exactly what you ask for, so
-  a later plain `uv sync` *removes* the OpenVINO extras again -- keep
-  passing `--extra openvino`.)
-- **Windows 11** for the full experience: the CPU/GPU/NPU gauges read
-  Windows' own performance counters, and "capture system audio" uses WASAPI
-  loopback. The demos themselves run elsewhere; the gauges just report
-  `N/A`.
-- **Models download on first use**, not at install: from ~100 MB for the
-  small speech models up to ~15 GB for the two coding demos. The status
-  line tells you when it's downloading rather than leaving you guessing,
-  and every run after that is fully offline.
-- **No Intel accelerator?** Everything still runs -- each demo falls back
-  to its portable CPU engine, and the OpenVINO option is disabled in the UI
-  with the reason shown.
+- **Models** are fetched the first time a demo needs them. To fetch them
+  ahead, use **Prepare models** in the footer (what each is for, its size,
+  whether this machine has it), or `uv run panther-lake-prefetch`
+  (`--list` to look, `--demo doc-qa` for one demo).
+- **Offline.** Install and fetch the models first; after that the Studio
+  starts and runs with the network off. Only live city cameras and the
+  update check want a connection.
+- **Updates.** A copy made with git checks GitHub when it starts and offers
+  the new version with what changed; **Upgrade** in the footer does the
+  rest and restarts. A copy from a ZIP is updated by downloading it again.
+- **YouTube city cameras** in the Smart City demo also need Deno or Node;
+  the helper checks and offers to install Deno. Everything else works
+  without. See the [Smart City notes](bricks/smart-city-monitor/README.md#connection-recovery-and-setup-checks).
 
 </details>
 
-<p align="center">
-  <img src="docs/screenshot-home.png" alt="The launcher's home grid: header telemetry gauges for CPU, both GPUs and the NPU, a Now running strip, and demo cards grouped by category" width="820" />
-</p>
-
-## What it's like to use
-
-Open a demo and press Start. It defaults to OpenVINO on your NPU/iGPU/GPU
-when one is available and portable CPU otherwise, and the status line says
-what is *actually* happening -- downloading a model the first time, loading
-it from disk after, running, or stopping -- instead of a static "please
-wait".
-
-**Leaving a demo doesn't stop it.** Start object detection on the iGPU, go
-back to the grid, open live translation on the NPU: the hardware panel on
-the right keeps both in view wherever you are. It lists power first, then
-every chip -- CPU, integrated GPU, discrete GPU if there is one, NPU -- each
-with its load and, under it, the demos running on it: name, its own number
-(frames per second, times real time, tokens per second) and a ✕ that stops
-it. A demo that is idle but still holds a model is listed too, and its ✕
-unloads the model. Reopening a demo picks up exactly where it is -- the
-video reattaches, an index built five minutes ago is still there.
-
-**Answers appear as they are written.** Document Q&A, code review, the HTML
-creator, screen OCR and meeting notes show their text word by word, with
-the tokens per second moving in the hardware panel while they write. Stop
-(beside the text, or the panel's ✕) ends an answer part-way: what was
-written stays, marked incomplete, and the model stays loaded for the next
-question.
+## Two ways in
 
 <p align="center">
-  <img src="docs/screenshot-running.png" alt="Two demos at once: the Now running strip lists Object Detection Overlay running on GPU.0 and the Commit and Code Review Assistant loading on GPU.1, with both GPU gauges lit and labelled" width="820" />
+  <img src="docs/screenshot-start.png" alt="The start screen: Auto Demo or Manual demo" width="49%" />
+  <img src="docs/screenshot-autodemo-start.png" alt="Starting the Auto Demo: what this machine has, the language, the camera, and a tick for each scene" width="49%" />
 </p>
 
-That attribution is real, not decorative: it comes from the exact device
-string each demo handed the inference runtime, not a guess. A demo left on
-Auto is given a real chip by the launcher before it starts -- the integrated
-GPU, or the fastest GPU for a big model -- so it appears under the chip it
-is actually on. (It used to be passed to OpenVINO's own `AUTO`, which hides
-which chip is working: such a demo showed up under no chip at all.)
+### Auto Demo
 
-## The demo suite
+The Studio presents itself: one demo on screen at a time, a caption that
+says what is happening and on which chip, and the chips at work down the
+right. Before it starts you choose the language, which scenes play, and
+whether the camera may be used. A click brings up *keep playing*, *pause*
+or *stop*; left alone, it carries on. It makes no sound.
 
-### Speech
-
-| Demo | What it does | Runs on |
+| Scene | What it shows | Chips |
 | --- | --- | --- |
-| **Live Speech Translation** | Any spoken language, live, straight to English text | CPU / NPU / GPU |
-| **Local Voice Assistant** | Say a wake word, ask a question, hear a spoken answer | CPU / NPU / GPU |
-| **Live Meeting Notes** | Transcribes a call and generates a running summary + action items on demand | CPU / NPU / GPU |
-| **Voice Clone Studio** | Enroll a 10-second voice sample, then speak any text back in that voice, with `[laugh]`-style sound tags | CPU (Chatterbox) / NPU / GPU (OpenVoice) |
-
-### Vision
-
-| Demo | What it does | Runs on |
-| --- | --- | --- |
-| **Webcam Background Effects** | Real-time background blur or replacement, no video ever leaves the machine | CPU / NPU; GPU temporarily gated for invalid masks |
-| **Object Detection Overlay** | Live labeled bounding boxes over a video file, a webcam or the screen | CPU / NPU / GPU |
-| **Screen / Image Text Extraction** | Pull text out of a screenshot or photo, with optional on-device translation | CPU / GPU † |
-| **Video Commentator** *(experimental)* | A model watches a video and says what is happening every few seconds, in the mood you pick -- upbeat, sports commentator, nature documentary, deadpan -- and aloud if you like | GPU (sees) **and** NPU (says), at once; CPU for the voice |
-| **Smart City Monitor** | Count pedestrians/cars/bikes per minute on live city cameras or local clips -- each feed pinnable to its own chip | CPU / NPU / GPU **each**, at once |
-
-### Text
-
-| Demo | What it does | Runs on |
-| --- | --- | --- |
-| **Local Document Q&A** | Chat with your own files -- retrieval-augmented, nothing indexed in the cloud | CPU / NPU / GPU |
-
-### Productivity
-
-| Demo | What it does | Runs on |
-| --- | --- | --- |
-| **Expense Report Extractor** | Point it at a folder of receipts, get structured expense lines -- OCR and the LLM run *concurrently* on two different chips | two chips, at once |
-| **Local Screen Memory** | Continuously indexes your own screen so you can semantically search it later -- OCR and embedding run *concurrently*, the same way | two chips, at once |
-| **Commit & Code Review Assistant** | Turn a git diff into a commit message and review notes, entirely locally | CPU / GPU ‡ |
-| **HTML Creator** | Describe a page, or point at a folder of documents, and get one self-contained HTML file back | CPU / GPU ‡ |
-| **Page Agent** *(experimental)* | One request -- a line, or a full brief -- becomes an illustrated page that looks designed: a small model plans it, an image model draws its six pictures, the coding model writes the HTML, and plain code conducts, art-directs and checks | NPU + GPU + GPU ‡, the two GPUs at once when there are two |
-
-Every "Runs on" cell is tested hardware routing, not a spec-sheet claim.
-
-† Screen / Image Text Extraction's OpenVINO engine is a 7B
-vision-language model. Its NPU compile fails on this hardware, so the NPU
-is offered but disabled with the reason shown, rather than left to fail
-with a compiler error -- see [`screen-ocr`'s README](bricks/screen-ocr/README.md).
-
-‡ These two ask for a 30B-parameter coding model on the OpenVINO engine, a
-mixture of experts with ~3B parameters active per token. It takes about
-17 GB of GPU memory, which Panther Lake's integrated GPU draws from shared
-system memory: on the Dell XPS 14's Arc B390 it streams ~38 tokens/s, first
-token in under half a second (tagged "30B model · 17 GB" in the launcher).
-A discrete GPU is faster -- ~65 tokens/s on an Arc Pro B60 -- and is used
-when present, but it isn't needed. The portable engine still runs
-everywhere, with a much smaller model.
-
-### Power and energy
-
-The panel's **Power usage** gauge is the processor package's power, read once a
-second from the chip's RAPL energy counters (Windows' "Energy Meter"
-performance counters) -- the whole package, with its CPU-core, graphics and
-memory rails in the tooltip. The NPU has no rail of its own, so its work
-shows only in the package total, as the "rest of the chip" the core and
-graphics rails don't cover.
-
-Answers and transcript lines carry what they cost: the package energy over
-the time they took, and the part of it above the idle baseline -- the median
-package power over the last two minutes in which no demo was running. Two
-limits are worth saying out loud. The baseline includes whatever else the
-laptop is doing, since "idle" means no demo, not a quiet machine. And package
-energy can't be split between demos running at the same time, so a result
-names the others that shared its window instead of claiming it alone. On a
-machine without the counters the gauge is hidden and results carry no
-energy line: no number beats a made-up one.
-
-### The concurrency showcase
-
-`expense-extract` and `smart-recall` are the ones to watch: each runs OCR
-on one chip while a second model -- an LLM, or an embedder -- works on a
-*different* chip at the same time, both gauges lit and labelled with the
-stage driving them. `smart-city-monitor` generalises the same idea to N:
-pin each video feed to its own chip and every one it's using lights up at
-once, correctly attributed per feed.
+| Three models, three chips, one web page | A request becomes an illustrated page: planned, drawn, written | NPU + GPU |
+| The camera sees you | Whoever is in front is boxed live, and a vision model says what is going on. Nothing is recorded | NPU + GPU |
+| Two chips share one job | Five worn receipts become expense lines; a doubtful figure is flagged, not trusted | GPU + NPU |
+| Street cameras / Count whatever passes | Two videos counted at once, one per chip: streets one turn, a herd and a bottling line the next | GPU + NPU |
+| The same question, without the files and with them | Asked of the model alone it makes something up; asked again with the files, it answers from them | NPU |
+| A video, watched and commented on | A plain sentence about each frame, then said again as a sports commentator or a nature documentary | GPU + NPU |
 
 <p align="center">
-  <img src="docs/screenshot-expense-extract.png" alt="Expense Report Extractor: OCR on the CPU and the LLM on GPU.1, both gauges lit and labelled with their stage, and three receipts structured into vendor, date, amount and category" width="820" />
+  <img src="docs/screenshot-stage-receipts.png" alt="Five receipts, each beside the expense line made of it; one amount is flagged to check" width="49%" />
+  <img src="docs/screenshot-stage-streets.png" alt="Two street videos with boxes drawn on people and cars, one on the integrated GPU and one on the NPU, both at 24 frames a second" width="49%" />
+</p>
+<p align="center">
+  <img src="docs/screenshot-stage-documents.png" alt="One question asked twice: alone the model invents an answer, with the files it gives the right one, and the files it used are marked" width="49%" />
+  <img src="docs/screenshot-stage-commentary.png" alt="A video of cattle on a road with a spoken-style comment as a subtitle, and what the vision model actually saw underneath" width="49%" />
 </p>
 
-Every content-hungry demo ships with a "Try a sample" picker -- named
-example prompts, diffs and questions, a fictional company's documents
-(`sample-data/`) for `doc-qa` and `html-creator`'s document mode, and three
-synthetic receipts for `expense-extract` -- so there's always something
-real to press Start on without hunting for your own files first.
+How it is built, and what was measured: [docs/AUTO_DEMO.md](docs/AUTO_DEMO.md).
 
-The HTML Creator's samples are built to be watched: a travel site that
-places seven bundled pictures (the model is told their names and captions,
-and the ones it uses are embedded into the page), a playable brick-breaker
-game, an animated infographic of this laptop's three chips, a product page
-with a lamp that follows a slider, and an operations wall that moves by
-itself. Each takes two to three and a half minutes on the integrated GPU;
-**Full screen** shows the result at the size it was written for. A page can differ with what the model generated before it; tick
-**Same page every time** to load the model afresh for each page (about 20 s
-more) and get the page you rehearsed. Point "Pictures the page may use" at
-a folder of your own images to get them on a page too.
+### Manual demo
 
-Also on the roadmap and already visible as "Coming soon" cards: an inbox
-triage & draft assistant, and live noise suppression.
-
-## Why this is worth a look
-
-- **Genuine hardware routing, not a toggle that does nothing.** Every
-  switchable-backend demo runs [OpenVINO](https://docs.openvino.ai/) for
-  the Intel path, because `faster-whisper`, PyTorch and ONNX Runtime's
-  default provider are CPU/CUDA-only -- they physically cannot target an
-  NPU or iGPU. OpenVINO is what actually exposes `CPU` / `GPU` / `NPU` as
-  selectable devices on a chip like Panther Lake, which is the whole point
-  of demonstrating *local* AI *on this hardware*.
-- **Composable, not copy-pasted.** Thirteen demos, and the newest ones
-  barely add code: `meeting-notes` has no transcriber or LLM of its own --
-  it composes `live-translation` and `doc-qa` directly.
-  `code-review-assist` and `html-creator` add no model code either, each
-  composing `doc-qa`'s LLM for a different task. `smart-city-monitor`
-  composes `object-detection`'s detector, adding only tracking, counting
-  and multi-feed. `voice-assistant` composes three bricks and adds exactly
-  one new model (wake-word detection). Shared capture, voice-activity
-  detection, device discovery and model resolution live in one `core`
-  package every brick depends on.
-- **Verified against real hardware, not assumed.** Built and tested
-  against an actual Intel NPU and Arc GPUs, end to end -- down to finding,
-  and routing around, two real OpenVINO limitations: a 7B vision-language
-  model that won't compile for the NPU, and the same model failing under
-  the `AUTO` device. Both documented rather than hidden.
-- **Honest about what it's doing.** First-time model loads can take
-  minutes, so the launcher tracks each demo's real lifecycle --
-  downloading, loading, running, stopping, or failed -- and keeps a
-  persisted Activity Log of what happened, reachable from the header at any
-  time. Press Stop on a demo that's mid-inference and it says "Stopping"
-  until it genuinely has, rather than claiming to still be working.
-- **One launcher, no build step.** The front end is vanilla HTML/CSS/JS
-  served straight from FastAPI -- no npm install, no bundler.
+Every demo with its settings. Open one, pick an engine and a chip, press
+Start. Leaving a demo does not stop it: the hardware panel keeps every
+running demo in view under the chip it is on, with its own figure (frames
+or tokens per second) and a button to stop it. Demos that need content
+come with samples: a fictional company's documents, receipts, street
+videos, prompts.
 
 <p align="center">
-  <img src="docs/screenshot-activity-log.png" alt="The Activity Log listing recent lifecycle events per demo, each with a timestamp, the demo name and what happened" width="820" />
+  <img src="docs/screenshot-demo.png" alt="The Expense Report Extractor at work: receipts read on the integrated GPU while the NPU fills in the lines, both shown in the hardware panel with their speed and the power drawn" width="860" />
 </p>
 
-## Command line, if you'd rather skip the UI
+## The demos
 
-Every demo installs its own console script, and they take the same
-engine/device choices as the UI:
+| Demo | What it does | Chips |
+| --- | --- | --- |
+| **Live Speech Translation** | Any spoken language to English text, live | CPU · GPU · NPU |
+| **Live Meeting Notes** | Transcribes a call; summary and action items on demand | CPU · GPU · NPU |
+| **Local Voice Assistant** | Wake word, question, spoken answer | CPU · GPU |
+| **Voice Clone Studio** | Enrol a short voice sample, then speak any text in that voice | CPU |
+| **Webcam Background Effects** | Background blur or replacement, live | CPU · NPU |
+| **Object Detection Overlay** | Labelled boxes on a video file, a webcam or the screen | CPU · GPU · NPU |
+| **Screen / Image Text Extraction** | Reads the text in a screenshot or a photo, and can translate it | CPU · GPU |
+| **Smart City Monitor** | Counts people, cars and bikes on videos or live cameras | one chip per feed |
+| **Video Commentator** *(experimental)* | Watches a video and says what is happening, in a mood, aloud if you like | GPU + NPU |
+| **Local Document Q&A** | Answers from your own files and names them; can be asked without them, to compare | CPU · GPU · NPU |
+| **Expense Report Extractor** | A folder of receipts to reviewed expense lines and an Excel file | two chips at once |
+| **Local Screen Memory** | Indexes what was on screen so it can be searched later | two chips at once |
+| **Commit & Code Review Assistant** | A git diff to a commit message and review notes | CPU · GPU |
+| **HTML Creator** | A description, or a folder of documents, to one self-contained web page | CPU · GPU |
+| **Page Agent** *(experimental)* | One request to an illustrated page: three models, conducted by plain code | NPU + GPU |
+
+Each demo is a "brick" with its own README under [`bricks/`](bricks), and
+its own command:
 
 ```bash
-uv run live-translate --source system --engine openvino --compute-device NPU
-uv run voice-assistant --engine openvino --compute-device NPU
-uv run voice-clone-studio --record 15 --text "Hello from my own cloned voice."
+uv run doc-qa ./my-notes --engine openvino --compute-device NPU
+uv run object-detect --source file --engine openvino --compute-device GPU
 uv run expense-extract ./receipts --ocr-engine openvino --ocr-device GPU --llm-engine openvino --llm-device NPU
-uv run smart-recall record --ocr-engine openvino --ocr-device GPU --embed-engine openvino --embed-device NPU
-uv run code-review-assist --folder . --engine openvino
-uv run html-creator --prompt "a landing page for a small coffee shop" --engine openvino
-uv run smart-city-monitor --source "intersection.mp4|GPU.0" --source "crosswalk.mp4|NPU" --engine openvino
 ```
 
-Every one of them takes `--list-devices` to show what this machine can
-actually target, and `--help` for the rest. See each brick's own README
-for the detail.
+`--list-devices` shows what the machine can target; `--help` has the rest.
 
-## If something goes wrong
+## Good to know
 
-- **"only one usage of each socket address"** on startup -- a launcher is
-  already running on port 8765. Close it, or start this one somewhere else
-  with `uv run panther-lake-launcher --port 8766`.
-- **A demo seems stuck on its first run** -- it's almost certainly
-  downloading a model. The status line says so explicitly, and the
-  **Activity Log** in the header has the history, including anything that
-  failed and why.
-- **The UI looks wrong after an update** -- reload the page. Assets are
-  cache-busted per build, but a tab left open across an update can hold an
-  older copy.
+- **The numbers are real.** A chip's row shows the device the demo handed
+  to OpenVINO, not a guess. Power is the processor's own energy counter,
+  and an answer says what it cost over idle.
+- **It says what it cannot do.** A model that does not compile for a chip
+  is greyed out with the reason; a figure the receipts demo cannot find on
+  the receipt is flagged; the commentator shows what it saw beside what it
+  said.
+- **A first run is slow.** A demo downloads its model, then compiles it for
+  the chip; the status line says which. The Activity Log (top right) has
+  the history, errors included.
+- **Known limit.** The Voice Assistant and the Voice Clone Studio's
+  OpenVoice model must not be given the NPU for now: their voice model
+  does not compile there and takes the Studio down with it. Use the CPU.
+- **Port taken?** A Studio is already running: `stop_launcher.bat`, or
+  start another with `uv run panther-lake-launcher --port 8766`.
 
-## Under the hood
+## For contributors
 
-One [`uv` workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/),
-one shared `.venv`, every brick and the launcher installed together so they
-can depend on each other freely. The full layout, the pattern for adding a
-brick, the test suite (`uv run pytest` -- pure logic plus the launcher's
-API contract, run on every push) and the auto-versioning mechanism (the
-badge at the top updates itself on every merge to `main`) are in
-[CONTRIBUTING.md](CONTRIBUTING.md).
+One [`uv` workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/):
+a `core` package, one package per brick, and a FastAPI launcher with a
+plain HTML/CSS/JS front end, no build step. Bricks reuse each other rather
+than copy: Meeting Notes has no model of its own, the Smart City Monitor
+borrows the detector, the Commentator borrows the vision model.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the layout, how to add a brick and
+the tests (`uv run pytest`, run on every push); [BACKLOG.md](BACKLOG.md)
+has what is planned and what is known to be wrong.
+
+The sample videos are openly licensed and credited in
+[`sample-data/videos`](sample-data/videos/README.md); the sample documents
+and receipts are fictional.
 
 ---
 
-Built for [Dell](https://www.dell.com/) hardware powered by
-[Intel(R) Core(TM) Ultra](https://www.intel.com/) and
-[Intel(R) Arc(TM) Graphics](https://www.intel.com/) -- see it running live
-in the launcher's own footer.
+Built for [Dell](https://www.dell.com/) laptops with
+[Intel(R) Core(TM) Ultra](https://www.intel.com/) processors and
+[Intel(R) Arc(TM)](https://www.intel.com/) graphics.

@@ -9,7 +9,7 @@ Two voices, both the studio's own (voice-clone-studio), neither new:
   does not enrol one itself: the launcher lends it the one enrolled in
   Voice Clone Studio, the command line clones the clip it is given.
 
-Measured on the XPS 14 (2026-10-10). Alone, one comment of about fifteen
+Measured on the XPS 14 (2026-10-09). Alone, one comment of about fifteen
 words, which is four and a half seconds of speech:
 
     the studio's voice, CPU       0.5 s

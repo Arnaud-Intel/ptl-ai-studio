@@ -444,7 +444,7 @@ def test_asked_about_people_the_vision_model_is_told_to_say_what_they_do_not_wha
 
 def test_what_people_look_like_is_taken_out_of_what_is_said_of_them():
     """Asked not to, the vision model still said "wearing glasses" in every
-    line about the one person in front of the camera (2026-10-11). What it
+    line about the one person in front of the camera (2026-10-09). What it
     says is cleaned of looks, or not said."""
     clean = pipeline.about_what_they_do
     # The lines it actually wrote, and what is said of them now.

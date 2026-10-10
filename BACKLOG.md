@@ -33,14 +33,22 @@ a new one or the deferred list, and moves its original wording to
   unplugged; the Voice Assistant's README offers `--compute-device NPU`.
   To check in the app itself, then either give the voice bounded shapes or
   keep it on the CPU whatever chip the rest of the brick uses, as the
-  commentator does. (filed 2026-10-10, voice timings)
+  commentator does. (filed 2026-10-09, voice timings)
+  *2026-10-10:* seen again through the two bricks' own code, with the B60
+  plugged in, no microphone opened and nothing played:
+  `VoiceAssistantSession(Engine.OPENVINO, device="NPU")` and
+  `VoiceCloneSession(Engine.OPENVINO, model="openvoice", device="NPU")`
+  both end the Python process with the same LLVM error (exit code 127).
+  So choosing the NPU for either demo in the launcher takes the launcher
+  down. The README no longer lists the NPU for them and says so under
+  "Good to know"; the menus still offer it.
 - [ ] **A cloned voice is slowed threefold by a video playing beside it.**
   Chatterbox made a line in 8 to 11 s alone and in 18 to 30 s inside the
   Video Commentator, where a 1080p video is decoded and re-encoded for the
   page at 30 frames a second on the same CPU. Its first line also pays a
   warm-up of about twenty seconds. Worth a look at how many threads it
   takes, and at warming it when the voice is chosen rather than at the
-  first line. (filed 2026-10-10, voice timings)
+  first line. (filed 2026-10-09, voice timings)
 
 - [ ] **Speech speed in the panel is untested with real audio.** Times real
   time is computed per utterance (unit-tested) for live translation and
@@ -140,7 +148,7 @@ a new one or the deferred list, and moves its original wording to
   whole turn in English and most of one in French. The receipts scene plays
   the five worn receipts, as asked. Next: a run of several hours, and the
   proofing pass on Object Detection for the fourth scene.
-  *2026-10-10:* asked for by the user: a scene for the Video Commentator,
+  *2026-10-09:* asked for by the user: a scene for the Video Commentator,
   the proofing pass on Object Detection, and a choice of scenes when the
   loop is started. All three are built. The start dialog ticks each scene
   (and whether the camera may be used); the commentator has its scene and
@@ -150,7 +158,7 @@ a new one or the deferred list, and moves its original wording to
   "Seeing and answering" plays, on a view of its own, with nothing held
   back. Watched in both languages on their own; not yet a whole turn of
   six scenes, nor a run of several hours.
-  *2026-10-11:* the user, having watched "Seeing and answering": "not very
+  *2026-10-09:* the user, having watched "Seeing and answering": "not very
   convincing -- we can't really understand the principle behind the Q&A
   part", and of the camera, "potentially engaging for people to be
   interacting with". It is two scenes now. **Documents**: one question
@@ -225,7 +233,7 @@ a new one or the deferred list, and moves its original wording to
   not on people. Also open: speaking the line (the voice brick exists), a
   scene on the Auto Demo's stage, and Qwen3-8B on the NPU for a voice that
   keeps to the facts. (filed 2026-10-09, user request)
-  *2026-10-10:* the scene is on the Auto Demo's stage, and the line can be
+  *2026-10-09:* the scene is on the Auto Demo's stage, and the line can be
   said aloud (asked for by the user: "an option for speaking the line
   aloud (with our cloned voice?)"). Off by default. The studio's own voice,
   read in a delivery that follows the mood, is made on the CPU in 0.6 to

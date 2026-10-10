@@ -42,7 +42,7 @@ integrated GPU and the language model on the NPU:
 So a comment is about a second and a half behind the picture, and a line
 every four seconds leaves time to read it.
 
-Said aloud, in the launcher while the video plays (2026-10-10):
+Said aloud, in the launcher while the video plays (2026-10-09):
 
 | | |
 | --- | --- |
@@ -85,7 +85,7 @@ watching when that is a webcam) the vision model is asked what people are
 doing and never what they look like -- and since asking was not enough, what
 it answers goes through `about_what_they_do`
 ([`pipeline.py`](src/video_commentary/pipeline.py)). Tried on the laptop's
-own camera on 2026-10-11, it called its one subject "a person" every time
+own camera on 2026-10-09, it called its one subject "a person" every time
 and wrote "wearing glasses" every time: three lines of three with glasses
 left out of the instruction, five of five with glasses named in it. The
 rule takes out what somebody wears, what is on their face, and whether they

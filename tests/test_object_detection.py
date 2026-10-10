@@ -1,4 +1,4 @@
-"""Object detection: what its proofing pass of 2026-10-10 settled.
+"""Object detection: what its proofing pass of 2026-10-09 settled.
 
 A video file is a source like the camera and the screen; a source that is
 wrong is refused before a model is loaded for it; a big picture is looked at

@@ -7,7 +7,7 @@ Three sources: a webcam, a screen, and a video file -- the studio's sample
 videos among them, so that the brick has something to show on a machine
 whose camera is covered and whose screen holds a spreadsheet.
 
-Checked on 2026-10-10 (the proofing pass the Auto Demo's "Seeing and
+Checked on 2026-10-09 (the proofing pass the Auto Demo's "Seeing and
 answering" waited for), YOLO11s on the XPS 14's integrated GPU:
 
 - A frame is handed to the detector, and to whoever draws it, no wider

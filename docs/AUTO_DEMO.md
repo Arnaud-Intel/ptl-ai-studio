@@ -11,9 +11,9 @@ stand has and what one turn of the loop will play, and takes four choices:
 the language the story is told in (English or French), whether to use the
 discrete GPU, larger text for a big display, and full screen.
 
-## Where it stands (2026-10-11)
+## Where it stands (2026-10-09)
 
-Decided with the user, 2026-10-08 to -11:
+Decided with the user, 2026-10-08 and -09:
 
 | Question | Answer |
 | --- | --- |
@@ -24,7 +24,7 @@ Decided with the user, 2026-10-08 to -11:
 | The discrete GPU? | Not always there: looked for when the loop starts, and the person starting it can leave it out |
 | A large display? | Sometimes: a setting of the loop, not a different build |
 | Somebody touches the machine? | A popup asks: keep playing, pause, or stop. Stop goes back to the start screen |
-| Which scenes? | Page Agent, Expense extraction on the worn receipts, the camera, the two counting scenes in turn, the documents, and the Video Commentator. **Which of them play is ticked when the loop is started** (asked for on 2026-10-10), and remembered. "Detection with Q&A" played for a day and was taken apart on 2026-10-11: nobody watching could tell what its Q&A half showed |
+| Which scenes? | Page Agent, Expense extraction on the worn receipts, the camera, the two counting scenes in turn, the documents, and the Video Commentator. **Which of them play is ticked when the loop is started** (asked for on 2026-10-09), and remembered. "Detection with Q&A" played for an evening and was taken apart the same day: nobody watching could tell what its Q&A half showed |
 
 Three things were put to the user as changes to what was asked, and built
 that way:
@@ -126,7 +126,7 @@ vision model to read, which the brick flags ("Amount could not be matched
 to the receipt text"); the stage shows that flag on its line and leaves it
 out of the total.
 
-**The two scenes added on 2026-10-10**, watched in English at 1920x1080
+**The two scenes added on 2026-10-09**, watched in English at 1920x1080
 and in French at 1280x680 (XPS 14, on battery, the B60 not plugged in), the
 other scenes unticked and the camera left out. Nothing overflowed, no
 sentence was set smaller, no scene failed, and nothing was left running or
@@ -142,7 +142,7 @@ loaded after the stop.
   rest of the loop; its comments are in English in either language, and
   its last sentence says that the small model embroiders -- on this run it
   put the herd "under a starry night sky" at midday.
-- **Seeing and answering at once** (55 s) -- retired the next day, below.
+- **Seeing and answering at once** (55 s) -- retired the same evening, below.
   The detector on a video (or the camera) for fourteen seconds alone, then
   the folder indexed and the question asked on the NPU. The frame rate held
   at 24 while the answer was written (41 tok/s); it dipped to 14 for a
@@ -151,7 +151,7 @@ loaded after the stop.
 
 What the Object Detection pass found and changed is in that brick's README.
 
-**"Seeing and answering" taken apart (2026-10-11).** The user, having
+**"Seeing and answering" taken apart (2026-10-09).** The user, having
 watched it: "the mixed one with vision and Q&A isn't very convincing. We
 can't really understand the principle behind the Q&A part" -- and of the
 vision half, "it feels potentially engaging for people to be interacting
