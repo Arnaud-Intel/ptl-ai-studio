@@ -128,6 +128,23 @@ def test_the_probe_reports_instead_of_failing(tmp_path, monkeypatch):
     assert isinstance(report["devices"], list) and "python" in report
 
 
+def test_a_studio_that_was_stopped_is_not_started_again():
+    """start_launcher.bat used to run the Studio a second time, "with the
+    network", whenever the first run ended with an error -- which is also how
+    a Studio stopped by stop_launcher.bat ends: it came back by itself in the
+    window that had started it. Whether the network is needed is now asked
+    before the Studio starts, with a command that does nothing; after that
+    the Studio is started once, whichever way."""
+    lines = [line.strip() for line in (ROOT / "start_launcher.bat").read_text(encoding="ascii").splitlines()]
+    code = [line for line in lines if line and not line.upper().startswith(("REM", "ECHO"))]
+    asked = code.index('"%PTL_UV%" run --offline python -c "pass" >nul 2>&1')
+    assert code[asked + 1] == "if errorlevel 1 goto online"
+    offline, online = code.index('"%PTL_UV%" run --offline panther-lake-launcher %*'), code.index('"%PTL_UV%" run panther-lake-launcher %*')
+    assert asked < offline < online
+    assert code[offline + 2] == "goto ended" and code[online - 1] == ":online"  # one or the other, never both
+    assert sum("panther-lake-launcher" in line for line in code) == 2
+
+
 @pytest.mark.skipif(os.name != "nt", reason="the assistant is Windows PowerShell")
 def test_the_assistant_hands_over_to_the_console_when_it_cannot_start(tmp_path):
     """Stopped before its page is up -- here by a plan that is not there, on

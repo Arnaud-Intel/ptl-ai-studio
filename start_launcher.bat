@@ -18,24 +18,31 @@ echo Close this window (or press Ctrl+C) to stop the server.
 echo.
 REM Offline first. uv re-syncs the environment on every run, and on a
 REM machine with no connection that attempt is what stops the app from
-REM starting at all. --offline uses what is installed and uv's cache; if
-REM something genuinely has to be fetched, the second attempt does that.
+REM starting at all. --offline uses what is installed and uv's cache; only
+REM if something genuinely has to be fetched is the network used.
+REM That is asked with a command that does nothing, before the Studio is
+REM started: a Studio that ends -- stopped by stop_launcher.bat, say -- must
+REM not be taken for one that could not start, and be started again.
+"%PTL_UV%" run --offline python -c "pass" >nul 2>&1
+if errorlevel 1 goto online
 "%PTL_UV%" run --offline panther-lake-launcher %*
 set "rc=%errorlevel%"
-if "%rc%"=="3" goto upgrading
-if "%rc%"=="0" goto done
+goto ended
 
+:online
+echo Something is missing from what is installed -- fetching it...
 echo.
-echo Could not start from what is installed -- trying again with the network...
 "%PTL_UV%" run panther-lake-launcher %*
 set "rc=%errorlevel%"
+
+:ended
 if "%rc%"=="3" goto upgrading
-if not "%rc%"=="0" (
-  echo.
-  echo Startup failed -- see the message above.
-  echo If a copy is already running, stop_launcher.bat will stop it.
-  echo To repair the installation, run first_launch.bat.
-)
+if "%rc%"=="0" goto done
+echo.
+echo The Studio has stopped.
+echo If it did not start at all, the message above says why: when a copy is
+echo already running, stop_launcher.bat stops it; to repair the installation,
+echo run first_launch.bat.
 goto done
 
 :notinstalled

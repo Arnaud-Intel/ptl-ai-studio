@@ -610,6 +610,15 @@ a new one or the deferred list, and moves its original wording to
   step 1 and links to Microsoft's installer, which could only be shown with
   a scripted report here, since this laptop has it; a Lunar Lake laptop.
   Models read from a folder with accents in its name were tried and load.
+  *Found on the way, and fixed:* a Studio stopped with `stop_launcher.bat`
+  came back by itself when the window that had started it was still open.
+  `start_launcher.bat` ran the Studio a second time "with the network"
+  whenever the first run ended with an error, and a Studio that is stopped
+  ends with one. Whether the network is needed is now asked before the
+  Studio starts, with a command that does nothing (0.15 s); the Studio is
+  then started once. Checked on the bare copy both ways: stopped, it stays
+  stopped; with one package taken out of the environment and an empty
+  cache, it says something is missing, fetches it and starts.
   (filed 2026-10-10, user request)
 - [ ] **The Page Agent's models failed to load on the GPU twice, while the
   receipts demo was at work.** From `logs/events.log`, 2026-10-09 at 13:24
