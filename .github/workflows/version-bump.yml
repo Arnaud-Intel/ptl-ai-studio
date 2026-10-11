@@ -6,6 +6,12 @@ name: Bump version on main
 # reads it, and the footer displays it), commits that bump back, and tags
 # the commit vX.Y.Z.
 #
+# A release that is more than the next patch is asked for in the commit
+# message: a push whose last commit says "[version X.Y.Z]" is given that
+# number, provided it is higher than the one in hand. The bot's commit and
+# tag are the same as for any other push, so the in-app update window, which
+# lists changes under the bump that followed them, needs nothing else.
+#
 # The `github.actor != 'github-actions[bot]'` guard exists so this
 # workflow's own bump commit can't re-trigger itself into an infinite
 # loop, in case a repo's settings ever change GitHub's default (pushes
@@ -26,12 +32,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Bump patch version
+      - name: Number the version
         id: bump
         run: |
           current="$(cat VERSION)"
           IFS='.' read -r major minor patch <<< "$current"
           new="$major.$minor.$((patch + 1))"
+          asked="$(git log -1 --format=%B | grep -oE '\[version [0-9]+\.[0-9]+\.[0-9]+\]' | head -n 1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+          if [ -n "$asked" ] && [ "$asked" != "$current" ] && [ "$(printf '%s\n%s\n' "$current" "$asked" | sort -V | tail -n 1)" = "$asked" ]; then
+            new="$asked"
+          fi
           echo "$new" > VERSION
           echo "new_version=$new" >> "$GITHUB_OUTPUT"
 

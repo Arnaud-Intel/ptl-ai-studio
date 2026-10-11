@@ -210,6 +210,10 @@ picture, 2.0 s the heading -- shown side by side with the seven checks still
 passing; undone, and both comments were back on their parts, the picture's
 tick with them.
 
+The Auto Demo ends its Page Agent scene this way: the page built, it points
+at the headline and at one card, and the stage shows the page before beside
+the page after ([docs/AUTO_DEMO.md](../../docs/AUTO_DEMO.md)).
+
 ## What it reports
 
 How fast each model works, each in its own unit -- an image model never

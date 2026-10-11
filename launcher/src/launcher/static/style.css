@@ -1120,6 +1120,27 @@ body.stage-big .stage { --beat: clamp(22px, 2.25vw, 46px); }
 .sv-thumb:has(img) { border-color: transparent; }
 .sv-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; animation: sv-in 0.5s ease; }
 .sv-out-body { flex: 1 1 0; min-height: 0; display: flex; }
+/* The page agent's second act: what was asked of two parts, and the page
+   before beside the page after. It takes the whole stage: the plan and the
+   pictures have been told. */
+.view-page.changing { grid-template-columns: minmax(0, 1fr); }
+.view-page.changing .sv-col { display: none; }
+.sv-change { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: clamp(8px, 1.2vh, 14px); }
+.sv-asked { list-style: none; margin: 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: clamp(8px, 1vw, 16px); }
+.sv-asked li { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-input); font-size: clamp(12.5px, 1vw, 19px); line-height: 1.35; transition: border-color 0.3s; }
+.sv-asked li.now { border-color: var(--warning); }
+.sv-asked .pin-number { font-size: 0.82em; }
+.sv-asked div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sv-asked code { color: var(--text-faint); font-size: 0.8em; }
+.sv-asked em { font-style: normal; font-size: 0.86em; color: var(--success); }
+.sv-asked em:empty { display: none; }
+.sv-asked em.failed { color: var(--danger); }
+.sv-versions { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: clamp(8px, 1vw, 16px); }
+.sv-versions.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sv-version { margin: 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.sv-version figcaption { padding-bottom: 3px; border-bottom: 3px solid var(--warning); font-size: clamp(11px, 0.85vw, 15px); font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-dim); }
+.sv-version[data-side="after"] figcaption { border-color: var(--success); }
+.sv-versions:not(.two) figcaption { display: none; }
 .sv-code {
   flex: 1 1 0;
   min-width: 0;

@@ -309,8 +309,10 @@ the repo's latest git tag.
 It bumps itself: [`.github/workflows/version-bump.yml`](.github/workflows/version-bump.yml)
 runs on every push to `main` (in practice, every merged PR), bumps
 `PATCH` by one, commits `VERSION` back with `[skip ci]`, and tags the
-commit `vX.Y.Z`. Nothing to run by hand -- don't hand-edit `VERSION` in a
-PR, since the bot commit after merge would just bump past whatever you set.
-Bump `MAJOR`/`MINOR` yourself (edit `VERSION` directly, on `main`, outside
-the normal PR flow) for an intentional jump; the bot only ever increments
-`PATCH`.
+commit `vX.Y.Z`. Nothing to run by hand -- don't hand-edit `VERSION`,
+since the bot commit after the push would just bump past whatever you set.
+For an intentional jump of `MAJOR` or `MINOR`, say it in the message of the
+commit that earns it: a line `[version 1.0.0]` and the bot gives the push
+that number instead of the next patch (if it is higher than the one in
+hand), with the same bump commit and tag as any other -- which is what the
+in-app update window lists changes under.

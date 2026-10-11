@@ -203,6 +203,10 @@ class PageAgentRunner:
             previous, self._work_dir = self._work_dir, Path(tempfile.mkdtemp(prefix="page-agent-"))
             if previous is not None:
                 shutil.rmtree(previous, ignore_errors=True)  # the last build's pictures: they are in its page
+                # ...the page that was built, not the one kept to be changed, which read
+                # them from that folder: it is let go of with them, rather than kept
+                # as a page that can no longer be shown.
+                self.revisions.forget()
             with self._state_lock:
                 run = self._state["run"] + 1
                 self._state = {

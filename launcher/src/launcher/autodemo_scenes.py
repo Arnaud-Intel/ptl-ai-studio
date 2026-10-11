@@ -33,6 +33,10 @@ something the stage puts out ("that is the code appearing") takes
 """
 from __future__ import annotations
 
+import re
+
+from html_creator import revise
+
 from .autodemo import Ask, Beat, Chip, Entry, Scene, Skip, Slot, Stand, Start, Until, Wait
 
 # Scenes that are written but not to be played yet, by their key, and why.
@@ -50,6 +54,66 @@ def _sample(stand: Stand, demo: str, turn: int = 0, where=lambda sample: True) -
     going round."""
     kept = [sample for sample in stand.samples(demo) if where(sample)]
     return kept[turn % len(kept)] if kept else None
+
+
+# The Page Agent scene's second act: the page built, somebody points at two
+# parts of it and says what should change, and only those parts are written
+# again ("Change this page" in the brick). The director is that somebody. What
+# it says is said in the page's language, which is the request's: English. Two
+# comments any of the sample pages can take -- every one has a headline, and
+# none is asked for something it would have to invent (a price, an opening
+# hour).
+_HEADLINE_COMMENT = "Say it in five words at most, with more punch."
+_CARD_COMMENT = "Add a 'New' badge in the top right corner of this card, and give the card a thick border in the accent colour."
+# How long the built page is left to be read before it is pointed at: the
+# stage scrolls it from top to bottom in about half a minute.
+_PAGE_READ = 34.0
+
+
+def _part_name(part: revise.Part) -> str:
+    return part.tag + (f"#{part.ident}" if part.ident else "") + "".join(f".{name}" for name in part.classes[:2])
+
+
+def page_changes(result: dict) -> dict | None:
+    """What to ask `/api/page-agent/revision/change` of the page a build
+    answered with: its headline, and the second of the cards that stand
+    side by side with a picture each. Found in the page's source, since every
+    build writes another page. None when the page has neither."""
+    data = result.get("data") or {}
+    source = data.get("html_source") or ""
+    if not source or data.get("cancelled"):
+        return None
+    found = revise.parts(source)
+    pointable = [part for part in found if part.number is not None]
+    pictures = [part for part in pointable if part.tag == "img"]
+    changes = []
+    # The main heading -- unless it is only the name of the place, which is
+    # not to be said otherwise: then the first heading that says something.
+    words = lambda part: len(re.sub(r"<[^>]+>", " ", source[part.start:part.end]).split())  # noqa: E731
+    headings = [part for part in pointable if part.tag == "h1"] + [part for part in pointable if part.tag == "h2"]
+    headline = next((part for part in headings if words(part) >= 3), next((part for part in headings if part.tag == "h1"), None))
+    if headline is not None:
+        changes.append({"part": headline.number, "comment": _HEADLINE_COMMENT, "label": _part_name(headline)})
+    for row in pointable:
+        # A row of cards: three parts or more directly inside it, each with
+        # one picture and something beside the picture.
+        cards = [
+            part for part in pointable
+            if part.parent == row.index
+            and sum(part.start < picture.start < part.end for picture in pictures) == 1
+            and sum(part.start < other.start < part.end for other in pointable) >= 3
+        ]
+        if len(cards) >= 3:
+            card = cards[1]
+            if headline is None or not card.start < headline.start < card.end:
+                changes.append({"part": card.number, "comment": _CARD_COMMENT, "label": _part_name(card)})
+            break
+    return {"version": 0, "changes": changes} if changes else None
+
+
+def page_changed(answer: dict) -> bool:
+    """Whether a part at least was written again."""
+    return any(change.get("done") for change in (answer or {}).get("results") or [])
 
 
 def page_agent(stand: Stand, loop: int) -> Scene | Skip:
@@ -111,6 +175,18 @@ def page_agent(stand: Stand, loop: int) -> Scene | Skip:
             "Et la voici : une page web complète et illustrée, à partir d'une seule demande. Chaque image et chaque "
             "ligne ont été générées sur cette machine il y a un instant.",
         ), result=True),
+        Beat(say(
+            "Nearly right is not finished. Somebody points at the headline and at one card, and says what should "
+            "change. Only those two parts go back to the coding model, not the page.",
+            "Presque bien, ce n'est pas fini. Quelqu'un montre le titre et une carte, et dit ce qui doit changer. "
+            "Seules ces deux parties retournent au modèle de code, pas la page.",
+        ), asked="change"),
+        Beat(say(
+            "Seconds later: the page before on the left, the page after on the right. Only the outlined parts were "
+            "written again. Everything else is the same, character for character.",
+            "Quelques secondes plus tard : la page avant à gauche, la page après à droite. Seules les parties "
+            "encadrées ont été réécrites. Tout le reste est identique, au caractère près.",
+        ), answer="change"),
     ]
     planner = Chip(planner_chip, say("Plans the page · Qwen3-8B", "Conçoit la page · Qwen3-8B"), "page-agent", ("plan",))
     if two:
@@ -136,10 +212,17 @@ def page_agent(stand: Stand, loop: int) -> Scene | Skip:
         beats=tuple(beats),
         chips=chips,
         props={"request": sample["name"]},
-        steps=(Ask("/api/page-agent/build", {"request": sample["prompt"], **devices},
-                   cancel="/api/bricks/page-agent/stop?stage=page"),),
-        hold=40.0,
-        at_most=480.0 if two else 780.0,
+        steps=(
+            Ask("/api/page-agent/build", {"request": sample["prompt"], **devices},
+                cancel="/api/bricks/page-agent/stop?stage=page"),
+            Wait(_PAGE_READ),
+            # The coding model is still loaded on the chip that wrote the page:
+            # a part comes back in seconds.
+            Ask("/api/page-agent/revision/change", body_from=page_changes, wanted=page_changed, name="change", keep=False,
+                cancel="/api/bricks/page-agent/stop?stage=page", timeout=240.0),
+        ),
+        hold=32.0,
+        at_most=600.0 if two else 900.0,
     )
 
 

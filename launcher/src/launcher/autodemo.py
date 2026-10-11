@@ -44,7 +44,9 @@ class Beat:
     its model starts loading, and a sentence about what it puts out is early
     until it puts something out. `answer` names one of the scene's requests
     (`Ask.name`): the sentence waits for that request to have been answered
-    -- a scene that asks twice has something to say between the two."""
+    -- a scene that asks twice has something to say between the two. `asked`
+    names one too, and waits only for it to have been sent: what is being
+    asked is on screen while its answer is waited for."""
 
     text: str
     after: float = 0.0
@@ -52,6 +54,7 @@ class Beat:
     result: bool = False
     figure: bool = False
     answer: str = ""
+    asked: str = ""
 
 
 @dataclass(frozen=True)
@@ -83,7 +86,15 @@ class Ask:
     to the one that matters -- a folder indexed before the question is asked
     -- whose answer is not the scene's result. With a `name`, the answer is
     kept under it as well, for the page to draw and for the story to wait
-    on (`Beat.answer`), result or not."""
+    on (`Beat.answer`), result or not.
+
+    `body_from` makes the body when the step is reached, out of what the
+    scene was answered before it (what `Director.result()` gives): a page
+    has to be built before anything in it can be pointed at. It returns
+    None when there is nothing to ask of what came back, and the step is
+    passed over. `wanted` says whether an answer is the one hoped for; one
+    that is not is kept all the same, but listed as missed rather than
+    answered: the story has no sentence for it."""
 
     path: str
     body: dict = field(default_factory=dict)
@@ -91,6 +102,8 @@ class Ask:
     timeout: float = 900.0
     keep: bool = True
     name: str = ""
+    body_from: Callable[[dict], dict | None] | None = None
+    wanted: Callable[[dict], bool] | None = None
 
 
 @dataclass(frozen=True)
@@ -551,6 +564,9 @@ class Director:
                     "beats": [asdict(beat) for beat in scene.beats], "chips": [asdict(chip) for chip in scene.chips],
                     "props": scene.props, "phase": "working", "started_at": now, "ends_by": now + scene.at_most,
                     "result_ready": False, "answered": [],
+                    # The requests it has sent, by name, with what each asked; and
+                    # those whose answer was not the one hoped for.
+                    "asked": {}, "missed": [],
                 },
             )
         deadline = time.monotonic() + scene.at_most
@@ -580,6 +596,12 @@ class Director:
         with self._lock:
             if self._state["scene"]:
                 self._state["scene"] = {**self._state["scene"], "phase": phase, **more}
+
+    def _tell(self, **more) -> None:
+        """Something more about the scene in hand, its phase left as it is."""
+        with self._lock:
+            if self._state["scene"]:
+                self._state["scene"] = {**self._state["scene"], **more}
 
     def _pause_for(self, seconds: float) -> None:
         if self._interrupt.wait(seconds):
@@ -618,10 +640,25 @@ class Director:
         """The request runs on a thread of its own, so that the director can
         still be interrupted while a page takes its minute and a half."""
         box: dict = {}
+        body = step.body
+        if step.body_from is not None:
+            with self._lock:
+                so_far = self._result if self._result and self._result.get("scene") == scene.id else None
+            try:
+                body = step.body_from(so_far or {"scene": scene.id, "data": None, "answers": {}})
+            except Exception:
+                body = None  # what came back is not something this step knows how to ask about
+            if body is None:
+                return
+        if step.name:
+            with self._lock:
+                now = self._state["scene"]
+                if now:
+                    self._state["scene"] = {**now, "asked": {**now["asked"], step.name: body}}
 
         def work() -> None:
             try:
-                box["answer"] = self._post(step.path, step.body, step.timeout, deadline)
+                box["answer"] = self._post(step.path, body, step.timeout, deadline)
             except _Interrupted:
                 pass  # the loop below has seen the same interruption
             except Exception as exc:
@@ -646,6 +683,12 @@ class Director:
             raise SceneFailed(f"{scene.title}: {box['error']}")
         if not (step.keep or step.name):
             return
+        hoped = True
+        if step.wanted is not None:
+            try:
+                hoped = bool(step.wanted(box.get("answer")))
+            except Exception:
+                hoped = False
         with self._lock:
             kept = self._result if self._result and self._result.get("scene") == scene.id else {"scene": scene.id, "data": None, "answers": {}}
             kept = {**kept, "answers": dict(kept["answers"])}
@@ -654,8 +697,11 @@ class Director:
             if step.keep:
                 kept["data"] = box.get("answer")
             self._result = kept
-            answered = list(kept["answers"])
-        if step.keep:
-            self._phase("answered", result_ready=True, answered=answered)
+            missed = list((self._state["scene"] or {}).get("missed", []))
+            if not hoped and step.name:
+                missed.append(step.name)
+            answered = [name for name in kept["answers"] if name not in missed]
+        if step.keep and hoped:
+            self._phase("answered", result_ready=True, answered=answered, missed=missed)
         else:
-            self._phase("working", answered=answered)
+            self._tell(answered=answered, missed=missed)

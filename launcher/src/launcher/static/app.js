@@ -3152,11 +3152,20 @@ function pageToolsInFrame() {
   }
   function place(box, target) {
     var r = target.getBoundingClientRect();
-    box.style.left = r.left + "px";
-    box.style.top = r.top + "px";
-    box.style.width = r.width + "px";
-    box.style.height = r.height + "px";
+    var gap = (box.pageGap || 0) / scale; // an outline that stands out from its part does not hide the part's own edge
+    box.style.left = r.left - gap + "px";
+    box.style.top = r.top - gap + "px";
+    box.style.width = r.width + 2 * gap + "px";
+    box.style.height = r.height + 2 * gap + "px";
     box.style.display = r.width || r.height ? "block" : "none";
+    var label = box.pageLabel;
+    if (!label) return;
+    // The number sits above the part, not on its first letters -- unless
+    // the part is at the very top of what is in view.
+    var above = r.top - gap > 26 / scale;
+    label.style.top = above ? "auto" : "-" + box.pageEdge;
+    label.style.bottom = above ? "100%" : "auto";
+    label.style.borderRadius = above ? px(4) + " " + px(4) + " 0 0" : px(4) + " 0 " + px(4) + " 0";
   }
   function describe(el) {
     var inside = [];
@@ -3199,15 +3208,18 @@ function pageToolsInFrame() {
       box.style.border = px(item.strong ? 3 : 2) + " " + (item.dashed ? "dashed" : "solid") + " " + color;
       box.style.borderRadius = px(4);
       if (item.strong && item.fill) box.style.background = item.fill;
+      if (item.faint) box.style.opacity = "0.5";
       if (item.pulse) box.style.animation = "page-tools-pulse 1.1s ease-in-out infinite";
+      box.pageGap = item.gap || 0;
+      box.pageEdge = px(item.strong ? 3 : 2);
       if (item.label) {
         var label = document.createElement("span");
         label.textContent = item.label;
         label.style.cssText =
           "position:absolute;white-space:nowrap;background:" + color + ";color:#111;font:700 " + px(12) + "/1.7 system-ui,sans-serif;" +
-          "left:-" + px(item.strong ? 3 : 2) + ";top:-" + px(item.strong ? 3 : 2) + ";padding:0 " + px(7) + ";" +
-          "border-radius:" + px(4) + " 0 " + px(4) + " 0;";
+          "left:-" + px(item.strong ? 3 : 2) + ";padding:0 " + px(7) + ";";
         box.appendChild(label);
+        box.pageLabel = label;
       }
       return box;
     });
@@ -3361,6 +3373,59 @@ function changedLinesHtml(before, after) {
     }
   }
   return `<pre class="ws-code">${lines.map(([kind, sign, text]) => `<span class="${kind}">${sign} ${escapeHtml(text)}</span>`).join("\n")}</pre>`;
+}
+
+// What two versions of a page draw over the parts a change asked for, `side`
+// being "before" or "after": dashed where the part was, solid where it is, red
+// where it could not be written. Used by the workspace and by the Auto Demo.
+function pageChangeOutlines(items, side, selected) {
+  return items.map((change, index) => {
+    const kind = change.done ? side : "failed";
+    return {
+      part: side === "before" ? change.part : change.part_after ?? change.part,
+      label: String(index + 1),
+      color: PAGE_COLORS[kind],
+      dashed: side === "before" || !change.done,
+      // The one looked at stands out by its line, not by a tint: what
+      // changed may be a colour, and is not to be looked at through one.
+      strong: index === selected,
+      faint: index !== selected,
+      gap: 6,
+    };
+  });
+}
+
+// Where to scroll one version of a page so that it shows what another shows
+// at `top`. `a` and `b` are what the two frames said of their layout, `pairs`
+// the numbers each changed part has in a and in b. Above the first part
+// written again the two are the same page; below a part that grew or shrank
+// they are apart by as much, and the parts say by how much.
+function pageScrollAcross(a, b, pairs, top) {
+  const points = [[0, 0]];
+  const found = [];
+  for (const [inA, inB] of pairs) {
+    const one = a.marks.find((mark) => mark.part === inA);
+    const other = b.marks.find((mark) => mark.part === inB);
+    if (one && other) found.push([one.top, other.top], [one.bottom, other.bottom]);
+  }
+  found.sort((p, q) => p[0] - q[0]);
+  for (const point of found) {
+    const last = points[points.length - 1];
+    if (point[0] >= last[0] && point[1] >= last[1]) points.push(point);
+  }
+  const last = points[points.length - 1];
+  points.push([Math.max(a.height, last[0] + 1), Math.max(b.height, last[1] + 1)]);
+  const middle = top + a.view / 2;
+  let across = middle;
+  for (let i = 1; i < points.length; i++) {
+    const [x0, y0] = points[i - 1];
+    const [x1, y1] = points[i];
+    if (middle <= x1 || i === points.length - 1) {
+      across = x1 === x0 ? y0 : y0 + ((middle - x0) * (y1 - y0)) / (x1 - x0);
+      break;
+    }
+  }
+  return Math.max(0, across - b.view / 2);
 }
 
 let pageWorkspace = null;
@@ -3558,17 +3623,7 @@ class PageWorkspace {
     if (!this.ready.has(name)) return;
     let outlines = [];
     if (name !== "main") {
-      outlines = this.items().map((change, index) => {
-        const kind = change.done ? name : "failed";
-        return {
-          part: name === "before" ? change.part : change.part_after ?? change.part,
-          label: String(index + 1),
-          color: PAGE_COLORS[kind],
-          dashed: name === "before" || !change.done,
-          strong: index === this.selected,
-          fill: name === "before" ? "rgba(245,158,11,0.10)" : change.done ? "rgba(74,222,128,0.10)" : "rgba(226,96,79,0.10)",
-        };
-      });
+      outlines = pageChangeOutlines(this.items(), name, this.selected);
     } else if (this.mode === "comment") {
       outlines = this.pins.map((pin, index) => ({
         part: this.current(pin).part,
@@ -3920,39 +3975,14 @@ class PageWorkspace {
   }
 
   // One version was scrolled: the other is put at the same place in the page.
-  // Above the first part written again the two are the same page; below a part
-  // that grew or shrank they are apart by as much, and the parts say by how much.
   follow(from, top) {
     const to = from === "before" ? "after" : "before";
     const a = this.layouts[from];
     const b = this.layouts[to];
     if (!a || !b || !this.ready.has(to)) return;
-    const points = [[0, 0]];
     const numberIn = (name, change) => (name === "before" ? change.part : change.part_after ?? change.part);
-    const pairs = [];
-    for (const change of this.items()) {
-      const one = a.marks.find((mark) => mark.part === numberIn(from, change));
-      const other = b.marks.find((mark) => mark.part === numberIn(to, change));
-      if (one && other) pairs.push([one.top, other.top], [one.bottom, other.bottom]);
-    }
-    pairs.sort((p, q) => p[0] - q[0]);
-    for (const point of pairs) {
-      const last = points[points.length - 1];
-      if (point[0] >= last[0] && point[1] >= last[1]) points.push(point);
-    }
-    const last = points[points.length - 1];
-    points.push([Math.max(a.height, last[0] + 1), Math.max(b.height, last[1] + 1)]);
-    const middle = top + a.view / 2;
-    let across = middle;
-    for (let i = 1; i < points.length; i++) {
-      const [x0, y0] = points[i - 1];
-      const [x1, y1] = points[i];
-      if (middle <= x1 || i === points.length - 1) {
-        across = x1 === x0 ? y0 : y0 + ((middle - x0) * (y1 - y0)) / (x1 - x0);
-        break;
-      }
-    }
-    this.frames[to].contentWindow?.postMessage({ type: "page-scroll-to", top: Math.max(0, across - b.view / 2) }, "*");
+    const pairs = this.items().map((change) => [numberIn(from, change), numberIn(to, change)]);
+    this.frames[to].contentWindow?.postMessage({ type: "page-scroll-to", top: pageScrollAcross(a, b, pairs, top) }, "*");
   }
 
   changeHtml(change, index, latest) {
@@ -4902,6 +4932,13 @@ const STAGE_TEXT = {
     writing: "being written",
     built: "built on this machine",
     onOffer: "On offer",
+    change: "4 · A change, pointed at",
+    rewriting: "only these parts are being written again",
+    changedIn: (parts, seconds) => `${parts === 1 ? "one part" : `${parts} parts`} written again in ${seconds} s · the rest untouched`,
+    partDone: (seconds) => `written again in ${seconds} s`,
+    notChanged: "not changed this time",
+    before: "Before",
+    after: "After",
     receiptWaiting: "Waiting its turn",
     receiptReading: "Being read…",
     vendor: "Vendor",
@@ -4970,6 +5007,13 @@ const STAGE_TEXT = {
     writing: "en cours d'écriture",
     built: "construite sur cette machine",
     onOffer: "Au programme",
+    change: "4 · Une retouche, montrée du doigt",
+    rewriting: "seules ces parties sont réécrites",
+    changedIn: (parts, seconds) => `${parts === 1 ? "une partie réécrite" : `${parts} parties réécrites`} en ${seconds} s · le reste intact`,
+    partDone: (seconds) => `réécrite en ${seconds} s`,
+    notChanged: "pas modifiée cette fois",
+    before: "Avant",
+    after: "Après",
     receiptWaiting: "En attente",
     receiptReading: "Lecture en cours…",
     vendor: "Fournisseur",
@@ -5356,6 +5400,8 @@ function stageBeatDue(beat, scene, state) {
   if (beat.result && !(scene.result_ready || scene.phase === "showing")) return false;
   // One of the scene's requests, by name, has been answered.
   if (beat.answer && !(scene.answered || []).includes(beat.answer)) return false;
+  // One of them has been sent: what it asks is on screen while its answer is waited for.
+  if (beat.asked && !(beat.asked in (scene.asked || {}))) return false;
   if (beat.after && state.now - scene.started_at < beat.after) return false;
   if (beat.figure && !STAGE.figured.has(beat.stage)) return false;
   return !beat.stage || STAGE.seen.has(beat.stage);
@@ -5533,6 +5579,7 @@ function stagePageView(scene, root) {
   let frame = null;
   let framed = false;
   let ready = false;
+  const timers = [];
 
   const drawPlan = (state) => {
     const plan = state.plan;
@@ -5595,19 +5642,146 @@ function stagePageView(scene, root) {
     }
   };
 
+  // ---- the second act: two parts pointed at and written again, then the
+  // page before beside the page after. What "Change this page" does in the
+  // brick, with the director as the person pointing.
+  let change = null; // what was asked, the two frames, and what became of it
+  let pointed = false;
+  let compared = false;
+
   const fit = () => {
-    if (!frame) return;
-    const holder = frame.parentElement;
-    const scale = holder.clientWidth / 1280;
-    frame.style.width = "1280px";
-    frame.style.height = `${Math.ceil(holder.clientHeight / scale)}px`;
-    frame.style.transform = `scale(${scale})`;
+    for (const each of out.querySelectorAll(".sv-frame iframe")) {
+      const holder = each.parentElement;
+      if (!holder.clientWidth) continue;
+      const scale = holder.clientWidth / 1280;
+      each.style.width = "1280px";
+      each.style.height = `${Math.ceil(holder.clientHeight / scale)}px`;
+      each.style.transform = `scale(${scale})`;
+      each.dataset.scale = String(scale);
+    }
+    if (change) ["before", "after"].forEach(view);
+  };
+
+  // What a version draws over its page: the parts asked for, pulsing, while
+  // they are written; then the outlines of what changed.
+  const view = (name) => {
+    const target = change.frames[name];
+    if (!change.ready.has(name)) return;
+    const outlines = change.items
+      ? pageChangeOutlines(change.items, name, change.index)
+      : change.asked.changes.map((one, index) => ({
+          part: one.part, label: String(index + 1), color: PAGE_COLORS.pin, strong: true, fill: "rgba(245,158,11,0.14)", pulse: true,
+        }));
+    target.contentWindow?.postMessage({ type: "page-view", scale: Number(target.dataset.scale) || 1, pick: false, busy: !change.items, outlines }, "*");
+  };
+
+  // One of the parts is brought into view: in the page as it is, and the page as it was follows.
+  const show = (index) => {
+    change.index = index;
+    [...out.querySelectorAll(".sv-asked li")].forEach((item, at) => item.classList.toggle("now", at === index));
+    ["before", "after"].forEach(view);
+    const side = change.items && change.made ? "after" : "before";
+    const one = (change.items || change.asked.changes)[index];
+    if (one) change.frames[side].contentWindow?.postMessage({ type: "page-show", part: side === "after" ? one.part_after ?? one.part : one.part }, "*");
+  };
+
+  const heard = (event) => {
+    if (!change) return;
+    const name = ["before", "after"].find((key) => change.frames[key].contentWindow === event.source);
+    const data = event.data || {};
+    if (!name) return;
+    if (data.type === "page-ready") {
+      change.ready.add(name);
+      view(name);
+      setTimeout(() => ended || show(change.index), 700); // once it is laid out
+    } else if (!change.ready.has(name)) {
+      // The page this frame held before the one being loaded into it.
+    } else if (data.type === "page-layout") {
+      change.layouts[name] = data;
+    } else if (data.type === "page-scroll" && change.items) {
+      const to = name === "before" ? "after" : "before";
+      const a = change.layouts[name];
+      const b = change.layouts[to];
+      if (!a || !b || !change.ready.has(to)) return;
+      const numberIn = (side, one) => (side === "before" ? one.part : one.part_after ?? one.part);
+      const pairs = change.items.map((one) => [numberIn(name, one), numberIn(to, one)]);
+      change.frames[to].contentWindow?.postMessage({ type: "page-scroll-to", top: pageScrollAcross(a, b, pairs, data.top) }, "*");
+    }
+  };
+
+  const point = async (asked) => {
+    try {
+      const page = await fetchJSON("/api/page-agent/revision");
+      if (ended || !page.available) return;
+      root.classList.add("changing");
+      root.querySelector(".sv-out h3").firstChild.textContent = `${t.change} `;
+      note.textContent = t.rewriting;
+      out.innerHTML =
+        `<div class="sv-change"><ol class="sv-asked">` +
+        asked.changes
+          .map(
+            (one, index) =>
+              `<li><b class="pin-number">${index + 1}</b><div><code>${escapeHtml(one.label || "")}</code>` +
+              `<q>${escapeHtml(one.comment)}</q><em></em></div></li>`,
+          )
+          .join("") +
+        `</ol><div class="sv-versions">` +
+        `<figure class="sv-version" data-side="before"><figcaption>${escapeHtml(t.before)}</figcaption>` +
+        `<div class="sv-frame"><iframe sandbox="allow-scripts" title="The page before the change"></iframe></div></figure>` +
+        `<figure class="sv-version" data-side="after" hidden><figcaption>${escapeHtml(t.after)}</figcaption>` +
+        `<div class="sv-frame"><iframe sandbox="allow-scripts" title="The page after the change"></iframe></div></figure>` +
+        `</div></div>`;
+      const frames = out.querySelectorAll("iframe");
+      change = { asked, frames: { before: frames[0], after: frames[1] }, ready: new Set(), layouts: {}, items: null, made: 0, index: 0 };
+      change.frames.before.srcdoc = page.marked + PAGE_TOOLS;
+      fit();
+      // From one part to the next, for as long as the scene is up.
+      timers.push(setInterval(() => change && show((change.index + 1) % (change.items || asked.changes).length), 6000));
+    } catch {
+      pointed = false; // tried again at the next look
+    }
+  };
+
+  const compare = async () => {
+    try {
+      const result = await fetchJSON("/api/autodemo/result");
+      const answer = result.scene === scene.id && result.answers ? result.answers.change : null;
+      if (ended) return;
+      if (!change || !answer) {
+        compared = false; // the page pointed at is not up yet: at the next look
+        return;
+      }
+      const items = answer.results || [];
+      change.items = items;
+      change.made = items.filter((one) => one.done).length;
+      [...out.querySelectorAll(".sv-asked li")].forEach((item, index) => {
+        const one = items[index];
+        const said = item.querySelector("em");
+        if (!one) return;
+        said.classList.toggle("failed", !one.done);
+        said.textContent = one.done
+          ? t.partDone(Number(one.seconds || 0).toFixed(1)) + (one.tokens ? ` · ${one.tokens} tokens` : "")
+          : t.notChanged;
+      });
+      const seconds = items.reduce((sum, one) => sum + (one.seconds || 0), 0);
+      note.textContent = change.made ? t.changedIn(change.made, seconds.toFixed(0)) : t.notChanged;
+      if (change.made) {
+        out.querySelector(".sv-versions").classList.add("two");
+        out.querySelector('.sv-version[data-side="after"]').hidden = false;
+        change.frames.after.srcdoc = answer.marked + PAGE_TOOLS;
+      }
+      fit();
+      show(0);
+    } catch {
+      compared = false;
+    }
   };
 
   const showPage = async () => {
     try {
       const result = await fetchJSON("/api/autodemo/result");
-      if (ended || result.scene !== scene.id || !result.data || !result.data.html) return;
+      // `pointed`: a page reloaded during the second act goes straight to it.
+      if (ended || pointed || result.scene !== scene.id || !result.data || !result.data.html) return;
       const holder = document.createElement("div");
       holder.className = "sv-frame";
       frame = document.createElement("iframe");
@@ -5624,8 +5798,9 @@ function stagePageView(scene, root) {
     }
   };
 
-  const timers = [setInterval(progress, 1000), setInterval(partial, 400)];
+  timers.push(setInterval(progress, 1000), setInterval(partial, 400));
   window.addEventListener("resize", fit);
+  window.addEventListener("message", heard);
   progress();
   return {
     update(now) {
@@ -5634,11 +5809,22 @@ function stagePageView(scene, root) {
         framed = true;
         showPage();
       }
+      const asked = (now.asked || {}).change;
+      if (asked && !pointed) {
+        pointed = true;
+        point(asked);
+      }
+      // Answered, or answered with nothing written: either way it is said.
+      if (!compared && [...(now.answered || []), ...(now.missed || [])].includes("change")) {
+        compared = true;
+        compare();
+      }
     },
     stop() {
       ended = true;
       timers.forEach(clearInterval);
       window.removeEventListener("resize", fit);
+      window.removeEventListener("message", heard);
     },
   };
 }

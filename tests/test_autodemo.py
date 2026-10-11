@@ -152,9 +152,9 @@ def test_the_scene_in_hand_comes_with_its_story_and_what_its_view_needs():
     assert (state["state"], scene["id"], scene["demo"], scene["view"]) == ("playing", "page", "page", "page")
     # The story, a moment at a time, each with when it is due: at once, when a stage is seen at work, when the work is done.
     assert scene["beats"] == [
-        {"text": "page begins.", "after": 0.0, "stage": "", "result": False, "figure": False, "answer": ""},
-        {"text": "The small model is at work.", "after": 0.0, "stage": "plan", "result": False, "figure": False, "answer": ""},
-        {"text": "Done.", "after": 0.0, "stage": "", "result": True, "figure": False, "answer": ""},
+        {"text": "page begins.", "after": 0.0, "stage": "", "result": False, "figure": False, "answer": "", "asked": ""},
+        {"text": "The small model is at work.", "after": 0.0, "stage": "plan", "result": False, "figure": False, "answer": "", "asked": ""},
+        {"text": "Done.", "after": 0.0, "stage": "", "result": True, "figure": False, "answer": "", "asked": ""},
     ]
     assert scene["chips"] == [{"chip": "NPU", "label": "Plans · a small model", "demo": "page", "stages": ("plan",)}]
     assert scene["props"] == {"request": "page"} and scene["result_ready"] is False and director.result() is None
@@ -441,6 +441,67 @@ def test_a_scene_that_asks_twice_keeps_each_answer_by_name_and_says_when_each_is
     again.stop()
 
 
+def test_a_request_can_be_made_out_of_an_earlier_answer_and_the_scene_says_what_it_asked():
+    """A page has to be built before anything in it can be pointed at: the
+    second request is made from what the first was answered, and what it
+    asks is told to the page while its answer is waited for."""
+    stage = Stage()
+    stage.slow["/page/change"] = threading.Event()
+    stage.answers["/page/build"] = {"html_source": "<h1>Bread</h1>"}
+    stage.answers["/page/change"] = {"results": [{"done": True}]}
+    seen = []
+
+    def from_the_page(result):
+        seen.append(result)
+        return {"version": 0, "changes": [{"part": 1, "comment": f"shorter than {result['data']['html_source']}"}]}
+
+    scene = lambda stand, loop: _scene(  # noqa: E731
+        "page", Ask("/page/build"), Ask("/page/change", body_from=from_the_page, wanted=lambda answer: answer["results"][0]["done"],
+                                        name="change", keep=False), hold=0.3)
+    director = _director(stage, [scene])
+    director.start()
+    assert _until(lambda: "change" in ((director.snapshot()["scene"] or {}).get("asked") or {}))
+    now = director.snapshot()["scene"]
+    assert seen == [{"scene": "page", "data": {"html_source": "<h1>Bread</h1>"}, "answers": {}}]
+    assert now["asked"] == {"change": {"version": 0, "changes": [{"part": 1, "comment": "shorter than <h1>Bread</h1>"}]}}
+    assert now["answered"] == [] and now["missed"] == [] and now["result_ready"] is True and now["phase"] == "answered"
+    assert ("POST", "/page/change", now["asked"]["change"]) in stage.calls
+    stage.slow["/page/change"].set()
+    assert _until(lambda: (director.snapshot()["scene"] or {}).get("answered") == ["change"])
+    result = director.result()
+    assert result["data"] == {"html_source": "<h1>Bread</h1>"} and result["answers"] == {"change": {"results": [{"done": True}]}}
+    assert director.snapshot()["scene"]["phase"] in ("answered", "showing")  # the page is still the scene's result
+    director.stop()
+
+
+def test_an_answer_that_is_not_the_one_hoped_for_is_kept_but_not_told_and_a_request_with_nothing_to_ask_is_passed_over():
+    stage = Stage()
+    stage.answers["/page/build"] = {"html_source": "<p>no heading</p>"}
+    stage.answers["/page/change"] = {"results": [{"done": False, "problem": "no answer"}]}
+    changed = lambda answer: any(one["done"] for one in answer["results"])  # noqa: E731
+    scene = lambda stand, loop: _scene(  # noqa: E731
+        "page", Ask("/page/build"), Ask("/page/change", {"version": 0}, wanted=changed, name="change", keep=False), hold=0.4)
+    director = _director(stage, [scene])
+    director.start()
+    assert _until(lambda: (director.snapshot()["scene"] or {}).get("missed") == ["change"])
+    now = director.snapshot()["scene"]
+    assert now["answered"] == [] and now["result_ready"] is True  # nothing for the story; the page built is still shown
+    assert director.result()["answers"]["change"]["results"][0]["problem"] == "no answer"  # and the page can say why
+    assert director.snapshot()["failures"] == []
+    director.stop()
+
+    for nothing in (lambda result: None, lambda result: result["data"]["no such thing"]):
+        stage = Stage()
+        scene = lambda stand, loop, nothing=nothing: _scene(  # noqa: E731
+            "page", Ask("/page/build"), Ask("/page/change", body_from=nothing, name="change", keep=False), hold=0.2)
+        director = _director(stage, [scene])
+        director.start()
+        assert _until(lambda: (director.snapshot()["scene"] or {}).get("phase") == "showing")
+        assert "/page/change" not in stage.posted() and director.snapshot()["scene"]["asked"] == {}
+        assert director.snapshot()["failures"] == []
+        director.stop()
+
+
 # --- the playlist, on the stands it will meet -------------------------------------------
 
 
@@ -477,10 +538,18 @@ def test_the_page_agent_scene_tells_what_two_gpus_change_and_takes_another_brief
     assert [chip.chip for chip in two.chips] == ["NPU", "Integrated GPU", "Arc Pro B60", "CPU"]
     assert [chip.stages for chip in two.chips[:3]] == [("plan",), ("images",), ("page",)]  # whose live figure goes on its line
     # The story follows the work: each step is spoken of when it is seen at work, and the result when it is in.
-    assert [(beat.stage, beat.result) for beat in two.beats] == [
+    assert [(beat.stage, beat.result) for beat in two.beats[:6]] == [
         ("", False), ("plan", False), ("images", False), ("page", False), ("page", False), ("", True)]
     # "That is the page's code appearing" waits for code: the step is at work a good while before, loading its model.
-    assert [beat.figure for beat in two.beats] == [False, False, False, False, True, False] and "appearing" in two.beats[4].text
+    assert [beat.figure for beat in two.beats[:6]] == [False, False, False, False, True, False] and "appearing" in two.beats[4].text
+    # Then the second act: two parts pointed at -- told when the request has gone -- and what came back.
+    assert [(beat.asked, beat.answer) for beat in two.beats[6:]] == [("change", ""), ("", "change")]
+    assert "points at" in two.beats[6].text and "character for character" in two.beats[7].text
+    read, change = two.steps[1:]
+    assert isinstance(read, Wait) and read.seconds >= 31  # the page is scrolled from top to bottom first
+    assert change.path == "/api/page-agent/revision/change" and (change.name, change.keep) == ("change", False)
+    assert change.body_from is autodemo_scenes.page_changes and change.wanted is autodemo_scenes.page_changed
+    assert change.cancel == "/api/bricks/page-agent/stop?stage=page"
     assert "Neighbourhood bakery" in two.beats[0].text and "At the same time" in two.beats[3].text
     assert two.view == "page" and two.props == {"request": "Neighbourhood bakery"}
     build = two.steps[0]
@@ -492,6 +561,40 @@ def test_the_page_agent_scene_tells_what_two_gpus_change_and_takes_another_brief
     assert one.steps[0].body == {"request": "A page for a bike shop.", "image_device": "GPU.0", "page_device": "GPU.0"}
     assert one.at_most > two.at_most  # in turn takes longer, and is given longer
     assert isinstance(autodemo_scenes.page_agent(_stand(Stage(gpus=[])), 1), Skip)
+
+
+BUILT_PAGE = """<!DOCTYPE html><html><head><title>Fournil</title></head><body>
+<header><nav><a href="#breads">The bread</a></nav></header>
+<section class="hero"><img src="hero.jpg" alt=""><p class="eyebrow">Fournil Lumiere</p><h1>Bread worth getting up for</h1></section>
+<section id="breads"><h2>The bread</h2><div class="grid">
+<article class="card"><img src="picture-2.jpg" alt=""><h3>Pain Lumiere</h3><p>Sourdough.</p><p>6.80</p></article>
+<article class="card featured"><img src="picture-3.jpg" alt=""><h3>Seigle Noir</h3><p>Dark rye.</p><p>5.40</p></article>
+<article class="card"><img src="picture-4.jpg" alt=""><h3>Brioche</h3><p>Sundays.</p><p>8.50</p></article>
+</div></section>
+<footer><p>4 rue des Fours</p></footer>
+</body></html>"""
+
+
+def test_the_page_agent_scene_points_at_the_headline_and_at_a_card_of_the_page_it_was_given():
+    from html_creator import revise
+
+    asked = autodemo_scenes.page_changes({"data": {"html_source": BUILT_PAGE}, "answers": {}})
+    assert asked["version"] == 0 and [change["label"] for change in asked["changes"]] == ["h1", "article.card.featured"]
+    headline, card = (revise.find(BUILT_PAGE, change["part"]) for change in asked["changes"])
+    assert BUILT_PAGE[headline.start:headline.end] == "<h1>Bread worth getting up for</h1>"
+    assert "Seigle Noir" in BUILT_PAGE[card.start:card.end] and "Brioche" not in BUILT_PAGE[card.start:card.end]  # one card, the second
+    assert all(change["comment"] for change in asked["changes"])
+    # A page without a row of cards is asked for its headline only; one without either, for nothing.
+    plain = "<html><body><h1>A florist on the corner</h1><p>Open every day.</p><img src='a.jpg'></body></html>"
+    assert [change["label"] for change in autodemo_scenes.page_changes({"data": {"html_source": plain}})["changes"]] == ["h1"]
+    # A main heading that is only the name of the place is left alone: the first heading that says something is taken.
+    named = plain.replace("<h1>A florist on the corner</h1>", "<h1>Petales</h1><h2>Flowers for the whole block</h2>")
+    assert [change["label"] for change in autodemo_scenes.page_changes({"data": {"html_source": named}})["changes"]] == ["h2"]
+    for nothing in ({"data": {"html_source": "<html><body><p>Hello</p></body></html>"}}, {"data": {"html_source": ""}}, {"data": None},
+                    {"data": {"html_source": BUILT_PAGE, "cancelled": True}}):  # a build that was stopped is not pointed at
+        assert autodemo_scenes.page_changes(nothing) is None
+    assert autodemo_scenes.page_changed({"results": [{"done": False}, {"done": True}]})
+    assert not autodemo_scenes.page_changed({"results": [{"done": False}]}) and not autodemo_scenes.page_changed({})
 
 
 def test_the_other_scenes_fit_the_stand_or_say_why_they_cannot_play():
@@ -640,6 +743,9 @@ def test_every_scene_tells_its_story_a_sentence_or_two_at_a_time_in_both_languag
                 assert 40 < len(beat.text) <= 320 and beat.text.count(". ") <= 2  # short enough to read standing up
                 assert temps.text != beat.text
                 assert (temps.stage, temps.after, temps.result, temps.figure) == (beat.stage, beat.after, beat.result, beat.figure)
+                assert (temps.asked, temps.answer) == (beat.asked, beat.answer)
+                asks = {step.name for step in scene.steps if isinstance(step, Ask)}
+                assert {beat.asked, beat.answer} - {""} <= asks  # a cue names a request the scene really makes
                 assert not beat.stage or beat.stage in stages  # a cue is a stage one of its chips really works on
                 assert not beat.figure or beat.stage  # a figure is some stage's
             for chip, puce in zip(scene.chips, scène.chips):

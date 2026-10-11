@@ -114,6 +114,12 @@ here are under Original reports, each with the ticket it went into.
   point at a part; the workspace on a window under about 900 pixels wide,
   where the two versions are too small side by side and *One at a time* is
   the way.
+  *In the Auto Demo since 2026-10-11 (user: "let's add this to the auto
+  demo feature"):* the Page Agent scene ends with it -- the director points
+  at the headline and one card of the page just built, and the stage shows
+  before and after side by side. Not there: a picture drawn again (40 s and
+  two models changing places on one GPU), and HTML Creator, which has no
+  scene.
 
 ## What we are showing
 

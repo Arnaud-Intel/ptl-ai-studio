@@ -93,6 +93,25 @@ Built, and tested without a browser or a model (`tests/test_autodemo.py`):
   turns with ...", or why it cannot play here, in which case it cannot be
   ticked. What is remembered is what was taken out, so a scene added later
   plays without anybody having to find it.
+- **The Page Agent scene's second act** (2026-10-11, asked for by the user
+  the day "Change this page" was reworked): the page built and read from
+  top to bottom, the director points at two parts of it -- its headline,
+  and the second of its cards -- and says what should change, as a person
+  would in the brick. The stage gives the whole of its middle to it: the
+  two comments, the two parts outlined and pulsing in the page while they
+  are written, then the page before beside the page after, the parts
+  written again outlined in both and brought into view in turn. For that
+  the director learned three things (`autodemo.py`): a request made when
+  its turn comes out of what an earlier one answered (`Ask.body_from`; the
+  parts are found in the source of the page just built,
+  `autodemo_scenes.page_changes`); a sentence due when a request has been
+  *sent* (`Beat.asked`), so that what is asked is told while its answer is
+  waited for; and an answer that is not the one hoped for (`Ask.wanted`:
+  no part could be written) kept for the stage to say so, without a
+  sentence of the story claiming otherwise and without counting as a
+  failed scene. A page with no headline and no row of cards is not pointed
+  at, and the scene ends on the page as before. No picture is drawn again
+  there: on one GPU that swaps two models and takes 40 s.
 
 **Watched runs** (XPS 14 with the B60, 2026-10-09, in a headless Edge that
 photographs every sentence and measures what overflows):
