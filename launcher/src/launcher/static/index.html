@@ -856,6 +856,7 @@
           <label class="check" title="On: the model is loaded afresh before each page (about 20 seconds more), so the same prompt gives the same page -- rehearse it, then show it. Off: the model stays loaded, and a page can differ with what was generated before it.">
             <input id="htmlc-repeatable" type="checkbox" /><span>Same page every time</span>
           </label>
+          <button id="htmlc-change" class="btn btn-secondary" type="button" hidden title="Point at parts of the page and say what should change: only those parts are written again, and you see the page before beside the page after">Change this page</button>
           <button id="htmlc-fullscreen" class="btn btn-secondary" type="button" hidden>Full screen</button>
           <button id="htmlc-exit-fullscreen" class="btn btn-secondary htmlc-exit" type="button" hidden>Exit full screen</button>
           <button id="htmlc-download" class="btn btn-secondary" type="button" hidden>Download .html</button>
@@ -891,6 +892,7 @@
         </div>
         <div class="run-row">
           <button id="agent-build" class="btn btn-primary" type="button">Build the page</button>
+          <button id="agent-change" class="btn btn-secondary" type="button" hidden title="Point at parts of the page and say what should change: only those parts are written again, and you see the page before beside the page after">Change this page</button>
           <button id="agent-fullscreen" class="btn btn-secondary" type="button" hidden>Full screen</button>
           <button id="agent-exit-fullscreen" class="btn btn-secondary htmlc-exit" type="button" hidden>Exit full screen</button>
           <button id="agent-download" class="btn btn-secondary" type="button" hidden>Download .html</button>

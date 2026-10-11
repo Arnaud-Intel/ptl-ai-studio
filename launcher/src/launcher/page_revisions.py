@@ -36,6 +36,9 @@ class PageRevisions:
         # What made each version out of the one before it: nothing, for the first.
         self._changes: list[list[dict]] = []
         self._pictures: list[picture_kit.Picture] = []
+        # True while a batch of changes is being made: the versions are not
+        # to be taken back from under it.
+        self._changing = False
 
     # ------------------------------------------------------------------ the page
 
@@ -75,11 +78,34 @@ class PageRevisions:
             self._pictures = [kept for kept in self._pictures if kept.name != picture.name] + [picture]
 
     def undo(self) -> None:
+        if len(self._versions) < 2:
+            raise Conflict("This is the page as it was made: there is nothing to undo.")
+        self.restore(self.version - 1)
+
+    def restore(self, version: int) -> None:
+        """Go back to `version`: it is the version in hand again, and the
+        versions made after it are gone."""
         with self._lock:
-            if len(self._versions) < 2:
-                raise Conflict("This is the page as it was made: there is nothing to undo.")
-            self._versions.pop()
-            self._changes.pop()
+            if self._changing:
+                raise Conflict("The page is being changed -- wait for it, or stop it first.")
+            if not 0 <= version < len(self._versions) - 1:
+                raise ValueError(f"There is no earlier version {version} to go back to.")
+            del self._versions[version + 1:]
+            del self._changes[version + 1:]
+
+    def version_state(self, version: int) -> dict:
+        """One version of the page, to look at beside another: with its
+        pictures in it, and its copy with the numbers."""
+        with self._lock:
+            versions, pictures = list(self._versions), list(self._pictures)
+        if not 0 <= version < len(versions):
+            raise ValueError(f"The page has no version {version}.")
+        source = versions[version]
+        return {
+            "version": version,
+            "html": picture_kit.embed(source, pictures)[0],
+            "marked": picture_kit.embed(revise.marked(source), pictures)[0],
+        }
 
     def state(self, first: bool = False) -> dict:
         """What the page shows: the version in hand, with its pictures in it
@@ -151,14 +177,28 @@ class PageRevisions:
         number, and on a machine where the two models share a chip they
         then change places once and not at every turn."""
         changes = self.check(version, changes)
+        with self._lock:
+            if self._changing:
+                raise Conflict("The page is being changed already -- wait for it, or stop it first.")
+            self._changing = True
+        try:
+            return self._change(changes, write, on_start, stopped)
+        finally:
+            self._changing = False
+
+    def _change(self, changes: list[dict], write: Write, on_start, stopped) -> list[dict]:
         source = self.source
         results: dict[int, dict] = {}
+        # By how many parts each part written again grew or shrank: what
+        # moves the numbers of the parts after it in the page they leave.
+        grew: dict[int, int] = {}
         order = sorted(range(len(changes)), key=lambda index: (bool(changes[index].get("picture")), -int(changes[index]["part"])))
         for done, index in enumerate(order, 1):
             change = changes[index]
             if stopped():
                 results[index] = {"part": int(change["part"]), "comment": change["comment"].strip(), "done": False,
-                                  "problem": "stopped before this part was reached"}
+                                  "problem": "stopped before this part was reached", "label": change.get("label") or "",
+                                  "picture": change.get("picture") or None}
                 continue
             on_start(done, len(order), change)
             revised = write(source, change, self.pictures)
@@ -170,9 +210,19 @@ class PageRevisions:
                 "rules_added": bool(revised.css), "script_added": bool(revised.script),
                 "picture": change.get("picture") or None,
                 "characters": [len(revised.before), len(revised.after)],
+                # For whoever compares: what the page calls the part, what it
+                # was and what it became (a picture: its file's name).
+                "label": change.get("label") or "", "before": revised.before, "after": revised.after,
             }
             if not revised.problem:
+                if not change.get("picture"):
+                    grew[revised.number] = len(revise.inside(revised.source, revised.number)) - len(revise.inside(source, revised.number))
                 source = revised.source
+        for result in results.values():
+            # Its number in the page as it is now: a part written again
+            # before it, with more or fewer parts in it, moved it -- whether
+            # it was itself written again or left as it was.
+            result["part_after"] = result["part"] + sum(by for part, by in grew.items() if part < result["part"])
         made = [results[index] for index in range(len(changes))]
         if any(result["done"] for result in made):
             with self._lock:

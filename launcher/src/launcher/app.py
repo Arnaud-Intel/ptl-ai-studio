@@ -1858,6 +1858,9 @@ class PagePartChange(BaseModel):
     # The comment is about this picture, which the part shows: it is drawn
     # again (Page Agent), and no HTML is written.
     picture: str | None = None
+    # What the page calls the part ("div.card"): kept with the change, for
+    # whoever looks at what changed.
+    label: str | None = None
 
 
 class PageChangeRequest(BaseModel):
@@ -1905,6 +1908,29 @@ async def page_revision_change(demo_id: str, req: PageChangeRequest) -> JSONResp
     except Exception as exc:
         return error_response(exc)
     return JSONResponse({"results": results, **_revision_state(demo_id)})
+
+
+class PageRestoreRequest(BaseModel):
+    version: int
+
+
+@app.get("/api/{demo_id}/revision/version/{version}")
+def page_revision_version(demo_id: str, version: int) -> JSONResponse:
+    """One earlier version of the page, to put beside the page as it is now."""
+    try:
+        return JSONResponse(_page_runner(demo_id).revisions.version_state(version))
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.post("/api/{demo_id}/revision/restore")
+def page_revision_restore(demo_id: str, req: PageRestoreRequest) -> JSONResponse:
+    """Back to an earlier version; the versions made after it are dropped."""
+    try:
+        _page_runner(demo_id).revisions.restore(req.version)
+        return JSONResponse(_revision_state(demo_id))
+    except Exception as exc:
+        return error_response(exc)
 
 
 @app.post("/api/{demo_id}/revision/undo")

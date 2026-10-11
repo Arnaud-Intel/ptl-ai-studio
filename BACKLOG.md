@@ -97,6 +97,23 @@ here are under Original reports, each with the ticket it went into.
   cut off before its end, the portable engine, a page with more than a few
   hundred parts, a person other than its author using the tab. The Auto Demo
   does not show any of it.
+  *Reworked the same day, at the user's word ("a full rework of the UI for
+  the page modification: messy, hard to see what we do, hard to compare the
+  before and after, the pointer still there while looking at the result";
+  then "three modes, side by side, and auto-jump to What changed").* The
+  second tab is gone. **Change this page** opens a workspace over the app
+  with three modes: Look (the page, nothing pointed at), Comment (parts
+  clicked and commented, each with the path down to it to pick the part
+  around), What changed (before and after side by side at the same layout
+  width, the parts written again outlined in both, scrolled together; what
+  was asked, what was done, the HTML lines changed; Keep, or Undo with the
+  comments put back). Apply ends in What changed. Every earlier change can
+  be looked at again and gone back from. Not done: a comparison that marks
+  the changed parts across several changes at once ("Everything since the
+  page was made" shows the two pages without outlines); a keyboard way to
+  point at a part; the workspace on a window under about 900 pixels wide,
+  where the two versions are too small side by side and *One at a time* is
+  the way.
 
 ## What we are showing
 

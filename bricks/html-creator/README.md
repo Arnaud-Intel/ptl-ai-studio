@@ -97,22 +97,53 @@ the browser grants it); it never takes the page out of the sandbox.
 
 A page that is nearly right used to be written again from nothing: a minute of
 work, and everything that was right moved too. In the launcher a generated
-page now has a second tab, **Change a part**, on a copy of it: click a part of
-the page, say what should change there, press Apply. Only the parts that were
-commented are written again; every other character of the page stays as it
-was. The first tab keeps the page as it was made, to compare; **Undo the last
-change** goes back a version; Download and Full screen follow the tab in view.
-A page reloaded in the browser comes back with both tabs: the launcher keeps
-it.
+page now has **Change this page**, which opens it in a workspace over the app,
+the hardware panel still in sight beside it. The workspace does one thing at
+a time:
+
+- **Look** -- the page as it is now, behaving like a page: nothing is pointed
+  at, its buttons and the links inside it work.
+- **Comment** -- click a part of the page and say what should change there;
+  several parts can be commented before anything runs. Apply (or Ctrl+Enter)
+  writes those parts again and nothing else: every other character of the
+  page stays as it was. While it runs, the parts being written pulse in the
+  page and the HTML shows as it comes.
+- **What changed** -- where Apply ends, by itself: the page before the change
+  beside the page after it, the parts written again outlined and numbered in
+  both, the two scrolling together. Under them, for the part in view: what
+  was asked, what the model says it did, how long it took, what is left to
+  check, and the lines of HTML taken out and put in. **Keep** goes to Look.
+  **Undo these changes** goes back a version and puts the comments back on
+  their parts, to be said otherwise. After several changes each one can be
+  looked at again, and the page taken back to before any of them (asked
+  twice: the later ones go with it).
+
+Wherever it is shown, the page is laid out at one width -- the one it has in
+Look, 1024 pixels at the least -- and made smaller to fit: beside the comments
+or beside its earlier self it is the same page, not its narrow-window
+version. On a small screen *One at a time* shows one version at full size,
+with a switch between before and after. **Done** (or Escape, twice) goes back
+to the brick, which shows the page as it is now. A page reloaded in the
+browser is found again with its versions: the launcher keeps them.
+
+This replaced, the day it was built, a second tab under the result with the
+comments beside a small frame: the pointer stayed on while the result was
+looked at, and before and after were two tabs apart.
 
 **How a part is pointed at.** The page is shown in a sandboxed frame the
-launcher cannot look into. So the copy in the second tab carries a number on
-every element of the body (`revise.marked`: a `data-part` attribute in each
+launcher cannot look into. So the copies shown in the workspace carry a number
+on every element of the body (`revise.marked`: a `data-part` attribute in each
 opening tag) and a small script that outlines what the pointer is over and
-says which number was clicked. *Wider* and *Narrower* move the choice to the
-part around it and back -- a click lands on a heading, and what is meant is
+says which number was clicked. Each comment shows the way down to its part
+(`section.products › div.product-card › h3`), and a click on a step of it
+moves the comment there -- a click lands on a heading, and what is meant is
 often its card. Neither the numbers nor the script are in the page that is
-kept and downloaded. Where a part ends in the source is worked out by
+kept and downloaded. The same script draws the outlines of a comparison and
+says where they are in each version: a part that grew by a line pushes
+everything under it down, and the two versions are still kept at the same
+place in the page (`PageRevisions.change` gives each change its part's number
+in the page before and in the page after; `/api/<brick>/revision/version/<n>`
+gives any version, `/revision/restore` goes back to one). Where a part ends in the source is worked out by
 `revise.parts`, and checked against what the browser found inside it before
 anything is replaced: a page whose HTML is not what it looks like is refused
 rather than something else overwritten.
@@ -150,8 +181,13 @@ integrated GPU (2026-10-11):
 A change takes the time of the part, not of the page: a misspelt name 1.6 s, a
 section 5 to 10 s, a section with a fourth card added 14.6 s; six changes in a
 row 36 s. Those are on mains (40 to 43 tokens/s); on battery the same took a
-third longer (32 to 34 tokens/s). In the launcher: two parts of a new page
-changed in 8 s, undone, and found again after the browser page was reloaded.
+third longer (32 to 34 tokens/s). In the launcher, through the workspace
+(headless Edge at 1440 by 900, the page laid out 1140 wide and shown at 70%
+beside the comments, at 50% beside its earlier version): two parts of a new
+page changed in 8 s and shown side by side; kept; undone, with the two
+comments back on their parts; changed twice more, the first change looked at
+again and the page taken back to before it; found again after the browser
+page was reloaded.
 
 **What it is good at:** wording, a price, an item added or removed, a row in a
 table, a section put in French, colours. **What it does less well:** layout

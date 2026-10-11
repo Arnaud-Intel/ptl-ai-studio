@@ -2723,6 +2723,7 @@ const PANELS = {
     id: "html-creator",
     prefix: "htmlc",
     currentHtml: null,
+    downloadName: "generated.html",
     populate(data) {
       attachRecents("htmlc-folder");
       attachRecents("htmlc-pictures");
@@ -2747,7 +2748,7 @@ const PANELS = {
       );
     },
     async rehydrate() {
-      await restorePage(this, "html-creator", "htmlc");
+      await restorePage(this, "html-creator");
     },
     wire() {
       el("htmlc-generate").addEventListener("click", () => {
@@ -2763,8 +2764,7 @@ const PANELS = {
         if (mode === "document") rememberPath("htmlc-folder");
         const pictures = mode === "landing_page" ? el("htmlc-pictures").value.trim() : "";
         if (pictures) rememberPath("htmlc-pictures");
-        el("htmlc-download").hidden = true;
-        el("htmlc-fullscreen").hidden = true;
+        for (const name of ["change", "download", "fullscreen"]) el(`htmlc-${name}`).hidden = true;
         this.run({
           button: el("htmlc-generate"),
           key: "html-creator",
@@ -2786,14 +2786,9 @@ const PANELS = {
         });
       });
       el("htmlc-download").addEventListener("click", () => {
-        if (!this.currentHtml) return;
-        const url = URL.createObjectURL(new Blob([this.tabs ? this.tabs.html() : this.currentHtml], { type: "text/html" }));
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "generated.html";
-        link.click();
-        URL.revokeObjectURL(url);
+        if (this.currentHtml) downloadPage(this.currentHtml, this.downloadName);
       });
+      el("htmlc-change").addEventListener("click", () => openPageWorkspace(this, "html-creator"));
       el("htmlc-fullscreen").addEventListener("click", () => this.expand(true));
       el("htmlc-exit-fullscreen").addEventListener("click", () => this.expand(false));
       document.addEventListener("fullscreenchange", () => {
@@ -2803,9 +2798,7 @@ const PANELS = {
     // The page at the size it was designed for. Still the sandboxed frame: it
     // fills the window, and the whole screen where the browser grants that.
     expand(on) {
-      // The tab in view: the page as it was made, or the copy being changed.
-      const frame = this.tabs ? this.tabs.frame() : el("htmlc-result").querySelector(".htmlc-preview-frame");
-      el("htmlc-result").querySelectorAll(".htmlc-preview-frame.expanded").forEach((other) => other !== frame && other.classList.remove("expanded"));
+      const frame = el("htmlc-result").querySelector(".htmlc-preview-frame");
       if (!frame) on = false;
       if (frame) frame.classList.toggle("expanded", on);
       document.body.classList.toggle("htmlc-expanded", on);
@@ -2814,6 +2807,7 @@ const PANELS = {
       else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     },
     leave() {
+      pageWorkspace?.close();
       this.expand(false);
       Panel.prototype.leave.call(this);
     },
@@ -2840,34 +2834,7 @@ const PANELS = {
           `<p class="section-label">${data.pictures_used.length} of ${data.pictures_offered} pictures placed and embedded in the page.${escapeHtml(notes)}</p>`,
         );
       }
-      this.tabs?.dispose();
-      this.tabs = mountPageTabs({
-        container,
-        brick: "html-creator",
-        panel: this,
-        html: data.html,
-        fill: (pane) => {
-          const iframe = document.createElement("iframe");
-          iframe.className = "htmlc-preview-frame";
-          iframe.setAttribute("sandbox", "allow-scripts");
-          iframe.title = "Generated page preview";
-          iframe.srcdoc = data.html;
-          pane.appendChild(iframe);
-          const details = document.createElement("details");
-          const summary = document.createElement("summary");
-          summary.textContent = "View raw HTML";
-          details.appendChild(summary);
-          const pre = document.createElement("pre");
-          pre.className = "text-block";
-          // As the model wrote it: with pictures embedded, the page is megabytes
-          // of base64 nobody can read.
-          pre.textContent = data.html_source || data.html;
-          details.appendChild(pre);
-          pane.appendChild(details);
-        },
-      });
-      el("htmlc-download").hidden = false;
-      el("htmlc-fullscreen").hidden = false;
+      showPage(this, { html: data.html, source: data.html_source, title: "Generated page preview" });
     },
   }),
 
@@ -2875,6 +2842,7 @@ const PANELS = {
     id: "page-agent",
     prefix: "agent",
     currentHtml: null,
+    downloadName: "page.html",
     poll: null,
     populate(data) {
       const devices = data.openvino_devices || [];
@@ -2905,12 +2873,13 @@ const PANELS = {
         const state = await fetchJSON("/api/page-agent/progress");
         if (state.run) this.renderProgress(state);
         if (state.running) this.follow();
-        else await restorePage(this, "page-agent", "agent");
+        else await restorePage(this, "page-agent");
       } catch {
         // Nothing to show is not an error worth a message.
       }
     },
     leave() {
+      pageWorkspace?.close();
       this.expand(false);
       clearInterval(this.poll);
       this.poll = null;
@@ -3004,8 +2973,7 @@ const PANELS = {
           this.setStatus("Say what the page is for first.", "error");
           return;
         }
-        el("agent-download").hidden = true;
-        el("agent-fullscreen").hidden = true;
+        for (const name of ["change", "download", "fullscreen"]) el(`agent-${name}`).hidden = true;
         el("agent-plan").hidden = true;
         this.follow();
         this.run({
@@ -3034,14 +3002,9 @@ const PANELS = {
         });
       });
       el("agent-download").addEventListener("click", () => {
-        if (!this.currentHtml) return;
-        const url = URL.createObjectURL(new Blob([this.tabs ? this.tabs.html() : this.currentHtml], { type: "text/html" }));
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "page.html";
-        link.click();
-        URL.revokeObjectURL(url);
+        if (this.currentHtml) downloadPage(this.currentHtml, this.downloadName);
       });
+      el("agent-change").addEventListener("click", () => openPageWorkspace(this, "page-agent"));
       el("agent-fullscreen").addEventListener("click", () => this.expand(true));
       el("agent-exit-fullscreen").addEventListener("click", () => this.expand(false));
       document.addEventListener("fullscreenchange", () => {
@@ -3051,8 +3014,7 @@ const PANELS = {
     // As HTML Creator's: the page at the size it was designed for, still in
     // its sandboxed frame.
     expand(on) {
-      const frame = this.tabs ? this.tabs.frame() : el("agent-result").querySelector(".htmlc-preview-frame");
-      el("agent-result").querySelectorAll(".htmlc-preview-frame.expanded").forEach((other) => other !== frame && other.classList.remove("expanded"));
+      const frame = el("agent-result").querySelector(".htmlc-preview-frame");
       if (!frame) on = false;
       if (frame) frame.classList.toggle("expanded", on);
       document.body.classList.toggle("htmlc-expanded", on);
@@ -3124,76 +3086,66 @@ const PANELS = {
     renderResult(data) {
       this.currentHtml = data.html;
       const container = el("agent-result");
-      const checks = data.checks
-        .map(
-          (check) =>
-            `<li class="${check.passed ? "passed" : "failed"}">${check.passed ? "✓" : "✗"} ${escapeHtml(check.name)}` +
-            `${check.detail && !check.passed ? ` -- ${escapeHtml(check.detail)}` : ""}</li>`,
-        )
-        .join("");
-      container.innerHTML = stoppedNoteHtml(data) + `<ul class="agent-checks">${checks}</ul>` + this.speedsHtml(data);
-      this.tabs?.dispose();
-      this.tabs = mountPageTabs({
-        container,
-        brick: "page-agent",
-        panel: this,
-        html: data.html,
-        fill: (pane) => {
-          const iframe = document.createElement("iframe");
-          iframe.className = "htmlc-preview-frame";
-          iframe.setAttribute("sandbox", "allow-scripts");
-          iframe.title = "Built page preview";
-          iframe.srcdoc = data.html;
-          pane.appendChild(iframe);
-          const details = document.createElement("details");
-          const summary = document.createElement("summary");
-          summary.textContent = "View raw HTML";
-          details.appendChild(summary);
-          const pre = document.createElement("pre");
-          pre.className = "text-block";
-          pre.textContent = data.html_source || data.html; // as written: the embedded pictures are megabytes of base64
-          details.appendChild(pre);
-          pane.appendChild(details);
-        },
-      });
-      el("agent-download").hidden = false;
-      el("agent-fullscreen").hidden = false;
+      container.innerHTML = stoppedNoteHtml(data) + checksHtml(data.checks) + this.speedsHtml(data);
+      showPage(this, { html: data.html, source: data.html_source, title: "Built page preview" });
     },
   }),
 };
 
-// --- Changing one part of a page that was made (HTML Creator, Page Agent) -----------
+// --- Changing a page that was made (HTML Creator, Page Agent) ------------------------
 //
 // A generated page that is nearly right used to be written again from
-// nothing. Beside it there is now a second tab on a copy of it: click a part,
-// say what to change, and only that part is written again (the launcher's
-// /api/<brick>/revision routes; html_creator/revise.py has the how).
+// nothing. "Change this page" opens it in a workspace over the app, with three
+// things to do there, one at a time:
 //
-// The page is shown in a sandboxed frame this window cannot look into. So the
-// copy in that tab carries a number on every part, and the script below runs
-// inside it: it outlines what the pointer is over and tells this window which
-// part was clicked. Neither the numbers nor the script are in the page that
-// is kept and downloaded.
+//   Look          the page as it is now, behaving like a page;
+//   Comment       click a part, say what should change -- only the parts
+//                 commented are written again (the launcher's
+//                 /api/<brick>/revision routes; html_creator/revise.py has
+//                 the how);
+//   What changed  the page before a change beside the page after it, the
+//                 parts written again outlined in both. Applying comments
+//                 ends here.
+//
+// The page is shown in sandboxed frames this window cannot look into. So the
+// copies shown carry a number on every part, and the script below runs inside
+// each: it draws the outlines, says which part was clicked and where the page
+// is scrolled to. Neither the numbers nor the script are in the page that is
+// kept and downloaded.
+//
+// Wherever it is shown, the page is laid out at one width -- the one it has in
+// Look -- and made smaller to fit: beside the comments or beside its earlier
+// self, it is the same page, not its narrow-window version.
 
-// Runs inside the frame: put there as its own source (see PAGE_PICKER), so it
-// can use nothing of this file.
-function pagePickerInFrame() {
+// Runs inside a frame: put there as its own source (see PAGE_TOOLS), so it can
+// use nothing of this file.
+function pageToolsInFrame() {
   var MARK = "data-part";
-  var pins = [];
+  var scale = 1; // the frame is shown this much smaller: what is drawn over the page is drawn larger by as much
+  var picking = false; // a click is a pointing, not a click
+  var busy = false;
+  var outlines = [];
   var boxes = [];
   var hover = null;
-  function overlay(border, fill) {
+  var lastSet = -1; // where this window was last told to scroll to
+  var quietUntil = 0;
+  var lastTold = -1;
+  var told = "";
+  function px(n) {
+    return n / scale + "px";
+  }
+  function make() {
     var box = document.createElement("div");
-    box.style.cssText =
-      "position:fixed;z-index:2147483647;pointer-events:none;box-sizing:border-box;margin:0;padding:0;border-radius:4px;" +
-      "display:none;border:" + border + ";background:" + fill + ";";
+    box.style.cssText = "position:fixed;z-index:2147483647;pointer-events:none;box-sizing:border-box;margin:0;padding:0;display:none;";
     document.documentElement.appendChild(box);
     return box;
   }
-  var hoverBox = overlay("2px dashed #38bdf8", "rgba(56,189,248,0.10)");
-  var cursor = document.createElement("style");
-  cursor.textContent = "*{cursor:crosshair !important}";
-  document.documentElement.appendChild(cursor);
+  var hoverBox = make();
+  var style = document.createElement("style");
+  document.documentElement.appendChild(style);
+  function byNumber(part) {
+    return document.querySelector("[" + MARK + '="' + part + '"]');
+  }
   function partOf(node) {
     while (node && node.nodeType === 1 && !node.hasAttribute(MARK)) node = node.parentElement;
     return node && node.nodeType === 1 ? node : null;
@@ -3220,157 +3172,520 @@ function pagePickerInFrame() {
       inside: inside,
     };
   }
+  // A part and every part around it, innermost first.
+  function chainOf(el) {
+    var chain = [];
+    for (; el; el = partOf(el.parentElement)) chain.push(describe(el));
+    return chain;
+  }
   function redraw() {
-    if (hover && hover.isConnected) place(hoverBox, hover);
+    if (picking && !busy && hover && hover.isConnected) place(hoverBox, hover);
     else hoverBox.style.display = "none";
-    for (var i = 0; i < pins.length; i++) {
-      var el = document.querySelector("[" + MARK + '="' + pins[i].part + '"]');
+    for (var i = 0; i < outlines.length; i++) {
+      var el = byNumber(outlines[i].part);
       if (el) place(boxes[i], el);
       else boxes[i].style.display = "none";
     }
   }
-  document.addEventListener("mousemove", function (event) { hover = partOf(event.target); redraw(); }, true);
-  document.addEventListener("mouseout", function (event) { if (!event.relatedTarget) { hover = null; redraw(); } }, true);
-  // The page's own links and buttons do nothing here: a click is a pointing.
+  function draw() {
+    style.textContent = "@keyframes page-tools-pulse{50%{opacity:.3}}" + (picking && !busy ? "*{cursor:crosshair !important}" : "");
+    hoverBox.style.border = px(2) + " dashed #38bdf8";
+    hoverBox.style.borderRadius = px(4);
+    hoverBox.style.background = "rgba(56,189,248,0.10)";
+    boxes.forEach(function (box) { box.remove(); });
+    boxes = outlines.map(function (item) {
+      var box = make();
+      var color = item.color || "#f59e0b";
+      box.style.border = px(item.strong ? 3 : 2) + " " + (item.dashed ? "dashed" : "solid") + " " + color;
+      box.style.borderRadius = px(4);
+      if (item.strong && item.fill) box.style.background = item.fill;
+      if (item.pulse) box.style.animation = "page-tools-pulse 1.1s ease-in-out infinite";
+      if (item.label) {
+        var label = document.createElement("span");
+        label.textContent = item.label;
+        label.style.cssText =
+          "position:absolute;white-space:nowrap;background:" + color + ";color:#111;font:700 " + px(12) + "/1.7 system-ui,sans-serif;" +
+          "left:-" + px(item.strong ? 3 : 2) + ";top:-" + px(item.strong ? 3 : 2) + ";padding:0 " + px(7) + ";" +
+          "border-radius:" + px(4) + " 0 " + px(4) + " 0;";
+        box.appendChild(label);
+      }
+      return box;
+    });
+    redraw();
+  }
+  // Where the outlined parts are in the page, top to bottom: what lets the
+  // window keep two versions of the page scrolled to the same place.
+  function layout() {
+    var marks = [];
+    for (var i = 0; i < outlines.length; i++) {
+      var el = byNumber(outlines[i].part);
+      if (!el) continue;
+      var r = el.getBoundingClientRect();
+      marks.push({ part: outlines[i].part, top: Math.round(r.top + window.scrollY), bottom: Math.round(r.bottom + window.scrollY) });
+    }
+    var now = { type: "page-layout", height: document.documentElement.scrollHeight, view: window.innerHeight, marks: marks };
+    var text = JSON.stringify(now);
+    if (text === told) return;
+    told = text;
+    parent.postMessage(now, "*");
+  }
+  document.addEventListener("mousemove", function (event) {
+    if (!picking) return;
+    hover = partOf(event.target);
+    redraw();
+  }, true);
+  document.addEventListener("mouseout", function (event) {
+    if (!event.relatedTarget) { hover = null; redraw(); }
+  }, true);
   ["click", "submit", "dblclick"].forEach(function (kind) {
     document.addEventListener(kind, function (event) {
+      if (!picking) {
+        // Looked at, the page behaves like the page -- but it stays in its
+        // frame: a form sends nothing, a link to elsewhere goes nowhere.
+        if (kind === "submit") event.preventDefault();
+        var link = event.target && event.target.closest ? event.target.closest("a[href]") : null;
+        if (link && (link.getAttribute("href") || "").charAt(0) !== "#") event.preventDefault();
+        return;
+      }
+      // Pointed at, its own links and buttons do nothing: a click is a pointing.
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      if (kind !== "click") return;
+      if (kind !== "click" || busy) return;
       var el = partOf(event.target);
-      if (!el) return;
-      var chain = [];
-      for (; el; el = partOf(el.parentElement)) chain.push(describe(el));
-      parent.postMessage({ type: "page-part", chain: chain }, "*");
+      if (el) parent.postMessage({ type: "page-part", chain: chainOf(el) }, "*");
     }, true);
   });
   window.addEventListener("message", function (event) {
     var data = event.data || {};
-    if (data.type !== "page-pins") return;
-    boxes.forEach(function (box) { box.remove(); });
-    pins = data.pins || [];
-    boxes = pins.map(function (pin) {
-      var box = overlay("2px solid #f59e0b", "rgba(245,158,11,0.12)");
-      var label = document.createElement("span");
-      label.textContent = pin.label;
-      label.style.cssText =
-        "position:absolute;left:-2px;top:-2px;background:#f59e0b;color:#111;font:700 12px/1.7 system-ui,sans-serif;" +
-        "padding:0 7px;border-radius:4px 0 4px 0;";
-      box.appendChild(label);
-      return box;
-    });
-    redraw();
-    if (data.show) {
-      var el = document.querySelector("[" + MARK + '="' + data.show + '"]');
+    if (data.type === "page-view") {
+      scale = data.scale || 1;
+      picking = !!data.pick;
+      busy = !!data.busy;
+      outlines = data.outlines || [];
+      if (!picking) hover = null;
+      told = "";
+      draw();
+      layout();
+    } else if (data.type === "page-show") {
+      var el = byNumber(data.part);
       if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    } else if (data.type === "page-scroll-to") {
+      lastSet = Math.round(data.top);
+      quietUntil = Date.now() + 120;
+      window.scrollTo({ top: data.top, behavior: "instant" });
+    } else if (data.type === "page-ask") {
+      parent.postMessage({
+        type: "page-chains",
+        id: data.id,
+        chains: (data.parts || []).map(function (part) {
+          var found = byNumber(part);
+          return found ? chainOf(found) : null;
+        }),
+      }, "*");
     }
   });
-  window.addEventListener("scroll", redraw, true);
+  window.addEventListener("scroll", function () {
+    redraw();
+    var top = Math.round(window.scrollY);
+    if (top === lastTold) return;
+    lastTold = top;
+    // Put there by the other version of the page: not to be sent back to it.
+    if (Date.now() < quietUntil || Math.abs(top - lastSet) < 2) return;
+    lastSet = -1;
+    parent.postMessage({ type: "page-scroll", top: window.scrollY }, "*");
+  }, true);
   window.addEventListener("resize", redraw);
-  setInterval(redraw, 300); // a page that moves by itself takes its outlines along
-  parent.postMessage({ type: "page-picker-ready" }, "*");
+  setInterval(function () { redraw(); layout(); }, 300); // a page that moves by itself takes its outlines along
+  parent.postMessage({ type: "page-ready" }, "*");
 }
-const PAGE_PICKER = `<script>(${pagePickerInFrame.toString()})();</` + `script>`;
+const PAGE_TOOLS = `<script>(${pageToolsInFrame.toString()})();</` + `script>`;
+
+// The narrowest the page is laid out at: under it, most pages turn into their phone version.
+const PAGE_MIN_WIDTH = 1024;
+const PAGE_COMPARE_KEY = "ptl.pageCompare";
+const PAGE_COLORS = { pin: "#f59e0b", before: "#f59e0b", after: "#4ade80", failed: "#e2604f" };
 
 function partName(part) {
   return part.tag + (part.id ? `#${part.id}` : "") + part.classes.map((name) => `.${name}`).join("");
 }
 
-class PageEditor {
-  constructor({ brick, panel, pane }) {
-    Object.assign(this, { brick, panel, pane, state: null, pins: [], opened: false, busy: false });
-    pane.innerHTML =
-      `<div class="editor">` +
-      `<iframe class="htmlc-preview-frame" sandbox="allow-scripts" title="The page, to point at"></iframe>` +
-      `<aside class="editor-side">` +
-      `<p class="editor-help">Click a part of the page and say what should change there. Only the parts you comment are ` +
-      `written again: the rest of the page stays exactly as it is.</p>` +
-      `<ol class="editor-pins"></ol>` +
-      `<div class="editor-actions"><button type="button" class="btn btn-primary" data-act="apply" disabled>Apply</button>` +
-      `<button type="button" class="btn btn-secondary" data-act="undo" disabled>Undo the last change</button></div>` +
-      `<p class="run-status editor-status" role="status" aria-live="polite"></p>` +
-      `<div class="editor-writing"></div>` +
-      `<ul class="editor-results"></ul>` +
-      `<div class="editor-checks"></div>` +
-      `</aside></div>`;
-    const find = (selector) => pane.querySelector(selector);
-    this.frame = find("iframe");
-    this.list = find(".editor-pins");
+function checksHtml(checks) {
+  return (
+    `<ul class="agent-checks">` +
+    checks
+      .map(
+        (check) =>
+          `<li class="${check.passed ? "passed" : "failed"}">${check.passed ? "✓" : "✗"} ${escapeHtml(check.name)}` +
+          `${check.detail && !check.passed ? ` -- ${escapeHtml(check.detail)}` : ""}</li>`,
+      )
+      .join("") +
+    `</ul>`
+  );
+}
+
+function downloadPage(html, name) {
+  const url = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+// What a part was and what it became, line by line: the lines taken out, the
+// lines put in, and those that stayed between them.
+function changedLinesHtml(before, after) {
+  const a = before.split("\n");
+  const b = after.split("\n");
+  if (a.length * b.length > 250000) return `<pre class="ws-code">${escapeHtml(after)}</pre>`;
+  const same = (i, j) => a[i].trim() === b[j].trim();
+  const table = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      table[i][j] = same(i, j) ? table[i + 1][j + 1] + 1 : Math.max(table[i + 1][j], table[i][j + 1]);
+    }
+  }
+  const lines = [];
+  let i = 0;
+  let j = 0;
+  while (i < a.length || j < b.length) {
+    if (i < a.length && j < b.length && same(i, j)) {
+      lines.push(["same", " ", b[j]]);
+      i++;
+      j++;
+    } else if (i < a.length && (j === b.length || table[i + 1][j] >= table[i][j + 1])) {
+      lines.push(["del", "−", a[i++]]);
+    } else {
+      lines.push(["add", "+", b[j++]]);
+    }
+  }
+  return `<pre class="ws-code">${lines.map(([kind, sign, text]) => `<span class="${kind}">${sign} ${escapeHtml(text)}</span>`).join("\n")}</pre>`;
+}
+
+let pageWorkspace = null;
+
+class PageWorkspace {
+  constructor(panel, brick) {
+    Object.assign(this, {
+      panel,
+      brick,
+      state: null,
+      mode: "look",
+      pins: [],
+      hot: null, // the comment the pointer is over: its part stands out in the page
+      busy: false,
+      closed: false,
+      refill: null, // comments to put back on their parts, once the page to point at is there
+      asked: null,
+      step: null, // the change looked at in "What changed": a version's number, or "all"
+      selected: 0,
+      pendingShow: false,
+      versions: new Map(),
+      shown: { before: null, after: null },
+      ready: new Set(),
+      layouts: {},
+      scales: {},
+      flip: "after",
+    });
+    try {
+      this.layout = localStorage.getItem(PAGE_COMPARE_KEY) === "one" ? "one" : "both";
+    } catch {
+      this.layout = "both";
+    }
+    const root = document.createElement("div");
+    this.root = root;
+    root.className = "ws";
+    root.setAttribute("role", "dialog");
+    root.setAttribute("aria-label", "Change this page");
+    root.innerHTML =
+      `<header class="ws-bar">` +
+      `<button type="button" class="btn btn-secondary" data-act="done" title="Back to the brick, with the page as it is now">← Done</button>` +
+      `<div class="ws-modes" role="tablist" aria-label="What to do with the page">` +
+      `<button type="button" class="ws-mode" role="tab" data-mode="look" title="The page as it is now, behaving like a page">Look</button>` +
+      `<button type="button" class="ws-mode" role="tab" data-mode="comment" title="Point at parts of the page and say what should change there">Comment</button>` +
+      `<button type="button" class="ws-mode" role="tab" data-mode="changed" title="The page before a change, beside the page after it">What changed</button>` +
+      `</div>` +
+      `<p class="run-status ws-hint" role="status" aria-live="polite"></p>` +
+      `<button type="button" class="btn btn-secondary" data-act="download">Download .html</button>` +
+      `</header>` +
+      `<div class="ws-body">` +
+      `<div class="ws-stage">` +
+      `<div class="ws-scaler ws-main"><iframe sandbox="allow-scripts" title="The page as it is now"></iframe></div>` +
+      `<div class="ws-compare away">` +
+      `<section class="ws-side" data-side="before"><h3></h3><div class="ws-scaler"><iframe sandbox="allow-scripts" title="The page before the change"></iframe></div></section>` +
+      `<section class="ws-side" data-side="after"><h3></h3><div class="ws-scaler"><iframe sandbox="allow-scripts" title="The page after the change"></iframe></div></section>` +
+      `</div>` +
+      `</div>` +
+      `<aside class="ws-rail" hidden>` +
+      `<p class="ws-help">Click a part of the page, then say what should change there. Only the parts you comment are written again: ` +
+      `the rest of the page stays exactly as it is.</p>` +
+      `<ol class="ws-pins"></ol>` +
+      `<div class="ws-actions"><button type="button" class="btn btn-primary" data-act="apply" disabled>Apply</button>` +
+      `<span class="ws-keys">Ctrl + Enter</span></div>` +
+      `<p class="run-status ws-status" role="status" aria-live="polite"></p>` +
+      `<div class="ws-writing"></div>` +
+      `<div class="ws-checks"></div>` +
+      `</aside>` +
+      `</div>` +
+      `<footer class="ws-review" hidden>` +
+      `<div class="ws-review-views">` +
+      `<label class="field"><span>Showing</span><select class="ws-step"></select></label>` +
+      `<div class="ws-seg" data-seg="layout"><button type="button" data-layout="both">Side by side</button>` +
+      `<button type="button" data-layout="one" title="One page at its full size, and a switch between before and after">One at a time</button></div>` +
+      `<div class="ws-seg" data-seg="flip"><button type="button" data-flip="before">Before</button><button type="button" data-flip="after">After</button></div>` +
+      `<div class="ws-change-nav" hidden></div>` +
+      `</div>` +
+      `<div class="ws-review-change"></div>` +
+      `<div class="ws-review-actions"></div>` +
+      `</footer>`;
+    const find = (selector) => root.querySelector(selector);
+    this.frames = { main: find(".ws-main iframe"), before: find('[data-side="before"] iframe'), after: find('[data-side="after"] iframe') };
+    this.body = find(".ws-body");
+    this.compare = find(".ws-compare");
+    this.rail = find(".ws-rail");
+    this.review = find(".ws-review");
+    this.hint = find(".ws-hint");
+    this.list = find(".ws-pins");
     this.applyButton = find('[data-act="apply"]');
-    this.undoButton = find('[data-act="undo"]');
-    this.statusEl = find(".editor-status");
-    this.writing = find(".editor-writing");
-    this.results = find(".editor-results");
-    this.checks = find(".editor-checks");
-    this.onMessage = (event) => {
-      if (event.source !== this.frame.contentWindow || this.busy) return;
-      const data = event.data || {};
-      if (data.type === "page-picker-ready") this.sendPins();
-      if (data.type === "page-part" && Array.isArray(data.chain) && data.chain.length) this.pick(data.chain);
-    };
+    this.statusEl = find(".ws-status");
+    this.writing = find(".ws-writing");
+    this.checks = find(".ws-checks");
+    this.stepSelect = find(".ws-step");
+
+    this.onMessage = (event) => this.heard(event);
     window.addEventListener("message", this.onMessage);
+    this.observer = new ResizeObserver(() => this.fit());
+    [this.body, ...Object.values(this.frames).map((frame) => frame.parentElement)].forEach((box) => this.observer.observe(box));
+
+    find(".ws-bar").addEventListener("click", (event) => {
+      const mode = event.target.closest(".ws-mode");
+      const act = event.target.closest("[data-act]");
+      if (mode) this.setMode(mode.dataset.mode);
+      else if (act && act.dataset.act === "done") this.close();
+      else if (act && act.dataset.act === "download") downloadPage(this.state.html, this.panel.downloadName || "page.html");
+    });
     this.applyButton.addEventListener("click", () => this.apply());
-    this.undoButton.addEventListener("click", () => this.undo());
     this.list.addEventListener("click", (event) => this.onPinButton(event));
     this.list.addEventListener("input", (event) => {
-      const item = event.target.closest(".editor-pin");
-      if (item && event.target.tagName === "TEXTAREA") this.pins[Number(item.dataset.index)].comment = event.target.value;
-      if (item && event.target.type === "checkbox") this.pins[Number(item.dataset.index)].picture = event.target.checked;
+      const item = event.target.closest(".ws-pin");
+      if (!item) return;
+      const pin = this.pins[Number(item.dataset.index)];
+      if (event.target.tagName === "TEXTAREA") pin.comment = event.target.value;
+      if (event.target.type === "checkbox") {
+        pin.picture = event.target.checked;
+        item.querySelector("textarea").placeholder = this.askFor(pin);
+      }
       this.refreshButtons();
     });
     this.list.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !this.applyButton.disabled) this.apply();
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) this.apply();
     });
+    const heat = (index) => {
+      if (index === this.hot) return;
+      this.hot = index;
+      this.sendView("main");
+    };
+    this.list.addEventListener("mouseover", (event) => {
+      const item = event.target.closest(".ws-pin");
+      heat(item ? Number(item.dataset.index) : null);
+    });
+    this.list.addEventListener("mouseleave", () => heat(null));
+    this.stepSelect.addEventListener("change", () => this.showStep(this.stepSelect.value === "all" ? "all" : Number(this.stepSelect.value)));
+    this.review.addEventListener("click", (event) => this.onReviewButton(event));
+
+    document.body.appendChild(root);
+    document.body.classList.add("ws-open");
   }
-  dispose() {
-    window.removeEventListener("message", this.onMessage);
-  }
-  say(text, kind) {
-    paintStatus(this.statusEl, text, kind);
-  }
-  async open() {
-    if (this.opened) return;
-    this.opened = true;
-    try {
-      this.show(await fetchJSON(`/api/${this.brick}/revision`));
-    } catch (err) {
-      this.say(`Error: ${err.message}`, "error");
+
+  // ------------------------------------------------------------------ the frames
+
+  heard(event) {
+    const name = Object.keys(this.frames).find((key) => this.frames[key].contentWindow === event.source);
+    const data = event.data || {};
+    if (!name) return;
+    if (data.type === "page-ready") {
+      this.ready.add(name);
+      this.sendView(name);
+      if (name === "main") this.askRefill();
+    } else if (!this.ready.has(name)) {
+      // The page this frame held before the one being loaded into it: nothing it says is about what is shown.
+    } else if (name === "main") {
+      if (data.type === "page-part" && this.mode === "comment" && !this.busy && Array.isArray(data.chain) && data.chain.length) this.pick(data.chain);
+      if (data.type === "page-chains") this.refilled(data);
+    } else if (data.type === "page-layout") {
+      this.layouts[name] = data;
+      // Both versions are laid out: the first change can be brought into view.
+      if (this.pendingShow && this.layouts.before && this.layouts.after) {
+        this.pendingShow = false;
+        this.showSelected();
+      }
+    } else if (data.type === "page-scroll") {
+      this.follow(name, data.top);
     }
   }
-  // The page as it is now: a fresh copy to point at, and nothing pointed at yet.
-  show(state) {
+
+  put(name, source) {
+    this.ready.delete(name);
+    delete this.layouts[name];
+    this.frames[name].srcdoc = source + PAGE_TOOLS;
+  }
+
+  // The page is laid out as wide as Look shows it, and made smaller to fit
+  // where it is shown: it is the same page in the three modes.
+  fit() {
+    const full = this.body.clientWidth;
+    if (!full) return;
+    const laidOut = Math.max(PAGE_MIN_WIDTH, full);
+    for (const [name, frame] of Object.entries(this.frames)) {
+      const box = frame.parentElement;
+      if (!box.clientWidth || !box.clientHeight) continue;
+      const scale = Math.min(1, box.clientWidth / laidOut);
+      frame.style.width = `${box.clientWidth / scale}px`;
+      frame.style.height = `${box.clientHeight / scale}px`;
+      frame.style.transform = scale < 1 ? `scale(${scale})` : "";
+      if (this.scales[name] !== scale) {
+        this.scales[name] = scale;
+        this.sendView(name);
+      }
+    }
+  }
+
+  // What a frame draws over its page: nothing when the page is looked at, the
+  // parts commented when it is pointed at, the parts written again when two
+  // versions are compared.
+  sendView(name) {
+    if (!this.ready.has(name)) return;
+    let outlines = [];
+    if (name !== "main") {
+      outlines = this.items().map((change, index) => {
+        const kind = change.done ? name : "failed";
+        return {
+          part: name === "before" ? change.part : change.part_after ?? change.part,
+          label: String(index + 1),
+          color: PAGE_COLORS[kind],
+          dashed: name === "before" || !change.done,
+          strong: index === this.selected,
+          fill: name === "before" ? "rgba(245,158,11,0.10)" : change.done ? "rgba(74,222,128,0.10)" : "rgba(226,96,79,0.10)",
+        };
+      });
+    } else if (this.mode === "comment") {
+      outlines = this.pins.map((pin, index) => ({
+        part: this.current(pin).part,
+        label: this.busy ? `${index + 1} · being written again` : String(index + 1),
+        color: PAGE_COLORS.pin,
+        strong: this.busy || index === this.hot,
+        fill: "rgba(245,158,11,0.14)",
+        pulse: this.busy,
+      }));
+    }
+    this.frames[name].contentWindow?.postMessage(
+      { type: "page-view", scale: this.scales[name] || 1, pick: name === "main" && this.mode === "comment", busy: this.busy, outlines },
+      "*",
+    );
+  }
+
+  // ------------------------------------------------------------------ the page in hand
+
+  // The page as the launcher has it now: a fresh copy of it, nothing pointed at yet.
+  load(state) {
     this.state = state;
     this.pins = [];
-    if (!state.available) {
-      this.frame.removeAttribute("srcdoc");
-      this.say("There is no page to change yet.", "error");
-    } else {
-      this.frame.srcdoc = state.marked + PAGE_PICKER;
-    }
-    this.undoButton.disabled = !state.can_undo;
+    this.hot = null;
+    this.step = null;
+    this.versions.clear();
+    this.shown = { before: null, after: null };
+    this.put("main", state.marked);
     this.renderPins();
-    const checks = state.checks || [];
-    this.checks.innerHTML = checks.length
-      ? `<p class="section-label">The build's checks, on the page as it is now</p><ul class="agent-checks">` +
-        checks
-          .map((check) => `<li class="${check.passed ? "passed" : "failed"}">${check.passed ? "✓" : "✗"} ${escapeHtml(check.name)}` +
-            `${check.detail && !check.passed ? ` -- ${escapeHtml(check.detail)}` : ""}</li>`)
-          .join("") +
-        `</ul>`
+    this.checks.innerHTML = (state.checks || []).length
+      ? `<p class="section-label">The build's checks, on the page as it is now</p>${checksHtml(state.checks)}`
       : "";
+    this.root.querySelector('.ws-mode[data-mode="changed"]').disabled = !state.version;
   }
+
+  say(text, kind) {
+    paintStatus(this.hint, text, kind);
+  }
+
+  setMode(mode) {
+    if (this.busy) return;
+    if (mode === "changed" && !this.state.version) mode = "comment";
+    this.mode = mode;
+    this.root.dataset.mode = mode;
+    for (const button of this.root.querySelectorAll(".ws-mode")) {
+      button.classList.toggle("active", button.dataset.mode === mode);
+      button.setAttribute("aria-selected", String(button.dataset.mode === mode));
+    }
+    this.frames.main.parentElement.classList.toggle("away", mode === "changed");
+    this.compare.classList.toggle("away", mode !== "changed");
+    this.rail.hidden = mode !== "comment";
+    this.review.hidden = mode !== "changed";
+    const times = this.state.version;
+    this.say(
+      {
+        look: times
+          ? `The page as it is now -- changed ${times} time${times === 1 ? "" : "s"} since it was made.`
+          : "The page as it was made.",
+        comment: "Click a part of the page, then say what should change there.",
+        changed: "Before and after: only the outlined parts changed -- the rest of the page is the same, character for character.",
+      }[mode],
+    );
+    this.fit();
+    this.sendView("main");
+    if (mode === "changed") this.showStep(this.step ?? this.state.version);
+  }
+
+  setBusy(busy) {
+    this.busy = busy;
+    this.root.classList.toggle("busy", busy);
+    this.root.querySelectorAll(".ws-bar button, .ws-pins textarea, .ws-pins button, .ws-pins input, .ws-review button, .ws-review select").forEach((control) => {
+      control.disabled = busy;
+    });
+    if (!busy) {
+      this.root.querySelector('.ws-mode[data-mode="changed"]').disabled = !this.state.version;
+      this.renderPins();
+    } else {
+      this.refreshButtons();
+      this.sendView("main");
+    }
+  }
+
+  // Escape steps back: out of a comment being typed, then to the page looked
+  // at, then to the brick.
+  escape() {
+    if (this.busy) return;
+    const typing = document.activeElement;
+    if (typing && typing.tagName === "TEXTAREA" && this.root.contains(typing)) typing.blur();
+    else if (this.mode !== "look") this.setMode("look");
+    else this.close();
+  }
+
+  close() {
+    if (this.closed) return;
+    this.closed = true;
+    window.removeEventListener("message", this.onMessage);
+    this.observer.disconnect();
+    this.root.remove();
+    document.body.classList.remove("ws-open");
+    if (pageWorkspace === this) pageWorkspace = null;
+    if (this.state) syncPanelPage(this.panel, this.state);
+  }
+
+  // ------------------------------------------------------------------ Comment
+
   current(pin) {
     return pin.chain[pin.level];
   }
+
   // The picture the part shows, if it is one the image model drew: it can be drawn again.
   pictureOf(pin) {
     return ((this.state && this.state.pictures) || {})[String(this.current(pin).part)] || null;
   }
-  sendPins(show = null) {
-    const pins = this.pins.map((pin, index) => ({ part: this.current(pin).part, label: String(index + 1) }));
-    this.frame.contentWindow?.postMessage({ type: "page-pins", pins, show }, "*");
+
+  askFor(pin) {
+    return pin.picture && this.pictureOf(pin) ? "What should the picture show instead?" : "What should change here?";
   }
+
   // A part was clicked in the frame: `chain` is that part and every part around it, innermost first.
   pick(chain) {
     const taken = new Map(this.pins.map((pin, index) => [this.current(pin).part, index]));
@@ -3387,80 +3702,118 @@ class PageEditor {
     }
     // A click on a picture the image model drew is, most often, about the picture.
     this.pins.push({ chain, level: 0, comment: "", picture: chain[0].tag === "img" });
-    this.say("");
+    paintStatus(this.statusEl, "");
     this.renderPins();
     this.list.querySelectorAll("textarea")[this.pins.length - 1]?.focus();
   }
+
   onPinButton(event) {
     const button = event.target.closest("button[data-act]");
-    const item = event.target.closest(".editor-pin");
+    const item = event.target.closest(".ws-pin");
     if (!button || !item || this.busy) return;
     const index = Number(item.dataset.index);
     const pin = this.pins[index];
-    if (button.dataset.act === "remove") {
+    const act = button.dataset.act;
+    if (act === "show") {
+      this.frames.main.contentWindow?.postMessage({ type: "page-show", part: this.current(pin).part }, "*");
+      return;
+    }
+    if (act === "remove") {
       this.pins.splice(index, 1);
-    } else {
-      const level = pin.level + (button.dataset.act === "wider" ? 1 : -1);
+    } else if (act === "level") {
+      // A crumb of the path: the comment is about that part instead -- the one around, or back to one inside.
+      const level = Number(button.dataset.level);
       const wanted = pin.chain[level];
-      if (!wanted) return;
+      if (!wanted || level === pin.level) return;
       const others = new Set(this.pins.filter((other) => other !== pin).map((other) => this.current(other).part));
-      const clash = wanted.inside.find((part) => others.has(part));
-      if (clash !== undefined) {
+      if (wanted.inside.some((part) => others.has(part))) {
         this.say("That would take in another part that has its own comment. Remove that one first.", "error");
         return;
       }
       pin.level = level;
       pin.picture = wanted.tag === "img"; // another part: what the comment is about is asked again
+      delete pin.problem;
     }
-    this.say("");
-    this.renderPins(button.dataset.act === "remove" ? null : this.current(pin).part);
+    this.say("Click a part of the page, then say what should change there.");
+    this.renderPins();
+    if (act === "level") this.list.querySelectorAll("textarea")[index]?.focus();
   }
-  renderPins(show = null) {
+
+  renderPins() {
     this.list.innerHTML = this.pins
       .map((pin, index) => {
         const part = this.current(pin);
         const words = part.words ? `“${escapeHtml(part.words)}${part.words.length >= 90 ? "…" : ""}”` : "nothing written in it";
+        // The way down to the part, outermost first; the page's <body> is not a part to change.
+        const crumbs = pin.chain
+          .map((step, level) => ({ step, level }))
+          .filter(({ step }) => step.tag !== "body")
+          .reverse()
+          .map(
+            ({ step, level }) =>
+              `<button type="button" class="pin-crumb${level === pin.level ? " current" : ""}" data-act="level" data-level="${level}" ` +
+              `title="${level === pin.level ? "The part this comment is about" : "Comment this part instead"}">` +
+              `${escapeHtml(step.tag + (step.id ? `#${step.id}` : step.classes[0] ? `.${step.classes[0]}` : ""))}</button>`,
+          )
+          .join(`<span class="pin-sep">›</span>`);
+        const picture = this.pictureOf(pin);
         return (
-          `<li class="editor-pin" data-index="${index}"><div class="pin-head"><span class="pin-number">${index + 1}</span>` +
+          `<li class="ws-pin${pin.problem ? " failed" : ""}" data-index="${index}"><div class="pin-head">` +
+          `<button type="button" class="pin-number" data-act="show" title="Show it in the page">${index + 1}</button>` +
           `<span class="pin-what">${escapeHtml(partName(part))}</span>` +
-          `<button type="button" class="link-btn" data-act="wider" title="The part around this one"${pin.level + 1 < pin.chain.length ? "" : " disabled"}>Wider</button>` +
-          `<button type="button" class="link-btn" data-act="narrower" title="Back to the part inside"${pin.level > 0 ? "" : " disabled"}>Narrower</button>` +
           `<button type="button" class="link-btn" data-act="remove">Remove</button></div>` +
+          `<div class="pin-path" aria-label="Where it is in the page">${crumbs}</div>` +
           `<p class="pin-words">${words}</p>` +
-          (this.pictureOf(pin)
+          (picture
             ? `<label class="check pin-picture" title="Ticked: the comment goes to the image model, which draws the picture again. ` +
               `Not ticked: it goes to the coding model, which writes this part's HTML again.">` +
-              `<input type="checkbox"${pin.picture ? " checked" : ""} /><span>Draw the picture again (${escapeHtml(this.pictureOf(pin))})</span></label>`
+              `<input type="checkbox"${pin.picture ? " checked" : ""} /><span>Draw the picture again (${escapeHtml(picture)})</span></label>`
             : "") +
-          `<label class="field"><textarea rows="2" placeholder="${pin.picture && this.pictureOf(pin) ? "What should the picture show instead?" : "What should change here?"}">${escapeHtml(pin.comment)}</textarea></label></li>`
+          `<label class="field"><textarea rows="2" placeholder="${this.askFor(pin)}">${escapeHtml(pin.comment)}</textarea></label>` +
+          (pin.problem ? `<p class="ws-failed">Not changed: ${escapeHtml(pin.problem)}.</p>` : "") +
+          `</li>`
         );
       })
       .join("");
-    this.sendPins(show);
+    this.sendView("main");
     this.refreshButtons();
   }
+
   refreshButtons() {
     const ready = this.pins.length > 0 && this.pins.every((pin) => pin.comment.trim());
     this.applyButton.disabled = this.busy || !ready;
     this.applyButton.textContent = this.pins.length > 1 ? `Apply ${this.pins.length} changes` : "Apply";
-    this.undoButton.disabled = this.busy || !(this.state && this.state.can_undo);
   }
-  setBusy(busy) {
-    this.busy = busy;
-    this.list.querySelectorAll("textarea, button").forEach((control) => (control.disabled = busy));
-    if (!busy) this.renderPins();
-    else this.refreshButtons();
+
+  // Comments that were made once are put back on their parts: the frame is
+  // asked what those parts are, since only it can look at the page.
+  askRefill() {
+    if (!this.refill || !this.ready.has("main")) return;
+    this.asked = { id: Date.now(), items: this.refill };
+    this.refill = null;
+    this.frames.main.contentWindow?.postMessage({ type: "page-ask", id: this.asked.id, parts: this.asked.items.map((item) => item.part) }, "*");
   }
+
+  refilled(data) {
+    if (!this.asked || data.id !== this.asked.id) return;
+    const items = this.asked.items;
+    this.asked = null;
+    (data.chains || []).forEach((chain, index) => {
+      const taken = new Set(this.pins.map((pin) => this.current(pin).part));
+      if (!chain || !chain.length || taken.has(chain[0].part) || chain[0].inside.some((part) => taken.has(part))) return;
+      this.pins.push({ chain, level: 0, comment: items[index].comment, picture: Boolean(items[index].picture) });
+    });
+    this.renderPins();
+  }
+
   async apply() {
-    const asked = this.pins.map((pin, index) => ({ label: index + 1, name: partName(this.current(pin)) }));
-    const changes = this.pins.map((pin) => ({
-      part: this.current(pin).part,
-      comment: pin.comment,
-      seen: this.current(pin).inside,
-      picture: pin.picture ? this.pictureOf(pin) : null,
-    }));
+    if (this.busy || this.applyButton.disabled) return;
+    const changes = this.pins.map((pin) => {
+      const part = this.current(pin);
+      delete pin.problem;
+      return { part: part.part, comment: pin.comment, seen: part.inside, picture: pin.picture ? this.pictureOf(pin) : null, label: partName(part) };
+    });
     this.setBusy(true);
-    this.results.innerHTML = "";
     const data = await this.panel.run({
       button: this.applyButton,
       statusEl: this.statusEl,
@@ -3468,51 +3821,310 @@ class PageEditor {
       partial: { target: this.writing, stage: this.brick === "page-agent" ? "page" : "default" },
       busy: changes.length > 1 ? `Changing ${changes.length} parts…` : "Changing the part…",
       work: () => postJSON(`/api/${this.brick}/revision/change`, { version: this.state.version, changes }),
-      done: (result) => {
-        const made = result.results.filter((change) => change.done).length;
-        const seconds = result.results.reduce((sum, change) => sum + (change.seconds || 0), 0);
-        return made === result.results.length
-          ? `${made === 1 ? "Changed" : `${made} parts changed`} in ${seconds.toFixed(0)} s -- the rest of the page was not touched`
-          : `${made} of ${result.results.length} changed in ${seconds.toFixed(0)} s -- see below`;
-      },
+      done: "",
     });
     this.writing.innerHTML = "";
+    if (this.closed) {
+      // Left while it was being written: the brick shows the page as it is now.
+      if (data) syncPanelPage(this.panel, data);
+      return;
+    }
     this.busy = false;
+    this.root.classList.remove("busy");
     if (!data) {
       this.setBusy(false); // refused, or failed: the comments are still there to try again
       return;
     }
-    this.show(data);
-    this.panel.afterChange?.(); // what the panel shows beside the page, and a change may have added to
-    this.results.innerHTML = data.results
-      .map((change, index) => {
-        const head = `<span class="pin-number">${asked[index].label}</span> <span class="pin-what">${escapeHtml(asked[index].name)}</span>`;
-        if (!change.done) {
-          return `<li class="failed">${head}<p>Not changed: ${escapeHtml(change.problem || "it could not be written")}.</p>` +
-            `<p class="pin-words">You asked: ${escapeHtml(change.comment)}</p></li>`;
-        }
-        if (change.picture) {
-          return `<li class="done">${head}<p>${escapeHtml(change.plan || "The picture was drawn again.")}</p>` +
-            `<p class="pin-words">${change.seconds.toFixed(1)} s, the image model loaded if it was not</p></li>`;
-        }
-        const speed = change.tokens ? ` · ${change.tokens} tokens at ${Number(change.tokens_per_second).toFixed(0)} tok/s` : "";
-        const twice = change.attempts > 1 ? ` · asked ${change.attempts} times` : "";
-        const extras = [change.rules_added ? "style rules added" : "", change.script_added ? "a script added" : ""].filter(Boolean).join(", ");
-        const notes = (change.notes || []).map((note) => `<p class="to-check">${escapeHtml(note)}</p>`).join("");
-        return (
-          `<li class="done">${head}<p>${escapeHtml(change.plan || "Written again.")}</p>` +
-          `<p class="pin-words">${change.seconds.toFixed(1)} s${speed}${twice}${extras ? ` · ${extras}` : ""}</p>${notes}</li>`
-        );
-      })
-      .join("");
+    this.panel.afterChange?.(); // what the brick shows beside the page, and a change may have added to
+    const results = data.results || [];
+    if (results.some((change) => change.done)) {
+      this.load(data);
+      this.setBusy(false);
+      this.setMode("changed");
+      return;
+    }
+    // Nothing could be written: the comments stay, each with what went wrong.
+    this.state = data;
+    results.forEach((change, index) => {
+      if (this.pins[index]) this.pins[index].problem = change.problem || "it could not be written";
+    });
+    this.setBusy(false);
+    paintStatus(this.statusEl, "Nothing was changed -- see each comment.", "error");
   }
-  async undo() {
+
+  // ------------------------------------------------------------------ What changed
+
+  // The parts asked to change in the step looked at, in the order they were numbered.
+  items() {
+    if (typeof this.step !== "number") return [];
+    const entry = ((this.state && this.state.history) || []).find((round) => round.version === this.step);
+    return entry ? entry.changes : [];
+  }
+
+  async versionOf(version) {
+    if (version === this.state.version) return this.state;
+    if (!this.versions.has(version)) this.versions.set(version, await fetchJSON(`/api/${this.brick}/revision/version/${version}`));
+    return this.versions.get(version);
+  }
+
+  async showStep(step) {
+    const state = this.state;
+    const changedStep = step !== this.step;
+    this.step = step;
+    if (changedStep) this.selected = 0;
+    const [from, to] = step === "all" ? [0, state.version] : [step - 1, step];
+    this.renderReview();
+    this.applyLayout();
+    try {
+      const [before, after] = await Promise.all([this.versionOf(from), this.versionOf(to)]);
+      if (this.step !== step || this.state !== state || this.closed) return;
+      let loading = false;
+      for (const [name, version, page] of [["before", from, before], ["after", to, after]]) {
+        if (this.shown[name] === version) {
+          this.sendView(name);
+        } else {
+          this.shown[name] = version;
+          this.put(name, page.marked);
+          loading = true;
+        }
+      }
+      // Once both are laid out, the first part written again comes into view.
+      if (loading || changedStep) this.pendingShow = this.items().length > 0;
+      if (!loading && this.pendingShow) {
+        this.pendingShow = false;
+        this.showSelected();
+      }
+    } catch (err) {
+      this.say(`Error: ${err.message}`, "error");
+    }
+  }
+
+  applyLayout() {
+    this.compare.dataset.layout = this.layout;
+    for (const side of this.compare.querySelectorAll(".ws-side")) {
+      side.classList.toggle("away", this.layout === "one" && side.dataset.side !== this.flip);
+    }
+    for (const button of this.review.querySelectorAll("[data-layout]")) button.classList.toggle("active", button.dataset.layout === this.layout);
+    for (const button of this.review.querySelectorAll("[data-flip]")) button.classList.toggle("active", button.dataset.flip === this.flip);
+    this.review.querySelector('[data-seg="flip"]').hidden = this.layout !== "one";
+    this.fit();
+  }
+
+  // The change selected, brought into view in one version; the other follows it.
+  showSelected() {
+    const change = this.items()[this.selected];
+    if (!change) return;
+    const side = this.layout === "one" ? this.flip : "after";
+    const part = side === "before" ? change.part : change.part_after ?? change.part;
+    this.frames[side].contentWindow?.postMessage({ type: "page-show", part }, "*");
+  }
+
+  // One version was scrolled: the other is put at the same place in the page.
+  // Above the first part written again the two are the same page; below a part
+  // that grew or shrank they are apart by as much, and the parts say by how much.
+  follow(from, top) {
+    const to = from === "before" ? "after" : "before";
+    const a = this.layouts[from];
+    const b = this.layouts[to];
+    if (!a || !b || !this.ready.has(to)) return;
+    const points = [[0, 0]];
+    const numberIn = (name, change) => (name === "before" ? change.part : change.part_after ?? change.part);
+    const pairs = [];
+    for (const change of this.items()) {
+      const one = a.marks.find((mark) => mark.part === numberIn(from, change));
+      const other = b.marks.find((mark) => mark.part === numberIn(to, change));
+      if (one && other) pairs.push([one.top, other.top], [one.bottom, other.bottom]);
+    }
+    pairs.sort((p, q) => p[0] - q[0]);
+    for (const point of pairs) {
+      const last = points[points.length - 1];
+      if (point[0] >= last[0] && point[1] >= last[1]) points.push(point);
+    }
+    const last = points[points.length - 1];
+    points.push([Math.max(a.height, last[0] + 1), Math.max(b.height, last[1] + 1)]);
+    const middle = top + a.view / 2;
+    let across = middle;
+    for (let i = 1; i < points.length; i++) {
+      const [x0, y0] = points[i - 1];
+      const [x1, y1] = points[i];
+      if (middle <= x1 || i === points.length - 1) {
+        across = x1 === x0 ? y0 : y0 + ((middle - x0) * (y1 - y0)) / (x1 - x0);
+        break;
+      }
+    }
+    this.frames[to].contentWindow?.postMessage({ type: "page-scroll-to", top: Math.max(0, across - b.view / 2) }, "*");
+  }
+
+  changeHtml(change, index, latest) {
+    const head =
+      `<div class="pin-head"><span class="pin-number${change.done ? "" : " failed"}">${index + 1}</span>` +
+      `<span class="pin-what">${escapeHtml(change.label || `part ${change.part}`)}</span>`;
+    const asked = `<p class="ws-asked"><span>You asked</span>${escapeHtml(change.comment)}</p>`;
+    if (!change.done) {
+      return (
+        `<div class="ws-change-card failed">${head}</div>${asked}` +
+        `<p class="ws-failed">Not changed: ${escapeHtml(change.problem || "it could not be written")}.</p>` +
+        (latest ? `<button type="button" class="link-btn" data-act="again">Comment it again</button>` : "") +
+        `</div>`
+      );
+    }
+    const seconds = typeof change.seconds === "number" ? `${change.seconds.toFixed(1)} s` : "";
+    if (change.picture) {
+      return (
+        `<div class="ws-change-card">${head}<span class="ws-figures">${seconds}</span></div>${asked}` +
+        `<p class="ws-plan"><span>What it did</span>${escapeHtml(change.plan || "The picture was drawn again.")}</p>` +
+        `<p class="pin-words">${escapeHtml(change.before || "")} → ${escapeHtml(change.after || "")}: the image model drew it, the page's HTML only names the new file.</p></div>`
+      );
+    }
+    const figures = [
+      seconds,
+      change.tokens ? `${change.tokens} tokens at ${Number(change.tokens_per_second).toFixed(0)} tok/s` : "",
+      change.attempts > 1 ? `asked ${change.attempts} times` : "",
+      change.rules_added ? "style rules added" : "",
+      change.script_added ? "a script added" : "",
+    ].filter(Boolean);
+    const notes = (change.notes || []).map((note) => `<p class="to-check">To check: ${escapeHtml(note)}</p>`).join("");
+    const code =
+      typeof change.before === "string" && typeof change.after === "string"
+        ? `<details class="ws-code-wrap"><summary>Show the code that changed</summary>${changedLinesHtml(change.before, change.after)}</details>`
+        : "";
+    return (
+      `<div class="ws-change-card">${head}<span class="ws-figures">${escapeHtml(figures.join(" · "))}</span></div>${asked}` +
+      `<p class="ws-plan"><span>What it did</span>${escapeHtml(change.plan || "Written again.")}</p>${notes}${code}</div>`
+    );
+  }
+
+  renderReview() {
+    const state = this.state;
+    const version = state.version;
+    const step = this.step;
+    const latest = step === version;
+    const options = [];
+    for (let n = version; n >= 1; n--) options.push({ value: String(n), label: n === version ? `Change ${n}, the last one` : `Change ${n}` });
+    if (version > 1) options.push({ value: "all", label: "Everything since the page was made" });
+    fillSelect(this.stepSelect, options);
+    this.stepSelect.value = String(step);
+    this.stepSelect.closest(".field").hidden = version < 2;
+    const heads = this.compare.querySelectorAll("h3");
+    heads[0].textContent = step === "all" || step === 1 ? "Before -- the page as it was made" : `Before -- the page after change ${step - 1}`;
+    heads[1].textContent = step === "all" || latest ? "After -- the page as it is now" : `After change ${step}`;
+
+    const items = this.items();
+    const change = items[this.selected];
+    const changeBox = this.review.querySelector(".ws-review-change");
+    if (step === "all") {
+      const rounds = state.history || [];
+      const made = rounds.reduce((sum, round) => sum + round.changes.filter((one) => one.done).length, 0);
+      changeBox.innerHTML =
+        `<div class="ws-change-card"><p class="ws-plan">${made} part${made === 1 ? "" : "s"} written again in ${rounds.length} changes since the page was made. ` +
+        `Choose one change under “Showing” to see its parts outlined.</p></div>`;
+    } else {
+      changeBox.innerHTML = change ? this.changeHtml(change, this.selected, latest) : "";
+    }
+    // From one part written again to the next: each comes into view in both versions.
+    const nav = this.review.querySelector(".ws-change-nav");
+    nav.hidden = step === "all" || items.length < 2;
+    nav.innerHTML =
+      `<button type="button" class="btn btn-secondary" data-act="prev" aria-label="The part before"${this.selected ? "" : " disabled"}>◀</button>` +
+      `<span>Part ${this.selected + 1} of ${items.length}</span>` +
+      `<button type="button" class="btn btn-secondary" data-act="next" aria-label="The next part"${this.selected + 1 < items.length ? "" : " disabled"}>▶</button>`;
+
+    const made = items.filter((one) => one.done).length;
+    const seconds = items.reduce((sum, one) => sum + (one.seconds || 0), 0);
+    let summary = "";
+    if (step !== "all") {
+      summary =
+        made === items.length
+          ? `${made === 1 ? "One part" : `${made} parts`} changed in ${seconds.toFixed(0)} s. The rest of the page was not touched.`
+          : `${made} of ${items.length} parts changed in ${seconds.toFixed(0)} s. The rest of the page was not touched.`;
+    }
+    const checks = state.checks || [];
+    const failing = checks.filter((check) => !check.passed);
+    const checked =
+      checks.length && (latest || step === "all")
+        ? failing.length
+          ? `<p class="ws-checked failed">✗ ${failing.length} of the build's ${checks.length} checks fail${failing.length === 1 ? "s" : ""} on the page as it is now: ` +
+            `${escapeHtml(failing.map((check) => check.name).join(", "))}</p>`
+          : `<p class="ws-checked">✓ The build's ${checks.length} checks still pass on the page as it is now</p>`
+        : "";
+    let buttons;
+    if (latest) {
+      buttons =
+        `<button type="button" class="btn btn-primary" data-act="keep">Keep</button>` +
+        `<button type="button" class="btn btn-secondary" data-act="undo" title="The page as it was before, and your comments back on their parts">` +
+        `Undo ${items.length > 1 ? "these changes" : "this change"}</button>`;
+    } else {
+      const back = step === "all" ? 0 : step - 1;
+      buttons =
+        `<button type="button" class="btn btn-secondary" data-act="back" data-version="${back}">` +
+        `${back ? "Go back to before this change" : "Go back to the page as it was made"}</button>`;
+    }
+    this.review.querySelector(".ws-review-actions").innerHTML =
+      `<p class="ws-summary">${escapeHtml(summary)}</p>${checked}<div class="ws-actions">${buttons}</div>`;
+  }
+
+  select(index) {
+    this.selected = index;
+    this.renderReview();
+    this.sendView("before");
+    this.sendView("after");
+    this.showSelected();
+  }
+
+  onReviewButton(event) {
+    const button = event.target.closest("button");
+    if (!button || this.busy) return;
+    const items = this.items();
+    if (button.dataset.layout) {
+      this.layout = button.dataset.layout;
+      try {
+        localStorage.setItem(PAGE_COMPARE_KEY, this.layout);
+      } catch {
+        // Not remembered, then: it is a preference, not a setting.
+      }
+      this.applyLayout();
+      setTimeout(() => this.closed || this.showSelected(), 400); // the room changed: the part looked at is brought back into it
+    } else if (button.dataset.flip) {
+      this.flip = button.dataset.flip;
+      this.applyLayout();
+    } else if (button.dataset.act === "prev" || button.dataset.act === "next") {
+      this.select(Math.min(items.length - 1, Math.max(0, this.selected + (button.dataset.act === "next" ? 1 : -1))));
+    } else if (button.dataset.act === "keep") {
+      this.setMode("look");
+    } else if (button.dataset.act === "undo") {
+      this.restore(this.step - 1, items, "Back to the page as it was before -- your comments are on their parts again.");
+    } else if (button.dataset.act === "again") {
+      const change = items[this.selected];
+      this.refill = [{ part: change.part_after ?? change.part, comment: change.comment, picture: change.picture }];
+      this.setMode("comment");
+      this.askRefill();
+    } else if (button.dataset.act === "back") {
+      const version = Number(button.dataset.version);
+      const dropped = this.state.version - version;
+      if (!button.classList.contains("armed")) {
+        // Not undone with a second click elsewhere: asked twice.
+        button.classList.add("armed");
+        button.textContent = `Drop the last ${dropped} change${dropped === 1 ? "" : "s"}? Click again`;
+        setTimeout(() => button.isConnected && this.renderReview(), 6000);
+        return;
+      }
+      this.restore(version, typeof this.step === "number" ? items : [], `Back to the page as it was ${version ? `after change ${version}` : "made"}.`);
+    }
+  }
+
+  // Back to an earlier version; what was asked of it is put back as comments, to say otherwise.
+  async restore(version, changes, said) {
     this.setBusy(true);
     try {
+      const state = await postJSON(`/api/${this.brick}/revision/restore`, { version });
       this.busy = false;
-      this.show(await postJSON(`/api/${this.brick}/revision/undo`, {}));
-      this.results.innerHTML = "";
-      this.say("Back to the page as it was before the last change.", "live");
+      this.root.classList.remove("busy");
+      this.refill = changes.length ? changes.map((change) => ({ part: change.part, comment: change.comment, picture: change.picture })) : null;
+      this.load(state);
+      this.setBusy(false);
+      this.panel.afterChange?.();
+      this.setMode("comment");
+      this.say(said, "live");
     } catch (err) {
       this.setBusy(false);
       this.say(`Error: ${err.message}`, "error");
@@ -3520,80 +4132,78 @@ class PageEditor {
   }
 }
 
-// The two tabs under a result: the page as it was made, and the copy to
-// change. `fill(pane)` puts the page into the first one, as it always was
-// shown. Returns what the panel needs: the HTML to download and the frame to
-// put full screen -- those of the tab in view.
-function mountPageTabs({ container, brick, panel, html, fill }) {
-  const tabs = document.createElement("div");
-  tabs.className = "page-tabs";
-  tabs.setAttribute("role", "tablist");
-  tabs.innerHTML =
-    `<button type="button" class="page-tab active" role="tab" data-tab="built" aria-selected="true">The page</button>` +
-    `<button type="button" class="page-tab" role="tab" data-tab="change" aria-selected="false">Change a part</button>`;
-  const built = document.createElement("div");
-  const change = document.createElement("div");
-  built.className = change.className = "page-pane";
-  change.hidden = true;
-  container.append(tabs, built, change);
-  fill(built);
-  const editor = new PageEditor({ brick, panel, pane: change });
-  tabs.addEventListener("click", (event) => {
-    const tab = event.target.closest(".page-tab");
-    if (!tab) return;
-    for (const other of tabs.children) {
-      other.classList.toggle("active", other === tab);
-      other.setAttribute("aria-selected", String(other === tab));
-    }
-    built.hidden = tab.dataset.tab !== "built";
-    change.hidden = tab.dataset.tab !== "change";
-    if (!change.hidden) editor.open();
-  });
-  return {
-    editor,
-    // What is downloaded: the page of the tab in view -- as it was made, or as it has been changed.
-    html: () => (!change.hidden && editor.state && editor.state.available ? editor.state.html : html),
-    frame: () => container.querySelector(".page-pane:not([hidden]) .htmlc-preview-frame"),
-    dispose: () => editor.dispose(),
-  };
+async function openPageWorkspace(panel, brick) {
+  if (pageWorkspace) return;
+  let state;
+  try {
+    state = await fetchJSON(`/api/${brick}/revision`);
+  } catch (err) {
+    panel.setStatus(`Error: ${err.message}`, "error");
+    return;
+  }
+  if (!state.available) {
+    panel.setStatus("There is no page to change yet.", "error");
+    return;
+  }
+  if (pageWorkspace || !panel.isOpen) return;
+  panel.expand(false);
+  pageWorkspace = new PageWorkspace(panel, brick);
+  pageWorkspace.load(state);
+  pageWorkspace.setMode("comment");
+}
+
+// The page under a brick's result: the frame, and the HTML as it was written
+// (with pictures embedded, the page itself is megabytes of base64 nobody can read).
+function showPage(panel, { html, source, title }) {
+  const container = el(`${panel.prefix}-result`);
+  const shown = document.createElement("div");
+  shown.className = "page-shown";
+  shown.innerHTML =
+    `<p class="page-note" hidden></p>` +
+    `<iframe class="htmlc-preview-frame" sandbox="allow-scripts"></iframe>` +
+    `<details><summary>View raw HTML</summary><pre class="text-block"></pre></details>`;
+  const frame = shown.querySelector("iframe");
+  frame.title = title;
+  frame.srcdoc = html;
+  shown.querySelector("pre").textContent = source || html;
+  container.appendChild(shown);
+  panel.currentHtml = html;
+  for (const name of ["change", "download", "fullscreen"]) el(`${panel.prefix}-${name}`).hidden = false;
+}
+
+// Back from the workspace: the brick shows the page as it is now.
+function syncPanelPage(panel, state) {
+  const shown = el(`${panel.prefix}-result`).querySelector(".page-shown");
+  if (!shown || !state.available) return;
+  if (panel.currentHtml !== state.html) {
+    panel.currentHtml = state.html;
+    shown.querySelector("iframe").srcdoc = state.html;
+    shown.querySelector("pre").textContent = state.html_source || state.html;
+  }
+  const note = shown.querySelector(".page-note");
+  note.hidden = !state.version;
+  note.textContent = `Changed ${state.version} time${state.version === 1 ? "" : "s"} since it was made -- “Change this page” shows what changed.`;
+  const checks = el(`${panel.prefix}-result`).querySelector(":scope > .agent-checks");
+  if (checks && state.checks) checks.outerHTML = checksHtml(state.checks);
 }
 
 // A page made before this visit, or before the browser page was reloaded, is
-// still kept by the launcher: it is shown again, with its second tab, rather
-// than lost. What the build said of itself (its speeds, its checks) is gone
-// with the page that showed it.
-async function restorePage(panel, brick, prefix) {
-  const container = el(`${prefix}-result`);
-  if (container.querySelector(".page-tabs")) return;
+// still kept by the launcher: it is shown again, as it is now, rather than
+// lost. What the build said of itself (its speeds, its checks) is gone with
+// the page that showed it.
+async function restorePage(panel, brick) {
+  const container = el(`${panel.prefix}-result`);
+  if (container.querySelector(".page-shown")) return;
   let state;
   try {
-    state = await fetchJSON(`/api/${brick}/revision?first=1`);
+    state = await fetchJSON(`/api/${brick}/revision`);
   } catch {
     return;
   }
-  if (!state.available || container.querySelector(".page-tabs")) return;
-  container.innerHTML =
-    `<p class="section-label">The page made earlier, kept by the launcher` +
-    (state.version ? ` -- changed ${state.version} time${state.version === 1 ? "" : "s"} since: see the second tab` : "") +
-    `</p>`;
-  panel.currentHtml = state.first_html;
-  panel.tabs?.dispose();
-  panel.tabs = mountPageTabs({
-    container,
-    brick,
-    panel,
-    html: state.first_html,
-    fill: (pane) => {
-      const iframe = document.createElement("iframe");
-      iframe.className = "htmlc-preview-frame";
-      iframe.setAttribute("sandbox", "allow-scripts");
-      iframe.title = "The page made earlier";
-      iframe.srcdoc = state.first_html;
-      pane.appendChild(iframe);
-    },
-  });
-  el(`${prefix}-download`).hidden = false;
-  el(`${prefix}-fullscreen`).hidden = false;
+  if (!state.available || container.querySelector(".page-shown")) return;
+  container.innerHTML = `<p class="section-label">The page made earlier, kept by the launcher</p>`;
+  showPage(panel, { html: state.html, source: state.html_source, title: "The page made earlier" });
+  syncPanelPage(panel, state);
 }
 
 // --- Home grid ----------------------------------------------------------------------
@@ -6082,6 +6692,7 @@ async function init() {
     else if (!el("models-modal-overlay").hidden) closeModelsModal();
     else if (!el("changelog-modal-overlay").hidden) closeChangelogModal();
     else if (!el("autodemo-modal-overlay").hidden) closeAutodemoModal();
+    else if (pageWorkspace) pageWorkspace.escape();
     else if (currentPanel && !["TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) location.hash = "#/demos";
   });
 

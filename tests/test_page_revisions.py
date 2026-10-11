@@ -5,6 +5,8 @@ again, and what is checked is which parts it is asked for, in which order,
 what becomes of the page, and what is refused before it is asked anything."""
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -70,6 +72,71 @@ def test_changes_are_made_from_the_end_of_the_page_to_its_beginning_and_told_in_
     assert revisions.state()["html"] == PAGE and revisions.version == 0
     with pytest.raises(Conflict, match="nothing to undo"):
         revisions.undo()
+
+
+def test_a_changed_part_is_found_again_in_the_page_before_and_in_the_page_after():
+    """To outline a change on both sides of a comparison: its number in the
+    page it was pointed at in, and its number in the page it left -- which
+    a part written again before it, with more parts in it or fewer, moved."""
+    revisions = PageRevisions()
+    revisions.start(PAGE)
+
+    def grows(source, change, pictures):
+        found = revise.find(source, int(change["part"]))
+        after = "<div class=\"card\"><h3>Loaf</h3><p>6.50</p><p>Baked twice a day</p><span>New</span></div>" if found.number == 5 else "<p>Closed on Mondays</p>"
+        return Revised(source=revise.replaced(source, found, after), number=found.number, comment=change["comment"],
+                       before=source[found.start:found.end], after=after)
+
+    results = revisions.change(0, [{"part": 5, "comment": "two more lines", "label": "div.card"},
+                                   {"part": 12, "comment": "closed on Mondays", "label": "p"}], grows)
+    assert [(r["part"], r["part_after"], r["label"]) for r in results] == [(5, 5, "div.card"), (12, 14, "p")]
+    assert results[0]["before"] == "<div class=\"card\"><h3>Loaf</h3><p>6.50</p></div>" and "Baked twice a day" in results[0]["after"]
+    after = revisions.source
+    assert after[revise.find(after, 14).start:revise.find(after, 14).end] == "<p>Closed on Mondays</p>"
+    # A part that could not be written is where it was, under a new number: it can be shown, and asked for again.
+    results = revisions.change(1, [{"part": 14, "comment": "open"}, {"part": 2, "comment": "Bread"},
+                                   {"part": 5, "comment": "as it was"}], lambda source, change, pictures: (
+        Revised(source=source, number=14, comment="open", problem="no answer") if int(change["part"]) == 14
+        else Revised(source=revise.replaced(source, revise.find(source, 5), "<div class=\"card\"><h3>Loaf</h3></div>"), number=5,
+                     comment=change["comment"]) if int(change["part"]) == 5 else write()(source, change, pictures)))
+    assert [(r["part"], r["part_after"], r["done"]) for r in results] == [(14, 11, False), (2, 2, True), (5, 5, True)]
+
+
+def test_an_earlier_version_can_be_looked_at_and_gone_back_to():
+    revisions = PageRevisions()
+    revisions.start(PAGE)
+    revisions.change(0, [{"part": 2, "comment": "Bread"}], write())
+    revisions.change(1, [{"part": 12, "comment": "Closed"}], write())
+    revisions.change(2, [{"part": 6, "comment": "Miche"}], write())
+    first = revisions.version_state(0)
+    assert first["html"] == PAGE and revise.MARK in first["marked"] and "Bread" in revisions.version_state(1)["html"]
+    with pytest.raises(ValueError, match="no version 7"):
+        revisions.version_state(7)
+    revisions.restore(1)  # the two versions after it are dropped
+    assert revisions.version == 1 and "<h1>Bread</h1>" in revisions.source and "Closed" not in revisions.source
+    assert [entry["version"] for entry in revisions.state()["history"]] == [1]
+    for wrong in (1, 5, -1):  # the version in hand, one that never was
+        with pytest.raises(ValueError, match="no earlier version"):
+            revisions.restore(wrong)
+
+
+def test_a_page_being_changed_cannot_be_taken_back_from_under_the_change():
+    revisions = PageRevisions()
+    revisions.start(PAGE)
+    revisions.change(0, [{"part": 2, "comment": "Bread"}], write())
+    seen = []
+
+    def meanwhile(source, change, pictures):
+        for attempt in (revisions.undo, lambda: revisions.change(1, [{"part": 6, "comment": "x"}], write())):
+            with pytest.raises(Conflict, match="being changed"):
+                attempt()
+        seen.append(True)
+        return write()(source, change, pictures)
+
+    revisions.change(1, [{"part": 12, "comment": "Closed"}], meanwhile)
+    assert seen and revisions.version == 2
+    revisions.undo()  # and afterwards it can
+    assert revisions.version == 1
 
 
 def test_a_change_the_model_could_not_make_leaves_that_part_and_keeps_the_others():
@@ -173,6 +240,15 @@ def test_html_creator_changes_the_parts_pointed_at_and_can_take_it_back(client):
     assert back["version"] == 0 and back["html"] == PAGE
     assert api.post("/api/html-creator/revision/undo").status_code == 409
     assert api.get("/api/html-creator/revision?first=1").json()["first_html"] == PAGE
+    # Any version can be fetched to be looked at, and gone back to.
+    creator.revisions.change(0, [{"part": 2, "comment": "Pain", "label": "h1"}], write())
+    creator.revisions.change(1, [{"part": 12, "comment": "Fermé"}], write())
+    assert api.get("/api/html-creator/revision/version/0").json()["html"] == PAGE
+    assert api.get("/api/html-creator/revision/version/9").status_code == 400
+    restored = api.post("/api/html-creator/revision/restore", json={"version": 1}).json()
+    assert restored["version"] == 1 and "<h1>Pain</h1>" in restored["html"] and "Fermé" not in restored["html"]
+    assert restored["history"][-1]["changes"][0]["label"] == "h1" and restored["history"][-1]["changes"][0]["part_after"] == 2
+    assert api.post("/api/html-creator/revision/restore", json={"version": 1}).status_code == 400
     assert api.get("/api/doc-qa/revision").status_code == 400  # a brick that makes no page
 
 
@@ -190,6 +266,19 @@ def test_the_page_agent_changes_a_part_on_the_chip_that_wrote_the_page_and_check
     assert done.status_code == 200 and body["version"] == 1 and "<h3>Country loaf</h3>" in body["html"]
     assert _Session.asked == [(6, "Country loaf", None, "GPU.1")] and "checks" in body
     assert agent._device == "GPU.1"  # what the hardware panel lists the coding model under
+
+
+def test_the_workspace_in_the_browser_asks_only_for_what_the_launcher_serves():
+    static = Path(launcher_app.__file__).parent / "static"
+    script = (static / "app.js").read_text(encoding="utf-8")
+    page = (static / "index.html").read_text(encoding="utf-8")
+    served = set(launcher_app.app.openapi()["paths"])
+    asked = set(re.findall(r"/api/\$\{(?:this\.)?brick\}(/revision(?:/[a-z]+)*)", script))
+    assert {"/revision", "/revision/change", "/revision/restore", "/revision/version"} <= asked
+    for path in asked:
+        assert any(route == "/api/{demo_id}" + path or route.startswith("/api/{demo_id}" + path + "/{") for route in served), path
+    for brick in ("htmlc", "agent"):  # what opens it, in each of the two bricks
+        assert f'id="{brick}-change"' in page and f'el("{brick}-change")' in script
 
 
 def test_pictures_to_draw_again_come_after_every_part_to_write_again():

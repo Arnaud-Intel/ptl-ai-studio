@@ -180,12 +180,13 @@ with that said. What it was writing is kept beside the pictures as
 
 ## Changing a page that was built
 
-A built page has the same second tab as HTML Creator's, **Change a part** (see
-[its README](../html-creator/README.md#changing-one-part-of-a-page) for how a
-part is pointed at and written again): the coding model writes the part again
-on the chip that wrote the page, the pictures stay in, and the build's own
-checks are made again of the page as changed and shown under the result --
-they report, and nothing is written a second time because of them.
+A built page opens in the same workspace as HTML Creator's, **Change this
+page** (see [its README](../html-creator/README.md#changing-one-part-of-a-page)
+for its three modes -- Look, Comment, What changed -- and for how a part is
+pointed at and written again): the coding model writes the part again on the
+chip that wrote the page, the pictures stay in, and the build's own checks
+are made again of the page as changed and said under the comparison -- they
+report, and nothing is written a second time because of them.
 
 **A comment on a picture goes to the image model.** A part that shows one of
 the build's pictures -- an `<img>`, or a block whose rule puts the picture
@@ -203,7 +204,11 @@ battery): two parts written again in 27 s with the seven checks still passing;
 GPU the coding model gives its place to the image model, as in a build -- and
 the next change to a heading took 23 s, of which 2.3 s were the writing and
 the rest the coding model coming back. With a second GPU both stay loaded;
-that was not tried.
+that was not tried. Through the workspace (the same day, plugged in): a
+picture and a heading commented together and applied in 41 s -- 38.8 s the
+picture, 2.0 s the heading -- shown side by side with the seven checks still
+passing; undone, and both comments were back on their parts, the picture's
+tick with them.
 
 ## What it reports
 
@@ -352,7 +357,7 @@ machine was not measured again; the morning's shorter pages took 206 to
 - The page does not always carry everything a long brief lists -- week
   prices beside day prices, the year of each project. The last check says
   which figures are missing; nothing puts them back by itself -- a person
-  can, by pointing at the part in the second tab.
+  can, by pointing at the part in the workspace (*Change this page*).
 - Every page has the studio's skeleton: the same order of parts, the same
   twenty layout rules. The palette, the type and the content make them look
   unlike one another, not the structure.
