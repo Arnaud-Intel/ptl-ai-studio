@@ -10,16 +10,18 @@ doc-qa's own small general-purpose default is the wrong tool here too.
 from __future__ import annotations
 
 import gc
+import time
 from typing import Callable
 
 from doc_qa.engine_factory import create_llm
 from pantherlake_ai_core.engine import Engine
-from pantherlake_ai_core.types import GenerationControl
+from pantherlake_ai_core.types import GenerationControl, stopped
 
 from . import folder_input
 from . import pictures as picture_kit
+from . import revise as revising
 from .html_cleanup import strip_code_fence
-from .types import HtmlResult
+from .types import HtmlResult, Revised
 
 _DEFAULT_OPENVINO_REPO = "OpenVINO/Qwen3-Coder-30B-A3B-Instruct-int4-ov"
 _DEFAULT_PORTABLE_REPO = "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF"
@@ -82,11 +84,119 @@ _DOCUMENT_SUMMARY_SYSTEM_PROMPT = (
 )
 
 
+# What writing one part again may take: twice the part, and room for the
+# rules and the script that come with it -- within these bounds.
+_REVISE_MIN_TOKENS = 700
+_REVISE_MAX_TOKENS = 6144
+
+
 class HtmlCreatorSession:
     def __init__(self, engine: Engine, *, compute_device: str):
         self.engine = engine
         self.compute_device = compute_device
         self._llm = None  # built lazily -- no reason to load it before there's a prompt/folder
+
+    def _load(self, on_downloading: Callable[[], None] | None = None) -> None:
+        if self._llm is not None:
+            return
+        if self.engine == Engine.OPENVINO:
+            self._llm = create_llm(
+                self.engine,
+                device=self.compute_device,
+                model_repo=_DEFAULT_OPENVINO_REPO,
+                on_downloading=on_downloading,
+            )
+        else:
+            self._llm = create_llm(
+                self.engine, model_repo=_DEFAULT_PORTABLE_REPO, n_ctx=_PORTABLE_N_CTX
+            )
+
+    def revise(
+        self,
+        source: str,
+        number: int,
+        comment: str,
+        *,
+        seen: list[int] | None = None,
+        pictures: list[picture_kit.Picture] | None = None,
+        on_ready: Callable[[], None] | None = None,
+        on_downloading: Callable[[], None] | None = None,
+        control: GenerationControl | None = None,
+    ) -> Revised:
+        """Write part `number` of the page `source` again as `comment` asks,
+        and leave every other character of the page alone (see revise.py,
+        which also says how a part gets its number).
+
+        `source` is the page as it was written -- its pictures by their
+        file names, not embedded -- and so is what comes back. `seen`, when
+        the page was pointed at in a browser, is the numbers the browser
+        found inside the part: if the source does not have the same ones
+        inside it, the page's HTML is not what it looks like and the part
+        is refused rather than something else replaced. `pictures` are the
+        files the page may use.
+
+        A wrong part or an empty comment is a ValueError. A model that does
+        not manage the change is not: the page comes back as it was, with
+        `problem` saying why -- after a second try, begun on the part's
+        own tag so that it cannot be another element. An answer that can
+        be used and has faults its own text shows (`revise.faults`) is
+        asked for once more with the faults said; what is still wrong
+        after that is in `notes`, for the person to look at."""
+        if not comment or not comment.strip():
+            raise ValueError("Say what to change.")
+        part = revising.find(source, number)
+        if not revising.same_inside(source, number, seen):
+            raise ValueError(
+                f"Part {number} is not laid out in the page's source the way the browser shows it; "
+                "point at the part around it instead."
+            )
+        fragment = source[part.start:part.end]
+        asked = revising.request(source, part, comment, picture_kit.manifest(pictures) if pictures else "")
+        self._load(on_downloading)
+        if on_ready is not None:
+            on_ready()
+        room = min(_REVISE_MAX_TOKENS, max(_REVISE_MIN_TOKENS, self._llm.count_tokens(fragment) * 2 + 600))
+        started = time.perf_counter()
+        result = Revised(source=source, number=number, comment=comment.strip(), before=fragment)
+        names = [picture.name for picture in pictures] if pictures else None
+
+        def ask(request: str, begin: str):
+            text = self._llm.answer(revising.SYSTEM_PROMPT, request, max_tokens=room, control=control, begin=begin)
+            result.attempts += 1
+            result.stats = self._llm.last_stats
+            return revising.read_answer(text, part.tag)
+
+        result.attempts = 0
+        answer = ask(asked, revising.BEGIN)
+        if answer.problem and not stopped(control):
+            # Begun on the part's own tag, it cannot be another element.
+            answer = ask(asked, f"<{part.tag}")
+        # What was already wrong with the part before anybody touched it -- a
+        # link the page never had a target for -- is not this change's fault,
+        # and is not worth asking twice for.
+        already = set(revising.faults(source, part, revising.Answer(element=fragment), names))
+
+        def new_faults(written) -> list[str]:
+            return [fault for fault in revising.faults(source, part, written, names) if fault not in already]
+
+        wrong = [] if answer.problem else new_faults(answer)
+        if wrong and not stopped(control):
+            # Told what was wrong, once. The better of the two is kept.
+            again = ask(asked + "\n\n" + revising.faults_note(wrong), revising.BEGIN)
+            still = None if again.problem else new_faults(again)
+            if still is not None and len(still) < len(wrong):
+                answer, wrong = again, still
+        result.seconds = round(time.perf_counter() - started, 2)
+        result.problem, result.plan = answer.problem, answer.plan
+        if result.problem:
+            return result
+        answer = revising.anchored(source, part, answer)
+        result.notes = answer.notes + [f"to check: {fault}" for fault in wrong]
+        result.after = answer.element
+        result.css = revising.new_rules(source, answer.css)
+        result.script = answer.script
+        result.source = revising.changed(source, part, answer)
+        return result
 
     def generate(
         self,
@@ -173,18 +283,7 @@ class HtmlCreatorSession:
             self._llm = None
             gc.collect()
 
-        if self._llm is None:
-            if self.engine == Engine.OPENVINO:
-                self._llm = create_llm(
-                    self.engine,
-                    device=self.compute_device,
-                    model_repo=_DEFAULT_OPENVINO_REPO,
-                    on_downloading=on_downloading,
-                )
-            else:
-                self._llm = create_llm(
-                    self.engine, model_repo=_DEFAULT_PORTABLE_REPO, n_ctx=_PORTABLE_N_CTX
-                )
+        self._load(on_downloading)
         if on_ready is not None:
             on_ready()
 

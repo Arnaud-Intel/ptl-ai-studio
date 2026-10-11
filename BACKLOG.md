@@ -30,7 +30,7 @@ a new one or the deferred list, and moves its original wording to
 Sorted on 2026-10-10: nothing is waiting. The twenty-six entries that were
 here are under Original reports, each with the ticket it went into.
 
-- [ ] **Change one place of a generated page, by pointing at it.** Asked for
+- [x] **Change one place of a generated page, by pointing at it.** Asked for
   by the user on 2026-10-10, for the Page Agent and the HTML Creator: "target
   modification on selected area of the page", in "a new tab using the
   previous page as a starting point where we can point at places to comment
@@ -58,6 +58,45 @@ here are under Original reports, each with the ticket it went into.
   the Page Agent's own checks -- figures carried from the brief, its layout
   rules -- make of a page edited in pieces. It belongs with R39 for the Page
   Agent, and is new for the HTML Creator. (filed 2026-10-10, user request)
+  *Built on 2026-10-11, at the user's word ("let's work on the page-editing
+  request").* Both bricks have the second tab, **Change a part**: a copy of
+  the page in a frame, a click on a part pins a numbered comment (wider and
+  narrower to choose the part around it), Apply writes those parts again and
+  nothing else, the first tab keeps the page as it was made, and a change can
+  be undone. For a picture the Page Agent drew, the comment goes to the image
+  model by way of the planner. How it works and what was measured are in
+  `bricks/html-creator/README.md` and `bricks/page-agent/README.md`; the code
+  is `html_creator/revise.py`, `launcher/page_revisions.py` and the routes
+  under `/api/<brick>/revision`.
+  *The three things that were not known.* **Does the coder write one fragment
+  well with the stylesheet elsewhere?** Yes for what it is told and shown:
+  fourteen changes of fourteen came back usable, in 1.6 to 14.6 s (integrated
+  GPU, mains), once it was given the part's own rules, what the rest of the
+  page says, the page's blocks, the lines of script that name the part and the
+  list of pictures, and allowed to hand back rules and a script. Given the
+  part and its rules alone, three changes of eleven made the page worse. It
+  still makes changes that are not finished -- a class nothing dresses, a link
+  to nowhere, a badge placed against nothing: the first two are checked for
+  and asked about once more, the third is put right in code. **How is a click
+  caught in the sandboxed frame?** By a script in the copy shown, which posts
+  the number of the part clicked; the numbers are attributes written into the
+  copy's tags and never into the page kept. **What do the Page Agent's checks
+  make of a page edited in parts?** They are made again after every change and
+  shown; on the bakery sample all seven still passed after two parts and a
+  picture were changed.
+  *In the launcher, on the XPS 14 alone (2026-10-11, on battery):* two parts
+  of an HTML Creator page changed in 8 s; two parts of a built page in 27 s; a
+  picture drawn again in 39 s and the heading after it in 23 s, the two models
+  changing places on the one GPU.
+  *Left.* Layout changes are the weak side (three cards "side by side" may
+  wrap to two rows). A part filled or animated by the page's own script is
+  changed in its HTML only: a fourth number added to a band the script counts
+  up came back as a plain 12, and a chart or a game board cannot be changed at
+  all this way. Two comments of which one is inside the other are refused. Not
+  tried: a second GPU (both models staying loaded), document summaries, a page
+  cut off before its end, the portable engine, a page with more than a few
+  hundred parts, a person other than its author using the tab. The Auto Demo
+  does not show any of it.
 
 ## What we are showing
 
@@ -689,6 +728,13 @@ were here before.
   presenter would show.
   **Estimate:** 4-6 days. **Depends on:** R33 for the memory rule. (filed
   2026-10-10, from the brick's Inbox entry)
+  *2026-10-11:* a built page can now be changed in parts, by pointing (the
+  Inbox entry of that day): the coding model writes one part again, the image
+  model draws one picture again. That gives a person the means to put right
+  what this ticket wanted the conductor to put right by itself -- a figure the
+  page lost, a picture that is not what was asked -- and does not close any of
+  its items: a picture is still never looked at by a model, and a page's
+  length is what it was.
 
 - [ ] **R40 · P2 · Live translation in a real call, with captions that stay on
   top.** *Proves C4, C5.*
@@ -1090,6 +1136,10 @@ installs (R46), and the runtime's faults (R47).
   counted for loops at its temperature.
   **Estimate:** 3-4 days, a fault at a time. **Depends on:** none. (filed
   2026-10-10, from six Inbox entries)
+  *2026-10-11:* (2) seen with the coding model alone. A script that loaded
+  Qwen3-Coder-30B on the integrated GPU, asked it for two short answers (11 s)
+  and printed them took more than six minutes to end; six others like it that
+  day ended at once.
 
 ## Later -- P3
 

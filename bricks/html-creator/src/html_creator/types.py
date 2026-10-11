@@ -26,3 +26,25 @@ class HtmlResult:
     # Written on a freshly loaded model, without sampling: the same prompt
     # gives this page again.
     repeatable: bool = False
+
+
+@dataclass
+class Revised:
+    """One part of a page written again (see revise.py)."""
+
+    # The page as it is now: the new part where the old one was, and the
+    # rules and the script that came with it. The page as it was, when
+    # `problem` says the change could not be made.
+    source: str
+    number: int  # the part's number in the page it was pointed at in
+    comment: str
+    before: str = ""  # the part as it was
+    after: str = ""  # and as it is
+    css: str = ""  # the style rules added for it
+    script: str = ""  # the script added for it
+    plan: str = ""  # what the model said it would change, in a line
+    problem: str = ""  # why the change was not made, if it was not
+    notes: list[str] = field(default_factory=list)
+    attempts: int = 1
+    seconds: float = 0.0
+    stats: GenerationStats | None = None

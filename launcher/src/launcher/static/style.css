@@ -2198,3 +2198,46 @@ body.subtitles-docked { padding-bottom: 104px; }
 .subtitle-stage .hint { font-size: 13px; font-weight: 400; opacity: 0.6; }
 .subtitle-tools { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 6px; }
 .subtitle-tools .btn { padding: 4px 10px; font-size: 12px; white-space: nowrap; }
+
+/* Under a generated page: the page as it was made, and the copy to change
+   one part of (HTML Creator, Page Agent). */
+.page-tabs { display: flex; gap: 4px; margin: 12px 0 0; border-bottom: 1px solid var(--border); }
+.page-tab {
+  background: none;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13.5px;
+  margin-bottom: -1px;
+  padding: 8px 14px;
+}
+.page-tab:hover { color: var(--text); }
+.page-tab.active { background: var(--bg-card); border-color: var(--border); color: var(--text); font-weight: 600; }
+.page-pane { padding-top: 12px; }
+.editor { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+.editor .htmlc-preview-frame { height: 640px; }
+.editor-side { display: flex; flex-direction: column; gap: 10px; font-size: 13.5px; min-width: 0; }
+.editor-help { margin: 0; color: var(--text-dim); line-height: 1.45; }
+.editor-pins, .editor-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.editor-pin, .editor-results li { border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: var(--bg-input); }
+.editor-results li.failed { border-color: var(--danger); }
+.editor-results p { margin: 6px 0 0; }
+.editor-results .to-check { color: var(--warning); font-size: 12.5px; }
+.pin-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pin-number { background: var(--warning); border-radius: 5px; color: #111; font-size: 12px; font-weight: 700; line-height: 1.7; padding: 0 7px; }
+.pin-what { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--text); font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.pin-words { margin: 6px 0; color: var(--text-faint); font-size: 12.5px; }
+.editor-pin .field { margin: 0; }
+.pin-picture { margin: 0 0 8px; font-size: 12.5px; color: var(--text-dim); }
+.editor-pin .link-btn:disabled { opacity: 0.35; cursor: default; text-decoration: none; }
+.editor-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.editor-status { margin: 0; flex: none; }
+.editor-status:empty, .editor-writing:empty, .editor-pins:empty, .editor-results:empty, .editor-checks:empty { display: none; }
+.editor-writing .partial-text { max-height: 180px; font-size: 12px; }
+@media (max-width: 1100px) {
+  .editor { grid-template-columns: minmax(0, 1fr); }
+  .editor .htmlc-preview-frame { height: 520px; }
+}

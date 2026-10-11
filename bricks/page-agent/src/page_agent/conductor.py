@@ -59,6 +59,16 @@ _PAGE_MAX_TOKENS = 8192
 # At 0.7, none in thirteen, on the same requests.
 _PAGE_TEMPERATURE = 0.7
 
+# What the planner is asked when a picture is to be drawn again with a
+# change (`redraw`): the image model wants a picture described, and makes
+# little of "warmer" or "without the cup" said by themselves.
+_REDRAW_PROMPT = (
+    "You rewrite the description of a photograph so that the picture drawn from it changes as asked. You are given "
+    "the DESCRIPTION the picture was drawn from and the CHANGE wanted. Reply with the new description and nothing "
+    "else: one sentence in English, saying what is seen in the picture, in the manner of the old one, with the "
+    "change made. Keep what the change does not concern. No lettering and no words in the picture."
+)
+
 PLAN, IMAGES, PAGE, CHECK = "plan", "images", "page", "check"
 STEPS = (PLAN, IMAGES, PAGE, CHECK)
 
@@ -272,6 +282,78 @@ class PageAgent:
         detail = f"{len(shown)} of {len(offered)} picture(s) placed"
         report(PAGE, "done", device, "stopped: it was repeating itself" if watch.ran_away else detail)
         return result, time.perf_counter() - started
+
+    # ------------------------------------------------------------- afterwards
+
+    def revise(
+        self, source: str, number: int, comment: str, *, device: str, seen: list[int] | None = None,
+        pictures: list[picture_kit.Picture] | None = None, on_ready: Callable[[], None] | None = None,
+        on_downloading: Callable[[], None] | None = None, control: GenerationControl | None = None,
+    ):
+        """One part of a page that was built, written again by the coding
+        model on `device` as `comment` asks; the rest of the page is left
+        as it was (see html_creator.revise). `source` is the page as it
+        was written, with the studio's layout rules already in it.
+
+        On a machine where the pictures and the page share a chip, the
+        coding model may have given its place to the image model at the
+        end of the build: it is loaded again here, in turn as always."""
+        if self._page is None or self._page.compute_device != device:
+            self._release_page()
+            self._page = HtmlCreatorSession(self.engine, compute_device=device)
+        if self._page._llm is None and self._images is not None and self._images.device == device:
+            self._release_images()
+        return self._page.revise(
+            source, number, comment, seen=seen, pictures=pictures, on_ready=on_ready, on_downloading=on_downloading,
+            control=control,
+        )
+
+    def redraw(
+        self, picture: picture_kit.Picture, comment: str, *, assignment: Assignment, work_dir: Path, name: str,
+        on_step: StepReport | None = None, on_downloading: Callable[[], None] | None = None,
+        control: GenerationControl | None = None,
+    ) -> DrawnPicture:
+        """One picture of a page that was built, drawn again as `comment`
+        asks, into `work_dir` under `name` and at the size the old one has.
+
+        The image model draws from a description, not from a remark: the
+        planner writes the new description out of the old one
+        (`picture.caption`, what the picture was drawn from) and the
+        comment. If the planner cannot be asked, the comment is added to
+        the old description, which the image model makes less of.
+
+        On a machine where the pictures and the page share a chip the
+        coding model gives its place to the image model, in turn as in a
+        build; `revise` takes it back."""
+        if not comment or not comment.strip():
+            raise ValueError("Say what to change in the picture.")
+        report: StepReport = on_step or (lambda step, state, device, detail: None)
+        device = assignment.planner
+        report(PLAN, "loading", device, "")
+        try:
+            if self._planner is None or self._planner_device != device:
+                self._planner = None
+                self._planner = create_llm(
+                    self.engine, device=device, model_repo=planner_repo(device), on_downloading=on_downloading
+                )
+                self._planner_device = device
+            report(PLAN, "running", getattr(self._planner, "device", device), "")
+            answer = self._planner.answer(
+                _REDRAW_PROMPT, f"DESCRIPTION: {picture.caption}\nCHANGE: {' '.join(comment.split())}", max_tokens=120, sample=False,
+            )
+            description = " ".join(answer.split()).strip("\"' ")
+            if len(description) < 12:
+                raise ValueError("no description came back")
+        except Exception:  # noqa: BLE001 -- a planner that cannot be asked costs the wording, not the picture
+            description = f"{picture.caption.rstrip('. ')}, {comment.strip().rstrip('.')}"
+        report(PLAN, "done", device, "the picture described again")
+        if assignment.images == assignment.page:
+            self._release_page()
+        spec = planning.PictureSpec(name, picture.width or planning.BODY_SIZE[0], picture.height or planning.BODY_SIZE[1], description)
+        drawn, _seconds = self._draw([spec], assignment.images, work_dir, report, on_downloading, None, control, "the picture")
+        if not drawn:
+            raise RuntimeError("Stopped before the picture was drawn.")
+        return drawn[0]
 
     # --------------------------------------------------------------------- run
 

@@ -2746,6 +2746,9 @@ const PANELS = {
         },
       );
     },
+    async rehydrate() {
+      await restorePage(this, "html-creator", "htmlc");
+    },
     wire() {
       el("htmlc-generate").addEventListener("click", () => {
         const mode = el("htmlc-mode").value;
@@ -2784,7 +2787,7 @@ const PANELS = {
       });
       el("htmlc-download").addEventListener("click", () => {
         if (!this.currentHtml) return;
-        const url = URL.createObjectURL(new Blob([this.currentHtml], { type: "text/html" }));
+        const url = URL.createObjectURL(new Blob([this.tabs ? this.tabs.html() : this.currentHtml], { type: "text/html" }));
         const link = document.createElement("a");
         link.href = url;
         link.download = "generated.html";
@@ -2800,7 +2803,9 @@ const PANELS = {
     // The page at the size it was designed for. Still the sandboxed frame: it
     // fills the window, and the whole screen where the browser grants that.
     expand(on) {
-      const frame = el("htmlc-result").querySelector(".htmlc-preview-frame");
+      // The tab in view: the page as it was made, or the copy being changed.
+      const frame = this.tabs ? this.tabs.frame() : el("htmlc-result").querySelector(".htmlc-preview-frame");
+      el("htmlc-result").querySelectorAll(".htmlc-preview-frame.expanded").forEach((other) => other !== frame && other.classList.remove("expanded"));
       if (!frame) on = false;
       if (frame) frame.classList.toggle("expanded", on);
       document.body.classList.toggle("htmlc-expanded", on);
@@ -2835,23 +2840,32 @@ const PANELS = {
           `<p class="section-label">${data.pictures_used.length} of ${data.pictures_offered} pictures placed and embedded in the page.${escapeHtml(notes)}</p>`,
         );
       }
-      const iframe = document.createElement("iframe");
-      iframe.className = "htmlc-preview-frame";
-      iframe.setAttribute("sandbox", "allow-scripts");
-      iframe.title = "Generated page preview";
-      iframe.srcdoc = data.html;
-      container.appendChild(iframe);
-      const details = document.createElement("details");
-      const summary = document.createElement("summary");
-      summary.textContent = "View raw HTML";
-      details.appendChild(summary);
-      const pre = document.createElement("pre");
-      pre.className = "text-block";
-      // As the model wrote it: with pictures embedded, the page is megabytes
-      // of base64 nobody can read.
-      pre.textContent = data.html_source || data.html;
-      details.appendChild(pre);
-      container.appendChild(details);
+      this.tabs?.dispose();
+      this.tabs = mountPageTabs({
+        container,
+        brick: "html-creator",
+        panel: this,
+        html: data.html,
+        fill: (pane) => {
+          const iframe = document.createElement("iframe");
+          iframe.className = "htmlc-preview-frame";
+          iframe.setAttribute("sandbox", "allow-scripts");
+          iframe.title = "Generated page preview";
+          iframe.srcdoc = data.html;
+          pane.appendChild(iframe);
+          const details = document.createElement("details");
+          const summary = document.createElement("summary");
+          summary.textContent = "View raw HTML";
+          details.appendChild(summary);
+          const pre = document.createElement("pre");
+          pre.className = "text-block";
+          // As the model wrote it: with pictures embedded, the page is megabytes
+          // of base64 nobody can read.
+          pre.textContent = data.html_source || data.html;
+          details.appendChild(pre);
+          pane.appendChild(details);
+        },
+      });
       el("htmlc-download").hidden = false;
       el("htmlc-fullscreen").hidden = false;
     },
@@ -2891,6 +2905,7 @@ const PANELS = {
         const state = await fetchJSON("/api/page-agent/progress");
         if (state.run) this.renderProgress(state);
         if (state.running) this.follow();
+        else await restorePage(this, "page-agent", "agent");
       } catch {
         // Nothing to show is not an error worth a message.
       }
@@ -2900,6 +2915,10 @@ const PANELS = {
       clearInterval(this.poll);
       this.poll = null;
       Panel.prototype.leave.call(this);
+    },
+    // A picture drawn again joins the build's pictures above the page.
+    afterChange() {
+      fetchJSON("/api/page-agent/progress").then((state) => this.renderProgress(state)).catch(() => {});
     },
     follow() {
       clearInterval(this.poll);
@@ -2949,7 +2968,10 @@ const PANELS = {
           // An extra one: not in the plan, drawn because the page showed a
           // planned picture twice, or asked for one nobody had drawn, and said
           // in its alt text what belonged there.
-          const took = (picture.seconds ? ` · ${picture.seconds.toFixed(1)} s` : "") + (picture.extra ? " · asked for by the page" : "");
+          const took =
+            (picture.seconds ? ` · ${picture.seconds.toFixed(1)} s` : "") +
+            (picture.extra ? " · asked for by the page" : "") +
+            (picture.again ? ` · ${escapeHtml(picture.again)} drawn again` : ""); // from a comment on it, in the second tab
           // Where the page is asked to put it: the plan gives each picture a place.
           const place = {
             hero: "behind the headline",
@@ -3013,7 +3035,7 @@ const PANELS = {
       });
       el("agent-download").addEventListener("click", () => {
         if (!this.currentHtml) return;
-        const url = URL.createObjectURL(new Blob([this.currentHtml], { type: "text/html" }));
+        const url = URL.createObjectURL(new Blob([this.tabs ? this.tabs.html() : this.currentHtml], { type: "text/html" }));
         const link = document.createElement("a");
         link.href = url;
         link.download = "page.html";
@@ -3029,7 +3051,8 @@ const PANELS = {
     // As HTML Creator's: the page at the size it was designed for, still in
     // its sandboxed frame.
     expand(on) {
-      const frame = el("agent-result").querySelector(".htmlc-preview-frame");
+      const frame = this.tabs ? this.tabs.frame() : el("agent-result").querySelector(".htmlc-preview-frame");
+      el("agent-result").querySelectorAll(".htmlc-preview-frame.expanded").forEach((other) => other !== frame && other.classList.remove("expanded"));
       if (!frame) on = false;
       if (frame) frame.classList.toggle("expanded", on);
       document.body.classList.toggle("htmlc-expanded", on);
@@ -3109,26 +3132,469 @@ const PANELS = {
         )
         .join("");
       container.innerHTML = stoppedNoteHtml(data) + `<ul class="agent-checks">${checks}</ul>` + this.speedsHtml(data);
-      const iframe = document.createElement("iframe");
-      iframe.className = "htmlc-preview-frame";
-      iframe.setAttribute("sandbox", "allow-scripts");
-      iframe.title = "Built page preview";
-      iframe.srcdoc = data.html;
-      container.appendChild(iframe);
-      const details = document.createElement("details");
-      const summary = document.createElement("summary");
-      summary.textContent = "View raw HTML";
-      details.appendChild(summary);
-      const pre = document.createElement("pre");
-      pre.className = "text-block";
-      pre.textContent = data.html_source || data.html; // as written: the embedded pictures are megabytes of base64
-      details.appendChild(pre);
-      container.appendChild(details);
+      this.tabs?.dispose();
+      this.tabs = mountPageTabs({
+        container,
+        brick: "page-agent",
+        panel: this,
+        html: data.html,
+        fill: (pane) => {
+          const iframe = document.createElement("iframe");
+          iframe.className = "htmlc-preview-frame";
+          iframe.setAttribute("sandbox", "allow-scripts");
+          iframe.title = "Built page preview";
+          iframe.srcdoc = data.html;
+          pane.appendChild(iframe);
+          const details = document.createElement("details");
+          const summary = document.createElement("summary");
+          summary.textContent = "View raw HTML";
+          details.appendChild(summary);
+          const pre = document.createElement("pre");
+          pre.className = "text-block";
+          pre.textContent = data.html_source || data.html; // as written: the embedded pictures are megabytes of base64
+          details.appendChild(pre);
+          pane.appendChild(details);
+        },
+      });
       el("agent-download").hidden = false;
       el("agent-fullscreen").hidden = false;
     },
   }),
 };
+
+// --- Changing one part of a page that was made (HTML Creator, Page Agent) -----------
+//
+// A generated page that is nearly right used to be written again from
+// nothing. Beside it there is now a second tab on a copy of it: click a part,
+// say what to change, and only that part is written again (the launcher's
+// /api/<brick>/revision routes; html_creator/revise.py has the how).
+//
+// The page is shown in a sandboxed frame this window cannot look into. So the
+// copy in that tab carries a number on every part, and the script below runs
+// inside it: it outlines what the pointer is over and tells this window which
+// part was clicked. Neither the numbers nor the script are in the page that
+// is kept and downloaded.
+
+// Runs inside the frame: put there as its own source (see PAGE_PICKER), so it
+// can use nothing of this file.
+function pagePickerInFrame() {
+  var MARK = "data-part";
+  var pins = [];
+  var boxes = [];
+  var hover = null;
+  function overlay(border, fill) {
+    var box = document.createElement("div");
+    box.style.cssText =
+      "position:fixed;z-index:2147483647;pointer-events:none;box-sizing:border-box;margin:0;padding:0;border-radius:4px;" +
+      "display:none;border:" + border + ";background:" + fill + ";";
+    document.documentElement.appendChild(box);
+    return box;
+  }
+  var hoverBox = overlay("2px dashed #38bdf8", "rgba(56,189,248,0.10)");
+  var cursor = document.createElement("style");
+  cursor.textContent = "*{cursor:crosshair !important}";
+  document.documentElement.appendChild(cursor);
+  function partOf(node) {
+    while (node && node.nodeType === 1 && !node.hasAttribute(MARK)) node = node.parentElement;
+    return node && node.nodeType === 1 ? node : null;
+  }
+  function place(box, target) {
+    var r = target.getBoundingClientRect();
+    box.style.left = r.left + "px";
+    box.style.top = r.top + "px";
+    box.style.width = r.width + "px";
+    box.style.height = r.height + "px";
+    box.style.display = r.width || r.height ? "block" : "none";
+  }
+  function describe(el) {
+    var inside = [];
+    var marked = el.querySelectorAll("[" + MARK + "]");
+    for (var i = 0; i < marked.length; i++) inside.push(Number(marked[i].getAttribute(MARK)));
+    var words = (el.innerText || el.getAttribute("alt") || "").replace(/\s+/g, " ").trim();
+    return {
+      part: Number(el.getAttribute(MARK)),
+      tag: el.tagName.toLowerCase(),
+      id: el.id || "",
+      classes: (el.getAttribute("class") || "").trim().split(/\s+/).filter(Boolean).slice(0, 2),
+      words: words.slice(0, 90),
+      inside: inside,
+    };
+  }
+  function redraw() {
+    if (hover && hover.isConnected) place(hoverBox, hover);
+    else hoverBox.style.display = "none";
+    for (var i = 0; i < pins.length; i++) {
+      var el = document.querySelector("[" + MARK + '="' + pins[i].part + '"]');
+      if (el) place(boxes[i], el);
+      else boxes[i].style.display = "none";
+    }
+  }
+  document.addEventListener("mousemove", function (event) { hover = partOf(event.target); redraw(); }, true);
+  document.addEventListener("mouseout", function (event) { if (!event.relatedTarget) { hover = null; redraw(); } }, true);
+  // The page's own links and buttons do nothing here: a click is a pointing.
+  ["click", "submit", "dblclick"].forEach(function (kind) {
+    document.addEventListener(kind, function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      if (kind !== "click") return;
+      var el = partOf(event.target);
+      if (!el) return;
+      var chain = [];
+      for (; el; el = partOf(el.parentElement)) chain.push(describe(el));
+      parent.postMessage({ type: "page-part", chain: chain }, "*");
+    }, true);
+  });
+  window.addEventListener("message", function (event) {
+    var data = event.data || {};
+    if (data.type !== "page-pins") return;
+    boxes.forEach(function (box) { box.remove(); });
+    pins = data.pins || [];
+    boxes = pins.map(function (pin) {
+      var box = overlay("2px solid #f59e0b", "rgba(245,158,11,0.12)");
+      var label = document.createElement("span");
+      label.textContent = pin.label;
+      label.style.cssText =
+        "position:absolute;left:-2px;top:-2px;background:#f59e0b;color:#111;font:700 12px/1.7 system-ui,sans-serif;" +
+        "padding:0 7px;border-radius:4px 0 4px 0;";
+      box.appendChild(label);
+      return box;
+    });
+    redraw();
+    if (data.show) {
+      var el = document.querySelector("[" + MARK + '="' + data.show + '"]');
+      if (el) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  });
+  window.addEventListener("scroll", redraw, true);
+  window.addEventListener("resize", redraw);
+  setInterval(redraw, 300); // a page that moves by itself takes its outlines along
+  parent.postMessage({ type: "page-picker-ready" }, "*");
+}
+const PAGE_PICKER = `<script>(${pagePickerInFrame.toString()})();</` + `script>`;
+
+function partName(part) {
+  return part.tag + (part.id ? `#${part.id}` : "") + part.classes.map((name) => `.${name}`).join("");
+}
+
+class PageEditor {
+  constructor({ brick, panel, pane }) {
+    Object.assign(this, { brick, panel, pane, state: null, pins: [], opened: false, busy: false });
+    pane.innerHTML =
+      `<div class="editor">` +
+      `<iframe class="htmlc-preview-frame" sandbox="allow-scripts" title="The page, to point at"></iframe>` +
+      `<aside class="editor-side">` +
+      `<p class="editor-help">Click a part of the page and say what should change there. Only the parts you comment are ` +
+      `written again: the rest of the page stays exactly as it is.</p>` +
+      `<ol class="editor-pins"></ol>` +
+      `<div class="editor-actions"><button type="button" class="btn btn-primary" data-act="apply" disabled>Apply</button>` +
+      `<button type="button" class="btn btn-secondary" data-act="undo" disabled>Undo the last change</button></div>` +
+      `<p class="run-status editor-status" role="status" aria-live="polite"></p>` +
+      `<div class="editor-writing"></div>` +
+      `<ul class="editor-results"></ul>` +
+      `<div class="editor-checks"></div>` +
+      `</aside></div>`;
+    const find = (selector) => pane.querySelector(selector);
+    this.frame = find("iframe");
+    this.list = find(".editor-pins");
+    this.applyButton = find('[data-act="apply"]');
+    this.undoButton = find('[data-act="undo"]');
+    this.statusEl = find(".editor-status");
+    this.writing = find(".editor-writing");
+    this.results = find(".editor-results");
+    this.checks = find(".editor-checks");
+    this.onMessage = (event) => {
+      if (event.source !== this.frame.contentWindow || this.busy) return;
+      const data = event.data || {};
+      if (data.type === "page-picker-ready") this.sendPins();
+      if (data.type === "page-part" && Array.isArray(data.chain) && data.chain.length) this.pick(data.chain);
+    };
+    window.addEventListener("message", this.onMessage);
+    this.applyButton.addEventListener("click", () => this.apply());
+    this.undoButton.addEventListener("click", () => this.undo());
+    this.list.addEventListener("click", (event) => this.onPinButton(event));
+    this.list.addEventListener("input", (event) => {
+      const item = event.target.closest(".editor-pin");
+      if (item && event.target.tagName === "TEXTAREA") this.pins[Number(item.dataset.index)].comment = event.target.value;
+      if (item && event.target.type === "checkbox") this.pins[Number(item.dataset.index)].picture = event.target.checked;
+      this.refreshButtons();
+    });
+    this.list.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !this.applyButton.disabled) this.apply();
+    });
+  }
+  dispose() {
+    window.removeEventListener("message", this.onMessage);
+  }
+  say(text, kind) {
+    paintStatus(this.statusEl, text, kind);
+  }
+  async open() {
+    if (this.opened) return;
+    this.opened = true;
+    try {
+      this.show(await fetchJSON(`/api/${this.brick}/revision`));
+    } catch (err) {
+      this.say(`Error: ${err.message}`, "error");
+    }
+  }
+  // The page as it is now: a fresh copy to point at, and nothing pointed at yet.
+  show(state) {
+    this.state = state;
+    this.pins = [];
+    if (!state.available) {
+      this.frame.removeAttribute("srcdoc");
+      this.say("There is no page to change yet.", "error");
+    } else {
+      this.frame.srcdoc = state.marked + PAGE_PICKER;
+    }
+    this.undoButton.disabled = !state.can_undo;
+    this.renderPins();
+    const checks = state.checks || [];
+    this.checks.innerHTML = checks.length
+      ? `<p class="section-label">The build's checks, on the page as it is now</p><ul class="agent-checks">` +
+        checks
+          .map((check) => `<li class="${check.passed ? "passed" : "failed"}">${check.passed ? "✓" : "✗"} ${escapeHtml(check.name)}` +
+            `${check.detail && !check.passed ? ` -- ${escapeHtml(check.detail)}` : ""}</li>`)
+          .join("") +
+        `</ul>`
+      : "";
+  }
+  current(pin) {
+    return pin.chain[pin.level];
+  }
+  // The picture the part shows, if it is one the image model drew: it can be drawn again.
+  pictureOf(pin) {
+    return ((this.state && this.state.pictures) || {})[String(this.current(pin).part)] || null;
+  }
+  sendPins(show = null) {
+    const pins = this.pins.map((pin, index) => ({ part: this.current(pin).part, label: String(index + 1) }));
+    this.frame.contentWindow?.postMessage({ type: "page-pins", pins, show }, "*");
+  }
+  // A part was clicked in the frame: `chain` is that part and every part around it, innermost first.
+  pick(chain) {
+    const taken = new Map(this.pins.map((pin, index) => [this.current(pin).part, index]));
+    const within = chain.find((part) => taken.has(part.part));
+    if (within) {
+      // On, or inside, a part that already has its comment: that comment is the one meant.
+      this.list.querySelectorAll("textarea")[taken.get(within.part)]?.focus();
+      return;
+    }
+    const holds = chain[0].inside.find((part) => taken.has(part));
+    if (holds !== undefined) {
+      this.say(`Part ${taken.get(holds) + 1} is inside the one you clicked: say both things in one comment, on the larger part.`, "error");
+      return;
+    }
+    // A click on a picture the image model drew is, most often, about the picture.
+    this.pins.push({ chain, level: 0, comment: "", picture: chain[0].tag === "img" });
+    this.say("");
+    this.renderPins();
+    this.list.querySelectorAll("textarea")[this.pins.length - 1]?.focus();
+  }
+  onPinButton(event) {
+    const button = event.target.closest("button[data-act]");
+    const item = event.target.closest(".editor-pin");
+    if (!button || !item || this.busy) return;
+    const index = Number(item.dataset.index);
+    const pin = this.pins[index];
+    if (button.dataset.act === "remove") {
+      this.pins.splice(index, 1);
+    } else {
+      const level = pin.level + (button.dataset.act === "wider" ? 1 : -1);
+      const wanted = pin.chain[level];
+      if (!wanted) return;
+      const others = new Set(this.pins.filter((other) => other !== pin).map((other) => this.current(other).part));
+      const clash = wanted.inside.find((part) => others.has(part));
+      if (clash !== undefined) {
+        this.say("That would take in another part that has its own comment. Remove that one first.", "error");
+        return;
+      }
+      pin.level = level;
+      pin.picture = wanted.tag === "img"; // another part: what the comment is about is asked again
+    }
+    this.say("");
+    this.renderPins(button.dataset.act === "remove" ? null : this.current(pin).part);
+  }
+  renderPins(show = null) {
+    this.list.innerHTML = this.pins
+      .map((pin, index) => {
+        const part = this.current(pin);
+        const words = part.words ? `“${escapeHtml(part.words)}${part.words.length >= 90 ? "…" : ""}”` : "nothing written in it";
+        return (
+          `<li class="editor-pin" data-index="${index}"><div class="pin-head"><span class="pin-number">${index + 1}</span>` +
+          `<span class="pin-what">${escapeHtml(partName(part))}</span>` +
+          `<button type="button" class="link-btn" data-act="wider" title="The part around this one"${pin.level + 1 < pin.chain.length ? "" : " disabled"}>Wider</button>` +
+          `<button type="button" class="link-btn" data-act="narrower" title="Back to the part inside"${pin.level > 0 ? "" : " disabled"}>Narrower</button>` +
+          `<button type="button" class="link-btn" data-act="remove">Remove</button></div>` +
+          `<p class="pin-words">${words}</p>` +
+          (this.pictureOf(pin)
+            ? `<label class="check pin-picture" title="Ticked: the comment goes to the image model, which draws the picture again. ` +
+              `Not ticked: it goes to the coding model, which writes this part's HTML again.">` +
+              `<input type="checkbox"${pin.picture ? " checked" : ""} /><span>Draw the picture again (${escapeHtml(this.pictureOf(pin))})</span></label>`
+            : "") +
+          `<label class="field"><textarea rows="2" placeholder="${pin.picture && this.pictureOf(pin) ? "What should the picture show instead?" : "What should change here?"}">${escapeHtml(pin.comment)}</textarea></label></li>`
+        );
+      })
+      .join("");
+    this.sendPins(show);
+    this.refreshButtons();
+  }
+  refreshButtons() {
+    const ready = this.pins.length > 0 && this.pins.every((pin) => pin.comment.trim());
+    this.applyButton.disabled = this.busy || !ready;
+    this.applyButton.textContent = this.pins.length > 1 ? `Apply ${this.pins.length} changes` : "Apply";
+    this.undoButton.disabled = this.busy || !(this.state && this.state.can_undo);
+  }
+  setBusy(busy) {
+    this.busy = busy;
+    this.list.querySelectorAll("textarea, button").forEach((control) => (control.disabled = busy));
+    if (!busy) this.renderPins();
+    else this.refreshButtons();
+  }
+  async apply() {
+    const asked = this.pins.map((pin, index) => ({ label: index + 1, name: partName(this.current(pin)) }));
+    const changes = this.pins.map((pin) => ({
+      part: this.current(pin).part,
+      comment: pin.comment,
+      seen: this.current(pin).inside,
+      picture: pin.picture ? this.pictureOf(pin) : null,
+    }));
+    this.setBusy(true);
+    this.results.innerHTML = "";
+    const data = await this.panel.run({
+      button: this.applyButton,
+      statusEl: this.statusEl,
+      key: this.brick,
+      partial: { target: this.writing, stage: this.brick === "page-agent" ? "page" : "default" },
+      busy: changes.length > 1 ? `Changing ${changes.length} parts…` : "Changing the part…",
+      work: () => postJSON(`/api/${this.brick}/revision/change`, { version: this.state.version, changes }),
+      done: (result) => {
+        const made = result.results.filter((change) => change.done).length;
+        const seconds = result.results.reduce((sum, change) => sum + (change.seconds || 0), 0);
+        return made === result.results.length
+          ? `${made === 1 ? "Changed" : `${made} parts changed`} in ${seconds.toFixed(0)} s -- the rest of the page was not touched`
+          : `${made} of ${result.results.length} changed in ${seconds.toFixed(0)} s -- see below`;
+      },
+    });
+    this.writing.innerHTML = "";
+    this.busy = false;
+    if (!data) {
+      this.setBusy(false); // refused, or failed: the comments are still there to try again
+      return;
+    }
+    this.show(data);
+    this.panel.afterChange?.(); // what the panel shows beside the page, and a change may have added to
+    this.results.innerHTML = data.results
+      .map((change, index) => {
+        const head = `<span class="pin-number">${asked[index].label}</span> <span class="pin-what">${escapeHtml(asked[index].name)}</span>`;
+        if (!change.done) {
+          return `<li class="failed">${head}<p>Not changed: ${escapeHtml(change.problem || "it could not be written")}.</p>` +
+            `<p class="pin-words">You asked: ${escapeHtml(change.comment)}</p></li>`;
+        }
+        if (change.picture) {
+          return `<li class="done">${head}<p>${escapeHtml(change.plan || "The picture was drawn again.")}</p>` +
+            `<p class="pin-words">${change.seconds.toFixed(1)} s, the image model loaded if it was not</p></li>`;
+        }
+        const speed = change.tokens ? ` · ${change.tokens} tokens at ${Number(change.tokens_per_second).toFixed(0)} tok/s` : "";
+        const twice = change.attempts > 1 ? ` · asked ${change.attempts} times` : "";
+        const extras = [change.rules_added ? "style rules added" : "", change.script_added ? "a script added" : ""].filter(Boolean).join(", ");
+        const notes = (change.notes || []).map((note) => `<p class="to-check">${escapeHtml(note)}</p>`).join("");
+        return (
+          `<li class="done">${head}<p>${escapeHtml(change.plan || "Written again.")}</p>` +
+          `<p class="pin-words">${change.seconds.toFixed(1)} s${speed}${twice}${extras ? ` · ${extras}` : ""}</p>${notes}</li>`
+        );
+      })
+      .join("");
+  }
+  async undo() {
+    this.setBusy(true);
+    try {
+      this.busy = false;
+      this.show(await postJSON(`/api/${this.brick}/revision/undo`, {}));
+      this.results.innerHTML = "";
+      this.say("Back to the page as it was before the last change.", "live");
+    } catch (err) {
+      this.setBusy(false);
+      this.say(`Error: ${err.message}`, "error");
+    }
+  }
+}
+
+// The two tabs under a result: the page as it was made, and the copy to
+// change. `fill(pane)` puts the page into the first one, as it always was
+// shown. Returns what the panel needs: the HTML to download and the frame to
+// put full screen -- those of the tab in view.
+function mountPageTabs({ container, brick, panel, html, fill }) {
+  const tabs = document.createElement("div");
+  tabs.className = "page-tabs";
+  tabs.setAttribute("role", "tablist");
+  tabs.innerHTML =
+    `<button type="button" class="page-tab active" role="tab" data-tab="built" aria-selected="true">The page</button>` +
+    `<button type="button" class="page-tab" role="tab" data-tab="change" aria-selected="false">Change a part</button>`;
+  const built = document.createElement("div");
+  const change = document.createElement("div");
+  built.className = change.className = "page-pane";
+  change.hidden = true;
+  container.append(tabs, built, change);
+  fill(built);
+  const editor = new PageEditor({ brick, panel, pane: change });
+  tabs.addEventListener("click", (event) => {
+    const tab = event.target.closest(".page-tab");
+    if (!tab) return;
+    for (const other of tabs.children) {
+      other.classList.toggle("active", other === tab);
+      other.setAttribute("aria-selected", String(other === tab));
+    }
+    built.hidden = tab.dataset.tab !== "built";
+    change.hidden = tab.dataset.tab !== "change";
+    if (!change.hidden) editor.open();
+  });
+  return {
+    editor,
+    // What is downloaded: the page of the tab in view -- as it was made, or as it has been changed.
+    html: () => (!change.hidden && editor.state && editor.state.available ? editor.state.html : html),
+    frame: () => container.querySelector(".page-pane:not([hidden]) .htmlc-preview-frame"),
+    dispose: () => editor.dispose(),
+  };
+}
+
+// A page made before this visit, or before the browser page was reloaded, is
+// still kept by the launcher: it is shown again, with its second tab, rather
+// than lost. What the build said of itself (its speeds, its checks) is gone
+// with the page that showed it.
+async function restorePage(panel, brick, prefix) {
+  const container = el(`${prefix}-result`);
+  if (container.querySelector(".page-tabs")) return;
+  let state;
+  try {
+    state = await fetchJSON(`/api/${brick}/revision?first=1`);
+  } catch {
+    return;
+  }
+  if (!state.available || container.querySelector(".page-tabs")) return;
+  container.innerHTML =
+    `<p class="section-label">The page made earlier, kept by the launcher` +
+    (state.version ? ` -- changed ${state.version} time${state.version === 1 ? "" : "s"} since: see the second tab` : "") +
+    `</p>`;
+  panel.currentHtml = state.first_html;
+  panel.tabs?.dispose();
+  panel.tabs = mountPageTabs({
+    container,
+    brick,
+    panel,
+    html: state.first_html,
+    fill: (pane) => {
+      const iframe = document.createElement("iframe");
+      iframe.className = "htmlc-preview-frame";
+      iframe.setAttribute("sandbox", "allow-scripts");
+      iframe.title = "The page made earlier";
+      iframe.srcdoc = state.first_html;
+      pane.appendChild(iframe);
+    },
+  });
+  el(`${prefix}-download`).hidden = false;
+  el(`${prefix}-fullscreen`).hidden = false;
+}
 
 // --- Home grid ----------------------------------------------------------------------
 

@@ -93,6 +93,77 @@ prompt forbids those calls and asks for state to be kept in variables.
 "Full screen" expands that same frame to the window (and the screen, where
 the browser grants it); it never takes the page out of the sandbox.
 
+## Changing one part of a page
+
+A page that is nearly right used to be written again from nothing: a minute of
+work, and everything that was right moved too. In the launcher a generated
+page now has a second tab, **Change a part**, on a copy of it: click a part of
+the page, say what should change there, press Apply. Only the parts that were
+commented are written again; every other character of the page stays as it
+was. The first tab keeps the page as it was made, to compare; **Undo the last
+change** goes back a version; Download and Full screen follow the tab in view.
+A page reloaded in the browser comes back with both tabs: the launcher keeps
+it.
+
+**How a part is pointed at.** The page is shown in a sandboxed frame the
+launcher cannot look into. So the copy in the second tab carries a number on
+every element of the body (`revise.marked`: a `data-part` attribute in each
+opening tag) and a small script that outlines what the pointer is over and
+says which number was clicked. *Wider* and *Narrower* move the choice to the
+part around it and back -- a click lands on a heading, and what is meant is
+often its card. Neither the numbers nor the script are in the page that is
+kept and downloaded. Where a part ends in the source is worked out by
+`revise.parts`, and checked against what the browser found inside it before
+anything is replaced: a page whose HTML is not what it looks like is refused
+rather than something else overwritten.
+
+**What the model is given** (`revise.request`): the part; the rules of the
+stylesheet that apply to it (0.5 to 1.7 thousand characters of a stylesheet of
+6.6 thousand, on the two sample pages tried); what the rest of the page says,
+as plain words, so that a price is taken from the page and not made up; the
+page's blocks in order, each as a selector, for a link from one part to
+another; the lines of the page's own script that name the part; the pictures
+that exist. **What it answers:** one line saying what it changes, the part
+itself, and only if needed a `<style>` and a `<script>`, which go to the end
+of the page's own.
+
+**What is checked** before the answer takes the part's place
+(`revise.faults`): a class that no rule dresses, a link to an id nothing has,
+a script looking for an id nothing has, a rule waiting for a class nothing
+gives, a picture that does not exist. A fault is told to the model once, with
+what to do about it; what is still wrong after that is shown under the change
+as *to check*. One thing is put right without asking (`revise.anchored`): a
+badge placed with `position: absolute` and nothing to be placed against -- the
+model did that three times of three, whatever it was told.
+
+**Measured** on two pages this brick wrote (a hotel, a travel site with
+pictures), fourteen changes each time, Qwen3-Coder-30B on the XPS 14's
+integrated GPU (2026-10-11):
+
+| What the model was given | Usable parts | What went wrong |
+| --- | --- | --- |
+| The part, its rules, the comment (11 changes) | 11 of 11, 2 to 13 s | a price row invented, in dollars; answers hidden behind a class nothing set; a picture by a name no file has; a badge in the corner of the page |
+| + the rest of the page's words, the pictures, a script allowed, a line of plan first | 13 of 14 (a `<div>` for a `<section>`) | prices and picture right; a script that built a section of its own; the badge again |
+| + the blocks, the script's lines, rules said as things to do | 14 of 14, 1.6 to 14.6 s | a "button" that was an unstyled link to nowhere; the badge again; a number added to a counted-up band left at 0 |
+| The same, with the checks, a second asking and the badge put right | 14 of 14; 13 at the first asking | the unstyled link, still (the fault said without its remedy); with the remedy said, it came back a styled button that scrolls to the rooms, in 10.8 s |
+
+A change takes the time of the part, not of the page: a misspelt name 1.6 s, a
+section 5 to 10 s, a section with a fourth card added 14.6 s; six changes in a
+row 36 s. Those are on mains (40 to 43 tokens/s); on battery the same took a
+third longer (32 to 34 tokens/s). In the launcher: two parts of a new page
+changed in 8 s, undone, and found again after the browser page was reloaded.
+
+**What it is good at:** wording, a price, an item added or removed, a row in a
+table, a section put in French, colours. **What it does less well:** layout
+("side by side" is done with a wrapper, and three cards may still wrap to two
+rows); behaviour the page's own script drives (a fourth number in a band the
+script counts up came back as a plain 12). **What it cannot do:** a part the
+page draws from its script -- a chart, a game board -- can only be pointed at
+as its empty container; the script is not written again. Two comments of which
+one is inside the other are refused: say both in the comment on the larger
+part. Not tried: document summaries, pages cut off before `</html>`, the
+portable engine's 1.5B model.
+
 ## Writing a scenario that holds up
 
 The bundled scenarios (`sample-data/catalog.json`) were tuned by running

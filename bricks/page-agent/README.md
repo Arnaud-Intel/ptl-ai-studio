@@ -178,6 +178,33 @@ loop: 4 to 6%), stops the page under 10%, and the page is asked for again
 with that said. What it was writing is kept beside the pictures as
 `stopped-page.html`.
 
+## Changing a page that was built
+
+A built page has the same second tab as HTML Creator's, **Change a part** (see
+[its README](../html-creator/README.md#changing-one-part-of-a-page) for how a
+part is pointed at and written again): the coding model writes the part again
+on the chip that wrote the page, the pictures stay in, and the build's own
+checks are made again of the page as changed and shown under the result --
+they report, and nothing is written a second time because of them.
+
+**A comment on a picture goes to the image model.** A part that shows one of
+the build's pictures -- an `<img>`, or a block whose rule puts the picture
+behind its text -- offers *Draw the picture again*, ticked when the picture
+itself was clicked. The planner writes a new description out of the old one
+and the comment (the image model draws from a description, and makes little of
+"warmer" said by itself), the image model draws it at the same size under a
+name of its own (`picture-2-r2.jpg`), and the page shows it wherever it showed
+the old one. The old file is kept, so the change can be undone; the new
+picture joins the build's pictures above the page.
+
+Tried in the launcher on the bakery sample (2026-10-11, the XPS 14 alone, on
+battery): two parts written again in 27 s with the seven checks still passing;
+"the same bread cut in half on a dark wooden board" drawn in 39 s -- on one
+GPU the coding model gives its place to the image model, as in a build -- and
+the next change to a heading took 23 s, of which 2.3 s were the writing and
+the rest the coding model coming back. With a second GPU both stay loaded;
+that was not tried.
+
 ## What it reports
 
 How fast each model works, each in its own unit -- an image model never
@@ -324,7 +351,8 @@ machine was not measured again; the morning's shorter pages took 206 to
   is cleaned of what asks for it; an image model adds some unasked.
 - The page does not always carry everything a long brief lists -- week
   prices beside day prices, the year of each project. The last check says
-  which figures are missing; nothing puts them back.
+  which figures are missing; nothing puts them back by itself -- a person
+  can, by pointing at the part in the second tab.
 - Every page has the studio's skeleton: the same order of parts, the same
   twenty layout rules. The palette, the type and the content make them look
   unlike one another, not the structure.

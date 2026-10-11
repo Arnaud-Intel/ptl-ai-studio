@@ -1841,6 +1841,82 @@ async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
     )
 
 
+# --- changing one part of a page that was made (html-creator, page-agent) ----------
+#
+# Both bricks end with a page, and both keep it (launcher/page_revisions.py):
+# the page shows a copy of it in which every part carries a number, a person
+# points at parts and says what to change, and only those parts are written
+# again (html_creator/revise.py).
+
+
+class PagePartChange(BaseModel):
+    part: int  # its number in the marked copy of the version pointed at
+    comment: str
+    # The numbers the browser found inside the part: checked against the
+    # page's source before the part is replaced.
+    seen: list[int] | None = None
+    # The comment is about this picture, which the part shows: it is drawn
+    # again (Page Agent), and no HTML is written.
+    picture: str | None = None
+
+
+class PageChangeRequest(BaseModel):
+    version: int  # the version the parts were pointed at in
+    changes: list[PagePartChange]
+
+
+def _page_runner(demo_id: str):
+    runners = {"html-creator": html_creator_runner, "page-agent": page_agent_runner}
+    if demo_id not in runners:
+        raise ValueError(f"'{demo_id}' makes no page that can be changed.")
+    return runners[demo_id]
+
+
+def _revision_state(demo_id: str, first: bool = False) -> dict:
+    runner = _page_runner(demo_id)
+    state = runner.revisions.state(first)
+    if demo_id == "page-agent" and state["available"]:
+        state["checks"] = runner.checks()
+        # Which parts show a picture the image model drew, and so can have it drawn again.
+        state["pictures"] = {str(part): name for part, name in runner.pictures_in_page().items()}
+    return state
+
+
+@app.get("/api/{demo_id}/revision")
+def page_revision(demo_id: str, first: bool = False) -> JSONResponse:
+    """The page the brick last made, as it is now: with its pictures in it
+    (`html`), and the copy to point at (`marked`). `?first=1` adds the
+    page as it was made, for a browser page that was reloaded since."""
+    try:
+        return JSONResponse(_revision_state(demo_id, first))
+    except Exception as exc:
+        return error_response(exc)
+
+
+@app.post("/api/{demo_id}/revision/change")
+async def page_revision_change(demo_id: str, req: PageChangeRequest) -> JSONResponse:
+    """Write again the parts pointed at, each as its comment asks. A few
+    seconds a part; /api/bricks/<id>/partial has it as it is written."""
+    try:
+        runner = _page_runner(demo_id)
+        results = await run_in_threadpool(
+            runner.change, version=req.version, changes=[change.model_dump() for change in req.changes]
+        )
+    except Exception as exc:
+        return error_response(exc)
+    return JSONResponse({"results": results, **_revision_state(demo_id)})
+
+
+@app.post("/api/{demo_id}/revision/undo")
+def page_revision_undo(demo_id: str) -> JSONResponse:
+    """Back to the page as it was before the last batch of changes."""
+    try:
+        _page_runner(demo_id).revisions.undo()
+        return JSONResponse(_revision_state(demo_id))
+    except Exception as exc:
+        return error_response(exc)
+
+
 # --- page-agent (experimental) ------------------------------------------------------
 
 

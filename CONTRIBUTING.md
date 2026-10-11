@@ -109,6 +109,8 @@ local_demo/
                                  including reporting "stopping" when a worker is mid-call
       errors.py                <- Conflict: the "not in a state to do that" error (-> HTTP 409)
       events.py / activity.py <- per-brick lifecycle phase (for /api/status) / device in use (for gauges)
+      page_revisions.py       <- the page HTML Creator or the Page Agent made, kept so that parts of it can be
+                                 changed (html_creator/revise.py finds a part and puts the new one back)
       static/                  <- vanilla HTML/CSS/JS front end, no build step
   setup/                   <- the setup assistant first_launch.bat opens, for a laptop with nothing installed
     assistant.ps1           <- serves the page and does what it asks; Windows PowerShell 5.1, plain ASCII
