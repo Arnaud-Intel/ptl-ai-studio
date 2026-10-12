@@ -1019,6 +1019,45 @@ were here before.
   m sizes -- the medium one would hold a 30-a-second camera, just.
   **Left in place:** the nine builds in the Hugging Face cache, used by
   nothing; the trial's scripts and results in the session's scratch folder.
+  *2026-10-12, later ("Is there a way to make use of the asymmetric
+  models?"): yes -- they can be made symmetric from their own files.* Each
+  compressed weight of such a build is a table of 4-bit numbers followed by
+  "minus a zero point, times a scale". A script of sixty lines (`resym.py`
+  in the scratch folder; it needs NNCF, which the project does not install)
+  runs those operations once to get each weight back, compresses the model
+  again 4-bit symmetric by groups of 128, and saves it beside its tokenizer:
+  20 to 90 s a model, nothing downloaded, the original weights not needed.
+  What it is worth, one run a cell, same fixtures as above (action items of
+  7 / document facts of 17 / expense fields of 70):
+  | Build | On the integrated GPU, as published | Re-compressed, GPU | Re-compressed, NPU |
+  | --- | --- | --- | --- |
+  | MiniCPM5-1B | 0 / 6 / 50 | 0 / 4 / 48 | 1 / 6 / 48, 58 tokens/s, compiled in 35 s (as published: stopped after 42 minutes) |
+  | Gemma 4 E2B | 3 / 12 / 65 | 6 / 16 / 66 | 5 / 15 / 66, 13 tokens/s, compiled in 175 s |
+  | Gemma 4 E4B | 6 / 16 / 66 | 6 / 15 / 65 | 6 / 17 / 65, 11 tokens/s, compiled in 302 s |
+  | Qwen3.5-4B | 7 / 17 / 65 | 6 / 17 / 64 | compiles (248 s; channel-wise: 128 s) and writes nonsense: 0 / 6 / 0 |
+  So the second rounding costs little, and three of the four then run on the
+  NPU. Qwen3.5-4B does not: the same files that answer on the GPU give rows
+  of dashes and zeros on the NPU, by groups and by channel alike -- the
+  chip's handling of that architecture, not its compression (Qwen3-4B, tried
+  on 2026-10-05, did the same).
+  **Gemma 4 is the find.** On the four test meetings, through the notes
+  brick's own code on the NPU: E4B 17 tasks of 20 with none misgiven, 16 s a
+  meeting; E2B 15 of 20, 14 s (Qwen3-8B today: 11; K2 Horizon 7B: 20 with
+  two misgiven, 36 s). And E2B is the first model here to *read a picture*
+  with its language part on the NPU: the 17 bundled receipts, 61 expected
+  values of 68 -- what the published build reads on the GPU -- at 14 s a
+  receipt (4 s on the GPU; today's 7B vision model reads 68 of 68 on the GPU
+  in 6 to 9 s).
+  What using one takes: the re-compressed model exists only where the script
+  was run, so either the app converts at first use (NNCF as a dependency,
+  and a minute or two), or a converted build is published under somebody's
+  account (Gemma 4's card says Apache-2.0), or the model is exported
+  properly from Google's weights with calibration, which should do better
+  than rounding twice; the Gemma builds load through the vision pipeline,
+  which `doc_qa.llm_openvino` does not use yet; and their tokenizer still
+  loses ten HTML tags and the odd word ("The er 21 pilot" for "The September
+  21 pilot" in one answer). Not tried: E4B on pictures, the commentator, the
+  voice assistant, French.
 
 - [ ] **R42 · P2 · New brick: Visual Inspection.** *Proves C1, C2, C5.* Spike
   first.
