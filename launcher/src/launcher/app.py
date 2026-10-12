@@ -79,6 +79,7 @@ from .html_creator_runner import HtmlCreatorRunner
 from .page_agent_runner import PageAgentRunner
 from .portrait_studio_runner import PortraitStudioRunner, photo_bytes
 from .live_translation_runner import LiveTranslationRunner
+from . import model_routes
 from .model_routes import router as model_router
 from .meeting_notes_runner import MeetingNotesRunner
 from .object_detection_runner import ObjectDetectionRunner
@@ -2267,9 +2268,16 @@ def _busy_demos() -> list[str]:
         if state.get("phase") in ("loading", "running")
     }
     busy = sorted(names.get(demo_id, demo_id) for demo_id in ids)
+    if model_routes.compiler.running:
+        busy.append("Prepare models (compiling)")  # an upgrade would cut a compile short, half a file in the cache
     # Between two scenes nothing is running, and the loop is still on: an
     # upgrade must not slip into that gap on a stand nobody is watching.
     return [*busy, "Auto Demo"] if autodemo_director.running else busy
+
+
+# Compiling the models ahead shares the chips with the demos: it starts only
+# when none is running (model_routes asks this list).
+model_routes.busy_demos = _busy_demos
 
 
 @app.get("/api/update")

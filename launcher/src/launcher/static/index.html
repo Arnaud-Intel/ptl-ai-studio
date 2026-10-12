@@ -1199,9 +1199,26 @@
           <div class="models-bar"><div id="models-bar-fill" class="models-bar-fill"></div></div>
           <p id="models-progress-text" class="models-progress-text"></p>
         </div>
+        <section id="models-compile" class="models-compile" hidden>
+          <h3>Compiled for this laptop's chips</h3>
+          <p class="modal-note">
+            The first time a model runs on the NPU or on a GPU it is compiled for that chip -- seconds for a small
+            model, more than three minutes for speech on the NPU -- and the result is kept on the disk. Compile now,
+            and no demo makes its audience wait for it. To do again after an upgrade that brings a new OpenVINO:
+            it starts that store afresh.
+          </p>
+          <div class="models-summary">
+            <p id="models-compile-summary" role="status" aria-live="polite"></p>
+            <div class="models-actions">
+              <button id="models-compile-start" class="btn btn-primary" type="button" hidden>Compile</button>
+              <button id="models-compile-stop" class="btn btn-secondary" type="button" hidden>Stop after this model</button>
+            </div>
+          </div>
+          <div id="models-compile-chips" class="models-chips"></div>
+        </section>
         <table class="models-table">
           <thead>
-            <tr><th>Model</th><th>Used by</th><th class="models-size">Download</th><th>State</th></tr>
+            <tr><th>Model</th><th>Used by</th><th class="models-size">Download</th><th>State</th><th>Compiled for</th></tr>
           </thead>
           <tbody id="models-rows"></tbody>
         </table>

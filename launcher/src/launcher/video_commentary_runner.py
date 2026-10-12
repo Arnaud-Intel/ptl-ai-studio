@@ -227,12 +227,20 @@ class VideoCommentaryRunner:
         self._thread.start()
 
     def stop(self) -> None:
-        if not worker.request_stop(_DEMO_ID, self._thread, self._stop_event):
-            return
+        landed = worker.request_stop(_DEMO_ID, self._thread, self._stop_event)
+        # What was said goes with the run that said it. Kept past Stop, it was
+        # what the next one to ask for "the comments so far" was given: in the
+        # Auto Demo, the camera scene opened on the sentences about the cattle
+        # of the video before it, and showed them until its own model had
+        # spoken. (A page that listed them keeps its list: it does not ask again.)
+        with self._lock:
+            self._comments.clear()
+            self._speech.clear()
+        if not landed:
+            return  # still inside a call it cannot leave: no line of its will be kept (see on_comment)
         self._thread = None
         with self._lock:
             self._latest_jpeg = None
-            self._speech.clear()
 
     def speech(self, number: int) -> bytes | None:
         """The sound of one spoken comment (a WAV file), while it is kept."""

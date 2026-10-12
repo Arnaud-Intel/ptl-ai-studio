@@ -145,6 +145,14 @@ here are under Original reports, each with the ticket it went into.
   R37): the first load of each GPU model after an upgrade now writes up to 15 GB, and takes a few
   seconds longer than a plain compile (the 30B coder: 26 s against 22.5). The same two remedies
   apply to it, and Prepare models would be the place to show what the cache holds and to empty it.*
+  *Later that day, on the user's word ("let Prepare models compile the NPU and GPU models ahead"),
+  the second remedy was built (v1.0.5): Prepare models has a Compile button, a tick-box a chip,
+  and a badge for each chip a model is compiled for; each model is loaded in a process of its own;
+  the footer says how many are to compile. Tried cold on four NPU models: 240 s (the embedder 149
+  s, the 1.5B 57, Whisper base 29), then 15 s when they are compiled already. Left of this entry:
+  saying "compiling, once" in a demo's panel while it happens; showing what the cache weighs and
+  emptying it from the dialog; offering the compile at the end of the setup assistant, after the
+  models are fetched; and the Auto Demo's check before a show, which could say what is not compiled.*
   (filed 2026-10-12, from the OpenVINO upgrade)
 
 ## What we are showing

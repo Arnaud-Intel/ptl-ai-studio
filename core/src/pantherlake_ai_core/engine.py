@@ -91,15 +91,25 @@ def gpu_cache_allowed() -> bool:
     """Whether GPU models may be kept in the compiled-model cache and read
     back from it: on an OpenVINO that reads them back right, with room on
     the disk, unless it was switched off."""
+    return gpu_cache_refusal() is None
+
+
+def gpu_cache_refusal() -> str | None:
+    """Why a GPU keeps nothing of what it compiles here, in a sentence for
+    whoever is looking at the models; None when it does."""
     import os
 
     if os.environ.get(GPU_CACHE_SWITCH, "").strip().lower() in ("0", "off", "no", "false"):
-        return False
+        return f"switched off ({GPU_CACHE_SWITCH}=0)"
     installed = openvino_version()
-    if not installed or _numbers(installed) < _numbers(GPU_CACHE_SINCE):
-        return False
+    if not installed:
+        return "OpenVINO is not installed"
+    if _numbers(installed) < _numbers(GPU_CACHE_SINCE):
+        return f"OpenVINO {installed} reads GPU models back wrong: it takes {GPU_CACHE_SINCE} or later"
     free = _free_gb(OV_CACHE_DIR)
-    return free is None or free >= GPU_CACHE_FREE_GB
+    if free is not None and free < GPU_CACHE_FREE_GB:
+        return f"{free:.0f} GB free on the disk, and it takes {GPU_CACHE_FREE_GB:.0f}"
+    return None
 
 
 def _free_gb(path: Path) -> float | None:

@@ -6309,7 +6309,8 @@ function stageCommentaryView(scene, root) {
         image.src = `/api/video-commentary/stream?at=${Date.now()}`;
         picture.prepend(image);
       }
-      for (const comment of data.comments || []) {
+      // Only the lines of a commentary that is running: this scene's own.
+      for (const comment of (data.running && data.comments) || []) {
         if (!last) lines.replaceChildren();
         last = comment.number;
         const plain = comment.said === comment.seen;
@@ -6492,7 +6493,10 @@ function stageCameraView(scene, root) {
     try {
       const data = await fetchJSON(`/api/video-commentary/comments?after=${last}`);
       if (ended) return;
-      for (const comment of data.comments || []) {
+      // Only the lines of a commentary that is running. This view is up before
+      // its own has started, and the one of the scene before had left its
+      // sentences behind: cattle on a path, written under a visitor's face.
+      for (const comment of (data.running && data.comments) || []) {
         if (!last) lines.replaceChildren();
         last = comment.number;
         subtitle.textContent = comment.said;
@@ -6980,9 +6984,141 @@ function renderModelsFooter() {
     const total = MODELS_STATE.run_total_bytes;
     const percent = total ? Math.min(Math.round((MODELS_STATE.done_bytes / total) * 100), 99) : null;
     button.textContent = percent === null ? "Downloading models…" : `Downloading models ${percent}%`;
+  } else if (MODELS_STATE.compile && MODELS_STATE.compile.running) {
+    button.textContent = `Compiling models ${MODELS_STATE.compile.done}/${MODELS_STATE.compile.total}`;
   } else {
-    button.textContent = missing ? `Prepare models (${missing} missing)` : "Models ready";
+    const toCompile = (MODELS_STATE.compile && MODELS_STATE.compile.todo) || 0;
+    button.textContent = missing
+      ? `Prepare models (${missing} missing)`
+      : toCompile
+        ? `Prepare models (${toCompile} to compile)`
+        : "Models ready";
   }
+}
+
+// --- compiling what is downloaded, for the chips of this laptop ---------------
+
+// The chips left out of the next compile: unticked by whoever is looking.
+const COMPILE_LEFT_OUT = new Set();
+const COMPILE_WORDS = {
+  ready: "compiled",
+  todo: "to compile",
+  pending: "queued",
+  compiling: "compiling now",
+  failed: "failed",
+  missing: "the model is not downloaded",
+  unkept: "this chip keeps nothing here",
+};
+
+function shortChip(item) {
+  return item.chip === "npu" ? "NPU" : item.chip === "igpu" ? "GPU" : item.chip_name;
+}
+
+function renderCompile(state) {
+  const compile = state.compile;
+  const section = el("models-compile");
+  section.hidden = !compile || !compile.chips.length;
+  if (section.hidden) return;
+  // To compile: what has not been, and what failed the last time -- it is tried again.
+  const open = (item) => item.state === "todo" || item.state === "failed";
+  const wanted = (item) => open(item) && !COMPILE_LEFT_OUT.has(item.chip);
+  const todo = compile.items.filter(wanted);
+  const sizes = Object.fromEntries(state.models.map((model) => [model.key, model.cached_bytes || 0]));
+  let summary;
+  if (compile.running) {
+    const item = compile.current && compile.items.find((one) => one.key === compile.current.key && one.chip === compile.current.chip);
+    summary =
+      (item ? `Compiling ${item.label} for ${item.chip_name}` : "Compiling") +
+      ` · ${Math.min(compile.done + 1, compile.total)} of ${compile.total}` +
+      (compile.item_seconds ? ` · ${formatDuration(compile.item_seconds)} on this one` : "") +
+      (compile.stopped ? " · stopping after this model" : "");
+  } else {
+    const failed = compile.items.filter((item) => item.state === "failed").length;
+    summary =
+      `${compile.ready} of ${compile.items.length} compiled` +
+      (todo.length
+        ? ` · ${todo.length} to compile (up to ${formatBytes(todo.reduce((sum, item) => sum + (sizes[item.key] || 0), 0))} of disk)`
+        : compile.todo
+          ? " · tick a chip to compile for it"
+          : " · nothing to compile") +
+      (failed ? ` · ${failed} failed: point at them to see why` : "");
+  }
+  el("models-compile-summary").textContent = summary;
+  el("models-compile-start").hidden = compile.running || !todo.length;
+  el("models-compile-start").disabled = state.running; // a download first: what is not there cannot be compiled
+  el("models-compile-stop").hidden = !compile.running;
+
+  // The boxes are made again only when what they say has changed: made
+  // again at every look, one could vanish under the click that ticks it.
+  const chips = el("models-compile-chips");
+  const waiting = (item) => open(item) || item.state === "pending" || item.state === "compiling";
+  const counts = compile.chips.map((chip) => compile.items.filter((item) => item.chip === chip.kind && waiting(item)).length);
+  const shown = JSON.stringify([compile.chips, counts, compile.running, [...COMPILE_LEFT_OUT]]);
+  if (chips.dataset.shown === shown) return;
+  chips.dataset.shown = shown;
+  chips.replaceChildren();
+  for (const [index, chip] of compile.chips.entries()) {
+    const count = counts[index];
+    const label = document.createElement("label");
+    label.className = "check";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = chip.keeps && !COMPILE_LEFT_OUT.has(chip.kind);
+    box.disabled = !chip.keeps || compile.running;
+    box.addEventListener("change", () => {
+      if (box.checked) COMPILE_LEFT_OUT.delete(chip.kind);
+      else COMPILE_LEFT_OUT.add(chip.kind);
+      renderModels();
+    });
+    const text = document.createElement("span");
+    text.textContent = chip.name;
+    const note = document.createElement("small");
+    note.textContent = chip.keeps ? ` ${count ? `${count} to compile` : "all compiled"}` : ` keeps nothing: ${chip.why_not}`;
+    text.append(note);
+    label.append(box, text);
+    chips.append(label);
+  }
+}
+
+// One model's row: a badge for each chip it is compiled for, or to be.
+function compiledCell(state, key) {
+  const td = document.createElement("td");
+  td.className = "models-compiled";
+  for (const item of (state.compile ? state.compile.items : []).filter((one) => one.key === key)) {
+    const badge = document.createElement("span");
+    badge.className = `models-chip models-chip-${item.state}`;
+    badge.textContent = shortChip(item) + (item.state === "ready" ? " ✓" : item.state === "compiling" ? " …" : "");
+    badge.title =
+      `${item.chip_name}: ${COMPILE_WORDS[item.state] || item.state}` +
+      (item.state === "ready" && item.seconds ? ` (it took ${item.seconds} s)` : "") +
+      (item.error ? ` -- ${item.error}` : "");
+    td.append(badge);
+  }
+  return td;
+}
+
+async function startCompile() {
+  el("models-compile-start").disabled = true;
+  try {
+    const chips = MODELS_STATE.compile.chips.filter((chip) => chip.keeps && !COMPILE_LEFT_OUT.has(chip.kind)).map((chip) => chip.kind);
+    await postJSON("/api/models/compile", { chips });
+  } catch (err) {
+    el("models-compile-summary").textContent = err.message;
+    el("models-compile-start").disabled = false;
+    return;
+  }
+  await loadModels();
+  startModelsPolling();
+}
+
+async function stopCompile() {
+  el("models-compile-stop").disabled = true;
+  try {
+    await postJSON("/api/models/compile/stop", {});
+  } finally {
+    el("models-compile-stop").disabled = false;
+  }
+  loadModels();
 }
 
 function modelStateText(entry) {
@@ -7006,7 +7142,9 @@ function renderModels() {
     `${state.ready_count} of ${state.total_count} models ready` +
     (missing.length ? ` · ${missing.length} to download (${sizeText})` : " · nothing to download");
   el("models-download").hidden = state.running || !missing.length;
+  el("models-download").disabled = Boolean(state.compile && state.compile.running);
   el("models-stop").hidden = !state.running;
+  renderCompile(state);
 
   const progress = el("models-progress");
   progress.hidden = !state.running;
@@ -7041,7 +7179,7 @@ function renderModels() {
     const size = cell(entry.size_bytes || entry.repo_id ? formatBytes(entry.size_bytes) : "a few MB", "models-size");
     const status = cell(modelStateText(entry), `models-state models-state-${entry.state}`);
     if (entry.error) status.title = entry.error;
-    row.append(name, cell(demos, "models-demos"), size, status);
+    row.append(name, cell(demos, "models-demos"), size, status, compiledCell(state, entry.key));
     rows.append(row);
   }
 }
@@ -7050,15 +7188,19 @@ function startModelsPolling() {
   if (modelsPollTimer) return;
   modelsPollTimer = setInterval(async () => {
     const state = await loadModels();
-    // Keep polling while a download runs, even with the dialog closed: the
-    // footer button is the progress indicator then.
-    if (state && !state.running && el("models-modal-overlay").hidden) stopModelsPolling();
+    // Keep polling while a download or a compile runs, even with the dialog
+    // closed: the footer button is the progress indicator then.
+    if (state && !modelsAtWork(state) && el("models-modal-overlay").hidden) stopModelsPolling();
   }, 1200);
 }
 
 function stopModelsPolling() {
   clearInterval(modelsPollTimer);
   modelsPollTimer = null;
+}
+
+function modelsAtWork(state) {
+  return Boolean(state && (state.running || (state.compile && state.compile.running)));
 }
 
 async function openModelsModal() {
@@ -7071,7 +7213,7 @@ async function openModelsModal() {
 function closeModelsModal() {
   el("models-modal-overlay").hidden = true;
   el("models-open").focus();
-  if (!MODELS_STATE || !MODELS_STATE.running) stopModelsPolling();
+  if (!modelsAtWork(MODELS_STATE)) stopModelsPolling();
 }
 
 async function startPrefetch() {
@@ -7158,6 +7300,8 @@ async function init() {
   el("models-open").addEventListener("click", openModelsModal);
   el("models-download").addEventListener("click", startPrefetch);
   el("models-stop").addEventListener("click", stopPrefetch);
+  el("models-compile-start").addEventListener("click", startCompile);
+  el("models-compile-stop").addEventListener("click", stopCompile);
   el("models-modal-close").addEventListener("click", closeModelsModal);
   el("models-modal-overlay").addEventListener("click", (event) => {
     if (event.target === el("models-modal-overlay")) closeModelsModal();

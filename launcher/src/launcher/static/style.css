@@ -2009,6 +2009,28 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 .models-state-pending { color: var(--text-dim); }
 .models-state-downloading { color: var(--accent-hover); }
 .models-state-failed { color: var(--danger); cursor: help; }
+/* Its second half: what is compiled for which chip. */
+.models-compile { margin: 4px 0 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.models-compile h3 { margin: 0 0 6px; font-size: 14px; }
+.models-chips { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 4px; }
+.models-chips .check { font-size: 13px; }
+.models-chips small { color: var(--text-faint); }
+.models-compiled { white-space: nowrap; }
+.models-chip {
+  display: inline-block;
+  margin: 0 4px 2px 0;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  cursor: help;
+}
+.models-chip-ready { color: var(--text); border-color: var(--accent); }
+.models-chip-compiling { color: var(--accent-hover); border-color: var(--accent-hover); }
+.models-chip-pending { color: var(--text-dim); }
+.models-chip-failed { color: var(--danger); border-color: var(--danger); }
+.models-chip-unkept, .models-chip-missing { border-style: dashed; }
 
 /* --- sound tags (voice-clone-studio) ------------------------------------ */
 

@@ -109,6 +109,9 @@ local_demo/
       worker.py               <- the start/stop bookkeeping every threaded runner shares,
                                  including reporting "stopping" when a worker is mid-call
       errors.py                <- Conflict: the "not in a state to do that" error (-> HTTP 409)
+      model_routes.py          <- /api/models: what is downloaded, fetching it, and compiling it ahead
+      compile_ahead.py         <- which model is compiled for which chip of this machine, and the queue
+      compile_worker.py        <- one model loaded on one chip as its brick loads it, in a process of its own
       events.py / activity.py <- per-brick lifecycle phase (for /api/status) / device in use (for gauges)
       page_revisions.py       <- the page HTML Creator or the Page Agent made, kept so that parts of it can be
                                  changed (html_creator/revise.py finds a part and puts the new one back)
@@ -331,6 +334,14 @@ check what a runtime changes, which no test here can:
   from which OpenVINO the GPU is given the compiled-model cache. On a new
   version, compare each GPU model compiled and read back before trusting
   it: the versions up to 2026.3 read back wrong answers without an error.
+- **Compile them ahead.** **Prepare models** > **Compile** (or
+  `uv run python -m launcher.compile_ahead`) loads every downloaded model
+  once on each chip its demos use, each in a process of its own, and
+  writes down what it compiled beside the cache. A model added to
+  `core/.../models.py` on the OpenVINO engine also goes into
+  `launcher/compile_ahead.py` (`CHIPS`: which chips) and
+  `launcher/compile_worker.py` (`LOADERS`: through which class of its
+  brick); a test fails otherwise.
 - **Models on the NPU and the GPU compile again**, once, the first time each is used:
   the compiled-model cache has a folder per OpenVINO version, and the
   launcher removes the folders of older versions when it starts. The 8B

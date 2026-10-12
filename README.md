@@ -113,13 +113,21 @@ uv run panther-lake-launcher
   ahead, use **Prepare models** in the footer (what each is for, its size,
   whether this machine has it), or `uv run panther-lake-prefetch`
   (`--list` to look, `--demo doc-qa` for one demo).
-- **Prepared models.** The first time a model runs on the NPU or a GPU it
+- **Compiled models.** The first time a model runs on the NPU or a GPU it
   is compiled for that chip, and the result is kept in
   `%USERPROFILE%\.cache\pantherlake-ai-studio\ov_cache`, so that the next
   load is two to four times faster (the 30B coding model: 5 s instead of
-  22 on the integrated GPU). That folder can be deleted at any time: what
-  is missing is compiled again. To keep GPU models out of it, set the
-  environment variable `PTL_GPU_CACHE=0` before starting the Studio.
+  22 on the integrated GPU). On the NPU that first time is long -- over
+  three minutes for speech, two and a half for the document search -- so
+  do it before a show: **Prepare models** has a **Compile** button that
+  compiles everything downloaded for the chips you tick, one model at a
+  time, and shows which model is compiled for which chip
+  (`uv run python -m launcher.compile_ahead` does the same from a console).
+  An upgrade that brings a new OpenVINO starts that store afresh, and the
+  footer then says how many are to compile. The folder can be deleted at
+  any time: what is missing is compiled again. To keep GPU models out of
+  it, set the environment variable `PTL_GPU_CACHE=0` before starting the
+  Studio.
 - **Offline.** Install and fetch the models first; after that the Studio
   starts and runs with the network off. Only live city cameras and the
   update check want a connection.

@@ -306,6 +306,36 @@ def test_it_starts_shows_the_video_lists_what_was_said_and_stops(running):
     assert web.get("/api/video-commentary/comments").json()["running"] is False
 
 
+def test_what_one_commentary_said_is_not_handed_to_whoever_asks_after_it_has_stopped(running):
+    """The lines were kept past Stop, and the next one to ask for "the
+    comments so far" was given them: in the Auto Demo, the camera scene opens
+    its view before its own commentary starts, and showed the sentences of
+    the video before it -- cattle on a path -- beside a visitor's face until
+    the vision model had spoken about the camera. Stop empties the list; and
+    the stage's two views take lines only from a commentary that is running."""
+    web, run, said = running
+    assert web.post("/api/video-commentary/start", json={"source": "file", "path": str(sample_videos.CATTLE_DRIVE.path)}).status_code == 200
+    assert said.wait(3)
+    assert len(web.get("/api/video-commentary/comments").json()["comments"]) == 1
+    web.post("/api/video-commentary/stop")
+    after = web.get("/api/video-commentary/comments").json()
+    assert after["comments"] == [] and after["running"] is False and after["commenting"] is False
+    # A second commentary numbers its lines from 1 again, and lists its own alone.
+    said.clear()
+    assert web.post("/api/video-commentary/start", json={"source": "file", "path": str(sample_videos.CATTLE_DRIVE.path)}).status_code == 200
+    assert said.wait(3)
+    assert [c["number"] for c in web.get("/api/video-commentary/comments").json()["comments"]] == [1]
+
+    from pathlib import Path
+
+    script = (Path(launcher_app.__file__).parent / "static" / "app.js").read_text(encoding="utf-8")
+    for view in ("function stageCameraView(", "function stageCommentaryView("):
+        body = script[script.index(view):]
+        body = body[:body.index("\nfunction ", 1)]
+        assert "/api/video-commentary/comments?after=" in body
+        assert "of (data.running && data.comments) || [])" in body and "of data.comments || [])" not in body, view
+
+
 def test_the_mood_can_change_while_it_runs_and_a_wrong_request_is_refused_by_name(running):
     web, _run, said = running
     assert web.post("/api/video-commentary/start", json={"source": "webcam", "camera_index": 0}).status_code == 200
