@@ -643,6 +643,30 @@ were here before.
   should take the 8B at 16 tokens/s where the panel used to show 55 is a
   choice about what the demo is for -- one constant, `PREFERRED_MODEL` in
   `doc_qa/pipeline.py`.
+  *2026-10-12, from the audit of NPU models on OpenVINO 2026.4.1 (asked for:
+  "can we run an audit on the new NPU model that we may add?"; the whole of
+  it is the note of that day on R37).* **A model that needs no export of ours
+  does better than step (3) hoped for.** K2 Horizon 7B, in a community build
+  compressed the way the NPU wants (`HarmenWessels/K2-Horizon-7B-int4-symg128-ov`,
+  5.7 GB, Apache-2.0, int4 symmetric with calibration), compiles on the NPU
+  in 101 s and found **20 of the 20 stated tasks** of the four test meetings
+  through the brick's own code -- against 11 for the channel-wise Qwen3-8B the
+  same day, 17 for the 30B coder on the integrated GPU -- with two tasks
+  given to someone who had not taken them (the 8B: one). On the other
+  fixtures: 7 action items of 7, 16 document facts of 17, 66 expense fields
+  of 70 (the 8B: 4, 15, 64). It writes 11 tokens/s where the 8B writes 18:
+  36 s for a meeting's notes instead of 17. Its smaller brother, K2 Horizon
+  3.7B (3.3 GB), finds 14 of 20 with no task misgiven, at the 8B's speed
+  (17.5 tokens/s), compiled in 76 s. One run a cell; the draw is seeded, and
+  a second run gave the same notes.
+  What adopting one takes: its chat template is not one OpenVINO GenAI
+  parses, so `doc_qa.llm_openvino` would render it itself (Jinja2, the lowest
+  reasoning grade, the answer taken after the closing tag: thirty lines, in
+  the trial's `notes_k2.py`); it is English only by its card, which matters
+  for R51; the build is one person's, to be held at a revision as the image
+  model is, or exported by us from the 18 GB original; and R17 for its place
+  in the inventory. Not tried: the voice assistant, the commentator's voice,
+  long transcripts split in parts, a second meeting language.
 
 - [ ] **R38 · P2 · Voices that keep up with the talk.** *Proves C5.*
   The Voice Assistant writes its whole answer, then speaks it. The commentator
@@ -933,6 +957,68 @@ were here before.
   Not covered: the segmentation model of Webcam Effects, which the brick
   keeps off the GPU for another fault, and OpenVoice on a GPU (tried only
   through the launcher, once).
+  *2026-10-12, an audit of what could be added on the NPU, asked for once the
+  runtime was in ("can we run an audit on the new NPU model that we may
+  add?").* XPS 14 on mains, B60 docked, OpenVINO 2026.4.1; each model in a
+  process of its own with a time limit, one at a time; "on the NPU" checked
+  on the Studio's own NPU gauge while it ran. Nine builds were fetched for it
+  (14 GB, the owner's choice): Kokoro-82M int8 and fp16,
+  Qwen3-Embedding-0.6B-int4-cw, Qwen3-Reranker-0.6B-int8, MiniCPM5-1B-int4,
+  DeepSeek-R1-Distill-Qwen-1.5B-int4-gq, whisper-large-v3-turbo-fp16 (Intel's)
+  and K2-Horizon-3.7B and -7B int4-symg128 (a community build).
+  **What decides whether a language model compiles there is how it was
+  compressed**, readable at the end of its `openvino_model.xml`: int4
+  *symmetric*, group 128 or channel-wise, compiles in one to two minutes;
+  int4 *asymmetric* -- Intel's plain `-int4-ov` builds of Qwen3.5-4B, Gemma 4
+  E2B and MiniCPM5-1B -- never finishes, with the app's window or a static
+  one of 2,048 (15 to 40 minutes, stopped). The upgrade by itself therefore
+  unlocked none of the models tried on 2026-10-05; a symmetric export of
+  ours might, for Qwen3.5-4B, if the NPU takes its architecture at all.
+  **Worth adding.**
+  (1) *K2 Horizon 7B as the NPU's careful model*, or the 3.7B as a lighter
+  one: figures and conditions in the note of this day on R36. 20 of 20
+  meeting tasks against 11, at 11 tokens/s against 18.
+  (2) *A picture drawn on the NPU.* `LCM_Dreamshaper_v7-int8-ov`, on disk
+  since the first image trials, runs whole on the NPU once its size is fixed
+  (text encoder, denoising and decoder: 171 s to compile, then 0.7 s for a
+  512-pixel picture in four steps, the NPU's gauge at 84%; the same pictures
+  as the integrated GPU's, which takes 0.3 s). Stable Diffusion 1.5 quality,
+  below FLUX.2 klein's, but it is the one image model the NPU takes -- klein
+  still ends the NPU compiler, whatever the release notes say. A place for
+  it is to find: a "type and it draws" brick, or the Page Agent's pictures
+  while its GPU writes.
+  (3) *Two settings, no new model.* `GENERATE_HINT=BEST_PERF` on the NPU's
+  language pipeline: Qwen2.5-1.5B 69 tokens/s against 59, Qwen3-8B 20.8
+  against 18.2, the same scores on every task, for a first compile of 87 s
+  against 33 and 133 against 53 -- which Prepare models now does ahead. (For
+  K2 it buys 5% for a compile three to four times as long: no.) And the embedder's
+  NPU build (`Qwen3-Embedding-0.6B-int4-cw-ov`) compiles in 62 s against 88
+  for today's int8, embeds as fast, and finds the same passages.
+  (4) *Whisper large-v3-turbo for speech that is not translated*: 19 times
+  real time on the NPU against 13 for medium, on 14 French clips of public
+  test speech, with a word score of 0.953 against 0.938; 265 s to compile.
+  It does not translate (asked to, it writes the French), so it is for the
+  voice assistant and for a meeting kept in its own language, not for Live
+  Translation.
+  **Not worth it, with the figure.** Whisper large-v3: half medium's speed
+  (9.9 against 18 times real time), 540 s to compile, and no better (0.636
+  against 0.652 translating, 0.940 against 0.938 transcribing). Kokoro, the
+  speech model 2026.4 names for the NPU: OpenVINO GenAI's pipeline "on the
+  NPU" loads in 36 s and then works on the CPU (NPU gauge 0 to 3%, the same
+  5 times real time as on the CPU), and the model itself does not compile
+  for the NPU; today's voice makes a line faster on the CPU. The reranker
+  does not compile for the NPU (dynamic shapes), and on the GPU put the right
+  file first for 2 questions of 4 where the embedder alone does for 3.
+  DeepSeek-R1-Distill 1.5B, from Intel's own "optimised for NPU" list, runs
+  at 42 tokens/s and reasons its answers away: 7 document facts of 17, no
+  expense field of 70. MiniCPM5-1B (tried on the GPU, its build being
+  asymmetric): 6 of 17. The vision models (Qwen3-VL-4B, Qwen2.5-VL-7B) do
+  not compile for the NPU; Intel's NPU build of Gemma 3 4B, which sees, is
+  behind a licence to accept with a Hugging Face login this laptop does not
+  have. YOLO11 on the NPU: 52, 45 and 34 pictures a second for the n, s and
+  m sizes -- the medium one would hold a 30-a-second camera, just.
+  **Left in place:** the nine builds in the Hugging Face cache, used by
+  nothing; the trial's scripts and results in the session's scratch folder.
 
 - [ ] **R42 · P2 · New brick: Visual Inspection.** *Proves C1, C2, C5.* Spike
   first.
