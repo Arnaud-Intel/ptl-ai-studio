@@ -17,6 +17,7 @@ logos, payment credentials, third-party voices or private files are included.
 | Screen Memory | Open → choose sample → show its demo page while recording → stop → search | A readable fictional operating brief; no prebuilt search result |
 | Translation / Meeting Notes / Voice Assistant | Open → choose microphone → Start | No bundled content: they work on what you say |
 | Vision demos | Open → choose camera or screen → Start | No bundled content: live input; real online city feeds remain explicitly real |
+| Portrait Studio | Open → pick a portrait → pick a style | Four portraits of nobody, drawn by an image model; or the camera, or a photo of your own |
 
 The controls may first download their models. Opening a sample never starts a
 capture, model run, payment or network video feed by itself. A selected

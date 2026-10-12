@@ -46,6 +46,10 @@ class ModelSpec:
     present: Callable[[], bool] | None = field(default=None, compare=False, repr=False)
     on_disk: Callable[[], int] | None = field(default=None, compare=False, repr=False)
     weighs: int | None = None
+    # The one state of the repository the demos were tried with, for a
+    # repository that is not Intel's or the model's own publisher's: what is
+    # fetched is that, not whatever it holds on the day.
+    revision: str | None = None
 
 
 _SPEECH = ("live-translation", "meeting-notes", "voice-assistant")
@@ -106,6 +110,10 @@ MODELS: tuple[ModelSpec, ...] = (
                    "and three other demos can be told to."),
     ModelSpec("flux-schnell-ov", "FLUX.1-schnell (draws pictures)", ("page-agent",), OPENVINO,
               "OpenVINO/FLUX.1-schnell-int4-ov", note="About 9 GB."),
+    ModelSpec("flux2-klein-ov", "FLUX.2 klein 4B (redraws a portrait)", ("portrait-studio",), OPENVINO,
+              "rupeshs/flux2-klein-4b-int4-ov", revision="2adc62976ad32ca941fc783e2599c45c9d0c3f5a",
+              note="About 4.6 GB, and as much again the first time it is used: the build is not Intel's, and a copy "
+                   "is made that the app can open."),
     ModelSpec("llm-1.5b-portable", "Qwen2.5 1.5B GGUF (text)", _TEXT, PORTABLE, "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
               ("*q4_k_m.gguf",)),
     ModelSpec("embed-ov", "Qwen3 embeddings", ("doc-qa", "smart-recall"), OPENVINO, "OpenVINO/Qwen3-Embedding-0.6B-int8-ov"),
@@ -189,6 +197,7 @@ def is_cached(spec: ModelSpec) -> bool:
     try:
         snapshot_download(
             spec.repo_id,
+            revision=spec.revision,
             local_files_only=True,
             allow_patterns=list(spec.patterns) or None,
             ignore_patterns=list(IGNORED_PATTERNS),
@@ -223,7 +232,7 @@ def remote_size(spec: ModelSpec) -> int | None:
     try:
         from huggingface_hub import HfApi
 
-        info = HfApi().model_info(spec.repo_id, files_metadata=True)
+        info = HfApi().model_info(spec.repo_id, revision=spec.revision, files_metadata=True)
         return sum(
             sibling.size or 0
             for sibling in info.siblings
@@ -280,7 +289,8 @@ def download(spec: ModelSpec, on_progress: Callable[[int], None] | None = None) 
 
     extra = {"tqdm_class": _reporting_tqdm(on_progress)} if on_progress is not None else {}
     snapshot_download(
-        spec.repo_id, allow_patterns=list(spec.patterns) or None, ignore_patterns=list(IGNORED_PATTERNS), **extra
+        spec.repo_id, revision=spec.revision, allow_patterns=list(spec.patterns) or None,
+        ignore_patterns=list(IGNORED_PATTERNS), **extra
     )
 
 

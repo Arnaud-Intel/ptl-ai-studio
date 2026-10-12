@@ -20,6 +20,7 @@ dependencies = [
     "smart-city-monitor",
     "page-agent",
     "video-commentary",
+    "portrait-studio",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
@@ -50,6 +51,7 @@ openvino = [
     "html-creator[openvino]",
     "smart-city-monitor[openvino]",
     "page-agent[openvino]",
+    "portrait-studio[openvino]",
     "video-commentary[openvino]",
 ]
 
@@ -80,3 +82,4 @@ html-creator = { workspace = true }
 smart-city-monitor = { workspace = true }
 page-agent = { workspace = true }
 video-commentary = { workspace = true }
+portrait-studio = { workspace = true }

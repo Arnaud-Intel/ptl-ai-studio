@@ -22,6 +22,7 @@ members = [
     "page-agent",
     "panther-lake-launcher",
     "pantherlake-ai-core",
+    "portrait-studio",
     "screen-ocr",
     "smart-city-monitor",
     "smart-recall",
@@ -1819,6 +1820,7 @@ dependencies = [
     { name = "page-agent" },
     { name = "pantherlake-ai-core" },
     { name = "pillow" },
+    { name = "portrait-studio" },
     { name = "python-multipart" },
     { name = "screen-ocr" },
     { name = "smart-city-monitor" },
@@ -1841,6 +1843,7 @@ openvino = [
     { name = "meeting-notes", extra = ["openvino"] },
     { name = "object-detection", extra = ["openvino"] },
     { name = "page-agent", extra = ["openvino"] },
+    { name = "portrait-studio", extra = ["openvino"] },
     { name = "screen-ocr", extra = ["openvino"] },
     { name = "smart-city-monitor", extra = ["openvino"] },
     { name = "smart-recall", extra = ["openvino"] },
@@ -1873,6 +1876,8 @@ requires-dist = [
     { name = "page-agent", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/page-agent" },
     { name = "pantherlake-ai-core", editable = "core" },
     { name = "pillow", specifier = ">=10" },
+    { name = "portrait-studio", editable = "bricks/portrait-studio" },
+    { name = "portrait-studio", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/portrait-studio" },
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "screen-ocr", editable = "bricks/screen-ocr" },
     { name = "screen-ocr", extras = ["openvino"], marker = "extra == 'openvino'", editable = "bricks/screen-ocr" },
@@ -2033,6 +2038,33 @@ sdist = { url = "https://files.pythonhosted.org/packages/83/43/85ef45e8b36c6a485
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2a/2d/d4bf65e47cea8ff2c794a600c4fd1273a7902f268757c531e0ee9f18aa58/pooch-1.9.0-py3-none-any.whl", hash = "sha256:f265597baa9f760d25ceb29d0beb8186c243d6607b0f60b83ecf14078dbc703b", size = 67175, upload-time = "2026-01-30T19:15:08.36Z" },
 ]
+
+[[package]]
+name = "portrait-studio"
+version = "0.1.0"
+source = { editable = "bricks/portrait-studio" }
+dependencies = [
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pantherlake-ai-core" },
+    { name = "pillow" },
+]
+
+[package.optional-dependencies]
+openvino = [
+    { name = "openvino" },
+    { name = "openvino-genai" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy" },
+    { name = "openvino", marker = "extra == 'openvino'", specifier = ">=2026.3" },
+    { name = "openvino-genai", marker = "extra == 'openvino'", specifier = ">=2026.3" },
+    { name = "pantherlake-ai-core", editable = "core" },
+    { name = "pillow" },
+]
+provides-extras = ["openvino"]
 
 [[package]]
 name = "protobuf"

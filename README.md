@@ -190,6 +190,7 @@ videos, prompts.
 | **Commit & Code Review Assistant** | A git diff to a commit message and review notes | CPU · GPU |
 | **HTML Creator** | A description, or a folder of documents, to one self-contained web page; then point at a part of it and only that part is written again | CPU · GPU |
 | **Page Agent** *(experimental)* | One request to an illustrated page: three models, conducted by plain code. A part, or a picture, can be changed by pointing at it | NPU + GPU |
+| **Portrait Studio** *(experimental)* | A photo of a person, drawn again as a cartoon, a corporate headshot, a manga panel and five more: an image-editing model that keeps the person | GPU |
 
 Each demo is a "brick" with its own README under [`bricks/`](bricks), and
 its own command:

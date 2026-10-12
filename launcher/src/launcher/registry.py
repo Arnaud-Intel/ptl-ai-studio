@@ -326,6 +326,24 @@ REGISTRY: list[Demo] = [
         samples="smart_recall.samples",
     ),
     Demo(
+        id="portrait-studio",
+        name="Portrait Studio",
+        category="Images",
+        tagline="Take a picture, pick a style: the same person as a cartoon, a corporate headshot, a manga panel.",
+        description=(
+            "Experimental. A photo of a person -- taken with the camera, uploaded, or one of the bundled "
+            "portraits of nobody -- is drawn again in the style you pick: a 3D cartoon, a corporate headshot, "
+            "manga, a comic book, an oil painting, a watercolour, a pencil sketch, a clay figure. An "
+            "image-editing model (FLUX.2 klein 4B) looks at the photo while it draws, which is why it is "
+            "still the same person; a picture takes about ten seconds on the integrated GPU. The photo stays "
+            "in the browser and in memory: it is not written to disk, and it never leaves the machine."
+        ),
+        engines=["openvino"],
+        status="available",
+        samples="portrait_studio.samples",
+        experimental=True,
+    ),
+    Demo(
         id="noise-suppression",
         name="Live Noise Suppression",
         category="Audio",

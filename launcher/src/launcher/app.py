@@ -76,6 +76,7 @@ from .errors import Conflict
 from .expense_extract_runner import ExpenseExtractRunner
 from .html_creator_runner import HtmlCreatorRunner
 from .page_agent_runner import PageAgentRunner
+from .portrait_studio_runner import PortraitStudioRunner, photo_bytes
 from .live_translation_runner import LiveTranslationRunner
 from .model_routes import router as model_router
 from .meeting_notes_runner import MeetingNotesRunner
@@ -302,6 +303,7 @@ smart_recall_runner = SmartRecallRunner()
 code_review_assist_runner = CodeReviewAssistRunner()
 html_creator_runner = HtmlCreatorRunner()
 page_agent_runner = PageAgentRunner()
+portrait_studio_runner = PortraitStudioRunner()
 telemetry_poller = TelemetryPoller(is_idle=lambda: not activity.snapshot())
 
 
@@ -414,6 +416,7 @@ _UNLOADABLE = {
     "code-review-assist": code_review_assist_runner,
     "html-creator": html_creator_runner,
     "page-agent": page_agent_runner,
+    "portrait-studio": portrait_studio_runner,
 }
 
 
@@ -598,6 +601,20 @@ def demo_devices(demo_id: str) -> JSONResponse:
         if payload["openvino_devices"]:
             # What "Auto" means for each of its two models, so the menus can say it.
             payload["auto_devices"] = dict(zip(("vision", "mood"), _video_commentary_devices(None, None)))
+    if demo_id == "portrait-studio":
+        from portrait_studio import photo as portrait_photo
+        from portrait_studio import styles as portrait_styles
+
+        payload["styles"] = [{"id": style.id, "name": style.name, "hint": style.hint} for style in portrait_styles.STYLES]
+        payload["sizes"] = list(portrait_photo.SIZES)
+        payload["default_size"] = portrait_photo.DEFAULT_SIZE
+        # The image model does not compile for the NPU: it is shown greyed out with why.
+        payload["openvino_unsupported"] = {
+            d: "The image model does not run on the NPU: its compiler does not take this model."
+            for d in payload["openvino_devices"] if npu.is_npu(d)
+        }
+        if payload["openvino_devices"]:
+            payload["auto_device"] = resolve(Engine.OPENVINO.value, None)[1]
     if demo_id == "page-agent" and payload["openvino_devices"]:
         # Who does what when every chip is left to the conductor, so the menus can say it.
         payload["auto_assignment"] = asdict(_page_agent_assignment(None, None, None))
@@ -2037,6 +2054,49 @@ def page_agent_picture(name: str) -> Response:
     if path is None:
         return JSONResponse({"error": "No such picture in the current build."}, status_code=404)
     return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+# --- portrait-studio ----------------------------------------------------------------
+
+
+class PortraitRestyleRequest(BaseModel):
+    style: str
+    # The photo, as the page holds it (`data:image/jpeg;base64,...`), or the
+    # name of a bundled portrait. One of the two.
+    photo: str | None = None
+    sample: str | None = None
+    size: int | None = None
+    # Another seed, another picture of the same style.
+    seed: int = 0
+    compute_device: str | None = None
+
+
+@app.post("/api/portrait-studio/restyle")
+async def portrait_studio_restyle(req: PortraitRestyleRequest) -> JSONResponse:
+    """The person in a photo, drawn again in a style. The photo comes with
+    the request and is not kept."""
+    try:
+        from portrait_studio import photo as portrait_photo
+        from portrait_studio.samples import SAMPLES as portraits
+
+        _engine, device = resolve(Engine.OPENVINO.value, req.compute_device)
+        if npu.is_npu(device):
+            raise ValueError("The image model does not run on the NPU: choose a GPU, or the CPU.")
+        if req.sample:
+            chosen = next((sample for sample in portraits if sample.name == req.sample), None)
+            if chosen is None:
+                raise ValueError(f"There is no bundled portrait called '{req.sample}'.")
+            data = (SAMPLE_ROOT / chosen.image).read_bytes()
+        else:
+            data = photo_bytes(req.photo or "")
+        result = await run_in_threadpool(
+            portrait_studio_runner.restyle,
+            device=device, data=data, style_id=req.style,
+            size=req.size or portrait_photo.DEFAULT_SIZE, seed=req.seed,
+        )
+    except Exception as exc:
+        return error_response(exc)
+    return JSONResponse(result)
 
 
 # --- auto demo ---------------------------------------------------------------------

@@ -11,7 +11,7 @@
 // or an MJPEG video stream plus a polled side channel). The 13 configs at the
 // bottom only carry what is genuinely different per brick.
 
-const CATEGORY_ORDER = ["Speech", "Vision", "Text", "Productivity", "Audio"];
+const CATEGORY_ORDER = ["Speech", "Vision", "Images", "Text", "Productivity", "Audio"];
 
 const el = (id) => document.getElementById(id);
 
@@ -3088,6 +3088,304 @@ const PANELS = {
       const container = el("agent-result");
       container.innerHTML = stoppedNoteHtml(data) + checksHtml(data.checks) + this.speedsHtml(data);
       showPage(this, { html: data.html, source: data.html_source, title: "Built page preview" });
+    },
+  }),
+
+  "portrait-studio": new Panel({
+    id: "portrait-studio",
+    prefix: "portrait",
+    data: null, // what the brick offers: styles, sizes, samples
+    photo: null, // the photo as the page holds it: a square JPEG, as a data URL
+    sample: null, // or the name of a bundled portrait
+    photoNumber: 0, // which photo this is: a new one starts its results afresh
+    stream: null,
+    results: [],
+    seeds: new Map(), // per style, for the photo in hand: the same style asked again gives another picture
+    stopAll: false,
+    busy: false,
+    populate(data) {
+      this.data = data;
+      const devices = data.openvino_devices || [];
+      const auto = data.auto_device ? `Auto (${autoDeviceName(data.auto_device)})` : deviceLabel("AUTO");
+      const device = el("portrait-device");
+      fillSelect(device, [{ value: "AUTO", label: auto }, ...devices.map((d) => ({ value: d, label: deviceLabel(d) }))]);
+      for (const choice of device.options) {
+        const reason = (data.openvino_unsupported || {})[choice.value];
+        if (!reason) continue;
+        choice.disabled = true;
+        choice.textContent = `${choice.textContent} -- ${reason}`;
+      }
+      fillSelect(el("portrait-size"), (data.sizes || []).map((size) => ({ value: String(size), label: `${size} × ${size}` })));
+      el("portrait-size").value = String(data.default_size || "");
+      el("portrait-styles").innerHTML = (data.styles || [])
+        .map(
+          (style) =>
+            `<button type="button" class="portrait-style" data-style="${escapeHtml(style.id)}">` +
+            `<strong>${escapeHtml(style.name)}</strong><span>${escapeHtml(style.hint)}</span></button>`,
+        )
+        .join("");
+      el("portrait-samples").innerHTML = (data.samples || [])
+        .map(
+          (sample) =>
+            `<button type="button" class="portrait-sample" data-sample="${escapeHtml(sample.name)}" ` +
+            `title="${escapeHtml(`${sample.name} -- ${sample.description}`)}">` +
+            `<img src="${escapeHtml(sample.image_url)}" alt="${escapeHtml(sample.name)}" loading="lazy" /></button>`,
+        )
+        .join("");
+      if (!devices.length) {
+        this.setStatus("Portrait Studio needs the OpenVINO engine, which is not installed here.", "error");
+        this.setBusy(true);
+      }
+    },
+    wire() {
+      el("portrait-camera").addEventListener("click", () => this.startCamera());
+      el("portrait-snap").addEventListener("click", () => this.countdown());
+      el("portrait-file").addEventListener("change", (event) => {
+        const file = event.target.files[0];
+        event.target.value = ""; // the same file chosen again is a choice again
+        if (file) this.takeFile(file);
+      });
+      el("portrait-samples").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-sample]");
+        if (button && !this.busy) this.useSample(button.dataset.sample);
+      });
+      el("portrait-styles").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-style]");
+        if (button) this.draw(button.dataset.style);
+      });
+      el("portrait-all").addEventListener("click", () => this.drawAll());
+      el("portrait-stop").addEventListener("click", async () => {
+        this.stopAll = true;
+        try {
+          await postJSON("/api/bricks/portrait-studio/stop", {});
+        } catch {
+          // The picture being drawn says what happened to it.
+        }
+      });
+      el("portrait-gallery").addEventListener("click", (event) => {
+        const tile = event.target.closest("[data-result]");
+        if (tile) this.show(this.results[Number(tile.dataset.result)]);
+      });
+      el("portrait-result").addEventListener("click", (event) => {
+        const act = event.target.closest("[data-act]");
+        const shown = this.results[this.shown];
+        if (!act || !shown) return;
+        if (act.dataset.act === "again") this.draw(shown.style);
+        if (act.dataset.act === "download") {
+          const link = document.createElement("a");
+          link.href = shown.image;
+          link.download = `portrait-${shown.style}.jpg`;
+          link.click();
+        }
+      });
+    },
+    leave() {
+      this.stopCamera(); // the camera is not left on behind a page nobody is looking at
+      Panel.prototype.leave.call(this);
+    },
+    setBusy(busy) {
+      this.busy = busy;
+      for (const button of document.querySelectorAll("#portrait-panel .portrait-style, #portrait-all, #portrait-camera, #portrait-snap")) {
+        button.disabled = busy;
+      }
+      el("portrait-file").disabled = busy;
+      el("portrait-stop").hidden = !busy;
+    },
+    // ---- the photo
+    async startCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        this.setStatus("This browser gives the page no camera: upload a photo, or pick a portrait.", "error");
+        return;
+      }
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+          audio: false,
+        });
+      } catch (err) {
+        this.setStatus(`The camera could not be opened: ${err.message}. Upload a photo, or pick a portrait.`, "error");
+        return;
+      }
+      if (!this.isOpen) return this.stopCamera(); // left while the browser was asking
+      const video = el("portrait-video");
+      video.srcObject = this.stream;
+      video.hidden = false;
+      el("portrait-photo").hidden = true;
+      el("portrait-empty").hidden = true;
+      el("portrait-camera").hidden = true;
+      el("portrait-snap").hidden = false;
+      this.setStatus("Look at the camera, then take the picture.");
+    },
+    stopCamera() {
+      clearInterval(this.counting);
+      el("portrait-count").hidden = true;
+      if (this.stream) for (const track of this.stream.getTracks()) track.stop();
+      this.stream = null;
+      const video = el("portrait-video");
+      video.srcObject = null;
+      video.hidden = true;
+      el("portrait-snap").hidden = true;
+      el("portrait-camera").hidden = false;
+      el("portrait-camera").textContent = this.photo || this.sample ? "Take another with the camera" : "Use the camera";
+    },
+    // Three, two, one: time to look up from the button.
+    countdown() {
+      const count = el("portrait-count");
+      let left = 3;
+      el("portrait-snap").disabled = true;
+      count.textContent = String(left);
+      count.hidden = false;
+      clearInterval(this.counting);
+      this.counting = setInterval(() => {
+        left -= 1;
+        if (left > 0) {
+          count.textContent = String(left);
+          return;
+        }
+        clearInterval(this.counting);
+        count.hidden = true;
+        el("portrait-snap").disabled = false;
+        if (this.stream) this.snap();
+      }, 800);
+    },
+    // The middle of a picture as a square, the way the model is given it.
+    squareOf(source, width, height) {
+      const side = Math.min(width, height);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = Math.min(side, 1024);
+      canvas.getContext("2d").drawImage(source, (width - side) / 2, (height - side) / 2, side, side, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.92);
+    },
+    snap() {
+      const video = el("portrait-video");
+      if (!video.videoWidth) {
+        this.setStatus("The camera has not sent a picture yet: try again in a moment.", "error");
+        return;
+      }
+      // As the camera saw it, not as the mirror on screen showed it: writing on a shirt reads the right way.
+      const photo = this.squareOf(video, video.videoWidth, video.videoHeight);
+      this.stopCamera();
+      this.usePhoto(photo, null);
+    },
+    takeFile(file) {
+      const url = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => {
+        this.stopCamera();
+        this.usePhoto(this.squareOf(image, image.naturalWidth, image.naturalHeight), null);
+        URL.revokeObjectURL(url);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        this.setStatus("That file could not be read as a picture.", "error");
+      };
+      image.src = url;
+    },
+    useSample(name) {
+      const sample = ((this.data && this.data.samples) || []).find((item) => item.name === name);
+      if (!sample) return;
+      this.stopCamera();
+      this.usePhoto(sample.image_url, name);
+    },
+    // A photo in hand: shown, and what was drawn from the last one put away.
+    usePhoto(source, sample) {
+      this.photo = sample ? null : source;
+      this.sample = sample;
+      this.photoNumber += 1;
+      this.results = [];
+      this.seeds = new Map();
+      const photo = el("portrait-photo");
+      photo.src = source;
+      photo.hidden = false;
+      el("portrait-empty").hidden = true;
+      el("portrait-camera").textContent = "Take another with the camera";
+      for (const button of el("portrait-samples").children) button.classList.toggle("active", button.dataset.sample === sample);
+      for (const button of el("portrait-styles").children) button.classList.remove("active", "drawn");
+      el("portrait-gallery").replaceChildren();
+      showPlaceholder(el("portrait-result"), "Pick a style: the portrait will be drawn here.");
+      this.setStatus(sample ? "A portrait of nobody: an image model drew it. Pick a style." : "Pick a style.");
+    },
+    // ---- the portrait
+    async draw(styleId) {
+      if (this.busy) return false;
+      if (!this.photo && !this.sample) {
+        this.setStatus("Take a picture, upload one, or pick a portrait first.", "error");
+        return false;
+      }
+      const style = ((this.data && this.data.styles) || []).find((item) => item.id === styleId);
+      const seed = this.seeds.has(styleId) ? this.seeds.get(styleId) + 1 : 0;
+      const photoNumber = this.photoNumber;
+      for (const button of el("portrait-styles").children) button.classList.toggle("active", button.dataset.style === styleId);
+      this.setBusy(true);
+      const data = await this.run({
+        button: { disabled: false }, // every style's button is held by setBusy, not one of them by run
+        key: "portrait-studio",
+        busy: `Drawing: ${style ? style.name : styleId}…`,
+        work: () =>
+          postJSON("/api/portrait-studio/restyle", {
+            style: styleId,
+            photo: this.photo,
+            sample: this.sample,
+            size: Number(el("portrait-size").value) || null,
+            seed,
+            compute_device: el("portrait-device").value,
+          }),
+        done: (result) =>
+          result.cancelled ? "Stopped before the picture was drawn." : `${result.style_name} in ${result.seconds.toFixed(1)} s`,
+      });
+      this.setBusy(false);
+      if (data && data.cancelled) this.setStatus("Stopped before the portrait was drawn.");
+      if (!data || !data.image || photoNumber !== this.photoNumber) return Boolean(data && !data.cancelled);
+      this.seeds.set(styleId, seed);
+      this.results.push(data);
+      el("portrait-styles").querySelector(`[data-style="${CSS.escape(styleId)}"]`)?.classList.add("drawn");
+      this.renderGallery();
+      this.show(data);
+      return true;
+    },
+    async drawAll() {
+      if (this.busy) return;
+      this.stopAll = false;
+      for (const style of (this.data && this.data.styles) || []) {
+        if (this.stopAll || !this.isOpen) break;
+        if (this.seeds.has(style.id)) continue; // already drawn from this photo
+        if (!(await this.draw(style.id))) break;
+      }
+      if (this.results.length > 1 && !this.hasError()) {
+        const seconds = this.results.reduce((sum, result) => sum + result.seconds, 0);
+        this.setStatus(`${this.results.length} portraits from one photo, ${seconds.toFixed(0)} s of drawing`, "live");
+      }
+    },
+    show(result) {
+      this.shown = this.results.indexOf(result);
+      const where = shortGpuName(deviceLabel(result.device));
+      const parts = [`<strong>${result.seconds.toFixed(1)} s</strong> on ${escapeHtml(where)}`, `${result.size} × ${result.size}, ${result.steps} steps`];
+      if (result.steps_per_second) parts.push(`${result.steps_per_second.toFixed(2)} steps/s`);
+      if (result.energy) {
+        const above = result.energy.above_idle_joules !== null && result.energy.above_idle_joules !== undefined;
+        parts.push(
+          `<span class="energy" title="${escapeHtml(energyTitle(result.energy))}">${escapeHtml(energyText(result.energy))}` +
+            `${above ? " above idle" : " (processor package)"}</span>`,
+        );
+      }
+      el("portrait-result").innerHTML =
+        `<figure class="portrait-figure"><img src="${result.image}" alt="${escapeHtml(`The portrait as ${result.style_name}`)}" />` +
+        `<figcaption><span class="portrait-style-name">${escapeHtml(result.style_name)}</span>` +
+        `<span class="gen-stats">${parts.join(" · ")}</span>` +
+        `<span class="portrait-acts"><button type="button" class="btn btn-secondary" data-act="again" ` +
+        `title="The same style drawn once more: another picture each time">Another take</button>` +
+        `<button type="button" class="btn btn-secondary" data-act="download">Download</button></span>` +
+        `</figcaption></figure>`;
+      for (const tile of el("portrait-gallery").children) tile.classList.toggle("active", Number(tile.dataset.result) === this.shown);
+    },
+    renderGallery() {
+      el("portrait-gallery").innerHTML = this.results
+        .map(
+          (result, index) =>
+            `<button type="button" class="portrait-tile" data-result="${index}" title="${escapeHtml(result.style_name)}">` +
+            `<img src="${result.image}" alt="${escapeHtml(result.style_name)}" /><span>${escapeHtml(result.style_name)}</span></button>`,
+        )
+        .join("");
     },
   }),
 };

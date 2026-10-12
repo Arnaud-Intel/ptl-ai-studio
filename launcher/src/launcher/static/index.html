@@ -904,6 +904,53 @@
           <p class="placeholder">The page will appear here. A build plans the page on one chip, draws its pictures on another and writes the HTML on a third; the first one also loads three models.</p>
         </div>
       </section>
+
+      <!-- portrait-studio (experimental) -->
+      <section id="portrait-panel" class="brick-panel" hidden>
+        <div class="portrait-layout">
+          <div class="portrait-side">
+            <p class="section-label">1 · The photo</p>
+            <div class="portrait-stage">
+              <video id="portrait-video" autoplay playsinline muted hidden></video>
+              <img id="portrait-photo" alt="The photo the portrait is drawn from" hidden />
+              <p id="portrait-empty" class="placeholder">Use the camera, upload a photo, or pick one of the portraits below.</p>
+              <span id="portrait-count" class="portrait-count" hidden></span>
+            </div>
+            <div class="run-row">
+              <button id="portrait-camera" class="btn btn-secondary" type="button">Use the camera</button>
+              <button id="portrait-snap" class="btn btn-primary" type="button" hidden>Take the picture</button>
+              <label class="btn btn-secondary portrait-upload">Upload a photo<input id="portrait-file" type="file" accept="image/*" /></label>
+            </div>
+            <p class="section-label">Or a portrait of nobody, drawn by an image model</p>
+            <div id="portrait-samples" class="portrait-samples"></div>
+            <p class="portrait-note">The photo stays in this browser and in the app's memory: it is not written to disk, and nothing leaves this machine.</p>
+          </div>
+          <div class="portrait-main">
+            <p class="section-label">2 · The style</p>
+            <div id="portrait-styles" class="portrait-styles"></div>
+            <div class="controls">
+              <label class="field">
+                <span>Drawn on</span>
+                <select id="portrait-device" title="The image model. It does not run on the NPU."></select>
+              </label>
+              <label class="field">
+                <span>Size</span>
+                <select id="portrait-size" title="Pixels a side. A larger picture takes longer: four times the pixels, about four times the time."></select>
+              </label>
+            </div>
+            <div class="run-row">
+              <button id="portrait-all" class="btn btn-secondary" type="button" title="One after the other, each style not drawn yet from this photo">Draw every style</button>
+              <button id="portrait-stop" class="btn btn-secondary" type="button" hidden>Stop</button>
+              <span id="portrait-status" class="run-status" role="status" aria-live="polite">Idle</span>
+            </div>
+            <p class="section-label">3 · The portrait</p>
+            <div id="portrait-result" class="output portrait-result">
+              <p class="placeholder">The portrait will be drawn here: the same person, in the style you pick. The first one also loads the image model.</p>
+            </div>
+            <div id="portrait-gallery" class="portrait-gallery" aria-label="The portraits drawn from this photo"></div>
+          </div>
+        </div>
+      </section>
     </section>
   </main>
 

@@ -79,6 +79,7 @@ local_demo/
         change_detection.py        <- skip indexing a screen that hasn't visibly changed
         cli.py
     page-agent/                <- EXPERIMENTAL: request -> illustrated page (several-models-on-several-chips template)
+    portrait-studio/           <- EXPERIMENTAL: a photo of a person -> the same person in a chosen style (image-editing model)
       pyproject.toml
       src/page_agent/
         plan.py                   <- the planner's instructions, and a tolerant reader of its answer

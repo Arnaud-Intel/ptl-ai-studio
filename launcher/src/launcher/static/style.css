@@ -2397,3 +2397,80 @@ button.pin-number { cursor: pointer; }
   .ws-hint { flex-basis: 100%; order: 5; }
   .ws-review { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Portrait Studio: the photo on the left, the styles and what they make of it
+   on the right. */
+.portrait-layout { display: grid; grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.portrait-side, .portrait-main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.portrait-side .section-label, .portrait-main .section-label { margin: 0; }
+.portrait-stage {
+  position: relative;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.portrait-stage :is(video, img) { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* The camera shown as a mirror, which is how people expect to see themselves;
+   the picture taken is the camera's own. */
+.portrait-stage video { transform: scaleX(-1); }
+.portrait-stage .placeholder { margin: 0; padding: 0 24px; text-align: center; }
+.portrait-count {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 96px;
+  font-weight: 700;
+}
+.portrait-upload { cursor: pointer; }
+.portrait-upload input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.portrait-upload:has(input:focus-visible) { outline: 2px solid var(--accent-hover); outline-offset: 2px; }
+.portrait-upload:has(input:disabled) { opacity: 0.5; cursor: default; }
+.portrait-samples { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.portrait-sample, .portrait-tile { padding: 0; border: 2px solid transparent; border-radius: 10px; background: none; cursor: pointer; overflow: hidden; }
+.portrait-sample img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+.portrait-sample:hover, .portrait-tile:hover { border-color: var(--border-strong); }
+.portrait-sample.active, .portrait-tile.active { border-color: var(--accent-hover); }
+.portrait-note { margin: 0; color: var(--text-faint); font-size: 12.5px; line-height: 1.45; }
+.portrait-styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.portrait-style {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.portrait-style span { color: var(--text-faint); font-size: 12px; }
+.portrait-style:hover:not(:disabled) { border-color: var(--accent-hover); background: var(--bg-card-hover); }
+.portrait-style.active { border-color: var(--accent-hover); box-shadow: inset 0 0 0 1px var(--accent-hover); }
+.portrait-style.drawn strong::after { content: " ✓"; color: var(--success); }
+.portrait-style:disabled { opacity: 0.55; cursor: default; }
+.portrait-result { min-height: 180px; }
+.portrait-figure { margin: 0; display: grid; grid-template-columns: minmax(0, 480px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.portrait-figure img { display: block; width: 100%; aspect-ratio: 1; border-radius: 10px; background: var(--bg-input); }
+.portrait-figure figcaption { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.portrait-style-name { font-size: 20px; font-weight: 700; }
+.portrait-figure .gen-stats { margin: 0; }
+.portrait-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.portrait-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.portrait-gallery:empty { display: none; }
+.portrait-tile { display: flex; flex-direction: column; background: var(--bg-input); color: var(--text-dim); font: inherit; font-size: 11.5px; }
+.portrait-tile img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+.portrait-tile span { padding: 3px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 900px) {
+  .portrait-layout { grid-template-columns: minmax(0, 1fr); }
+  .portrait-side { max-width: 420px; }
+  .portrait-figure { grid-template-columns: minmax(0, 1fr); }
+}

@@ -121,6 +121,17 @@ here are under Original reports, each with the ticket it went into.
   two models changing places on one GPU), and HTML Creator, which has no
   scene.
 
+- [ ] **Portrait Studio: try it on real faces, and decide where its model comes from.**
+  The brick (v1.0.1, 2026-10-12) was tuned on four portraits an image model drew and on the browser's
+  stand-in camera: not one photograph of a real person, because whose face to use was not the builder's
+  to decide. To look at first with the brick in hand: how well a real face is kept, in which styles, and
+  for whom less well -- on the drawn portraits dark skin came out lighter in the 3D cartoon and orange in
+  the comic book. Its model is a build of FLUX.2 klein 4B from a community repository, held at one
+  revision and adapted at first use, because Intel publishes none: an export of our own from Black Forest
+  Labs' weights (16 GB to fetch, and somewhere to publish it) would remove that dependence, and would
+  allow a finer precision than int4. Not built: a style typed by hand (left out on purpose, for a stand),
+  a scene of the Auto Demo, more than one person in the photo. (filed 2026-10-12, from the build)
+
 ## What we are showing
 
 The demo unit is a Dell XPS 14 (DA14260). These are the figures OpenVINO and
@@ -652,6 +663,15 @@ were here before.
   this the cheapest new brick on the list. To measure first: painting a region
   again and changing a picture with this model in the installed OpenVINO
   GenAI, neither of which the Page Agent uses.
+  *2026-10-12, measured while building Portrait Studio (the user: "a new brick
+  category Images... taking a picture of someone and using it as a base to
+  select different style"):* changing a picture with FLUX.1-schnell does not
+  work -- up to strength 0.75 the picture comes back unchanged, at 0.9 it is
+  another picture. FLUX.2 klein 4B does it (the photo is something it looks
+  at, not noise to clean), in 8 to 11 s at 768 on the integrated GPU, and is
+  what the new brick draws with (`bricks/portrait-studio/README.md`). The
+  Images category exists now; an Image Studio would sit in it, on that model.
+  Painting a region again is still not measured.
 
 - [ ] **R41 · P2 · New brick: Look and Ask.** *Proves C1, C5.*
   Hold something up to the camera and ask about it aloud; the laptop answers
@@ -811,6 +831,32 @@ were here before.
   **Estimate:** 2 days for the upgrade and its checks, 2-3 per model adopted.
   **Depends on:** R17; after R36, which needs no upgrade. (filed 2026-10-10,
   from the model trial)
+  *2026-10-12, measured for an audit the user asked for ("why should we go for
+  the latest OpenVINO version, or why shouldn't we"), 2026.3.0 in the project
+  against 2026.4.1 in a throwaway environment, XPS 14 alone:*
+  **For.** The fault that makes `engine.ov_config_for` give the GPU no cache is
+  gone on 2026.4.1: YOLO11n-int8 loaded from the cache answers garbage on
+  2026.3 (8,400 candidates at score 1.0 where compiling finds 11) and the same
+  as compiled on 2026.4.1, three loads running. With the cache allowed there,
+  Qwen2.5-1.5B loads on the integrated GPU in 0.9 s against 4.9, Qwen3-8B in 2.3
+  against 10.6, same answers -- for 9.8 GB of disk with the image model's. Not
+  measured: the 30B coder, and every other model before the workaround could
+  go. 2026.4.1 also fixes an NPU crash on this processor family with three
+  driver versions (not this laptop's), and wrong GPU results in cases the app
+  is not known to meet.
+  **Neither for nor against.** Today's models run at the same speed (30B coder
+  49.4 tok/s on both; 8B on the NPU 18.8 on both). FLUX.2 klein, tried for the
+  Images brick, draws the same pictures at the same pace on both and needs the
+  same two changes to the downloaded build on both; the NPU takes it on
+  neither (2026.4.1: the NPU compiler ends the process after 44 s, as in
+  R47 (1); 2026.3: nothing after five minutes), whatever the release notes say
+  of that model on NPUs.
+  **Against.** What the 30B coder writes changes (Neon Breakout above), so the
+  five HTML Creator scenarios and the Auto Demo's page have to be looked at
+  again; every NPU model compiles afresh once on every machine after the
+  update (the 8B: a minute and a half); R47's six faults have not been looked
+  for on 2026.4.1; and 1.0.0 has just gone out measured on 2026.3.
+  The upgrade is one change to `uv.lock`: the bricks ask for `>=2024.4`.
 
 - [ ] **R42 · P2 · New brick: Visual Inspection.** *Proves C1, C2, C5.* Spike
   first.
