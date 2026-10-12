@@ -38,7 +38,7 @@ Three models, downloaded on first use (`uv run panther-lake-prefetch`, or
 | Step | Model | Size |
 | --- | --- | --- |
 | plan | Qwen3-8B (channel-wise build on the NPU) | 4.5 GB |
-| pictures | FLUX.1-schnell int4 (Apache-2.0) | 9.2 GB |
+| pictures | FLUX.2 klein 4B int4 (Apache-2.0) -- the model Portrait Studio draws with | 4.6 GB, and as much again for the copy the app prepares |
 | page | Qwen3-Coder-30B-A3B int4 | 17 GB |
 
 ## Usage
@@ -261,7 +261,39 @@ really costs: on the evening they were added, the coding model wrote at 20
 to 28 tokens/s on the B60 while the pictures were being drawn on the
 integrated GPU, and at 63 as soon as the last one was done.
 
-## What it takes (XPS 14, 2026-10-08)
+## What it takes
+
+**Since 2026-10-12 the pictures are drawn by FLUX.2 klein 4B**, which took
+the place of FLUX.1-schnell: the figures of 2026-10-08 below are schnell's,
+and are kept for what they say of the rest. What changed, measured that day
+on the same laptop (the eighteen pictures the planner asks for on three of
+the samples, each model alone on the chip):
+
+| | FLUX.1-schnell | FLUX.2 klein 4B |
+| --- | --- | --- |
+| Loads on the integrated GPU / on the B60 | 18 s / 35 s | 7 s / 16 s |
+| A 1024x576 picture, integrated GPU / B60 | 7.3 s / 3.3 s | 4.1 s / 1.8 s |
+| A 768x512 picture, integrated GPU / B60 | 5.0 s / 2.3 s | 2.7 s / 1.3 s |
+| Held while loaded on the integrated GPU | 13 GB | 7.7 GB |
+| On disk | 9.2 GB | 4.6 GB, twice (see below) |
+
+Side by side the pictures are a match. klein keeps to a number said ("a
+single bean", "three people") where schnell drew a cupful and four people;
+schnell's bicycles are a little finer; both letter a newspaper or a coffee
+bag in gibberish. Whole pages with klein, all passing their checks: 130 s
+on two GPUs with the three models loading (six pictures in 25 s beside the
+coding model, where schnell took 38 to 50); 171 s and 188 s on the
+integrated GPU alone (six pictures in 20 to 29 s), where the day before a
+page took 214 to 224 s.
+
+**What the change costs.** Intel publishes schnell ready for OpenVINO and
+does not publish klein: the build used is a community one, held at one
+revision and made openable by the app the first time it is used (4 s, and
+4.6 GB more on disk) -- `pantherlake_ai_core/flux2_klein.py` has the how.
+The page that opens the Auto Demo now depends on a repository that is not
+Intel's; an export of our own is in the backlog's Inbox.
+
+### The figures of 2026-10-08 (XPS 14, pictures by FLUX.1-schnell)
 
 Core Ultra X7 358H, Arc B390 integrated GPU, NPU; an Arc Pro B60 attached for
 the two-GPU rows. The seven samples, built one after the other in one
@@ -339,6 +371,9 @@ machine was not measured again; the morning's shorter pages took 206 to
 - **FLUX over the lighter candidate.** LCM Dreamshaper v7 draws a picture in
   under a second, but soft and loosely: asked for croissants on a counter it
   drew a room with bread-like shapes. FLUX drew the croissants.
+- **FLUX.2 klein over FLUX.1-schnell** (2026-10-12): half the time a picture,
+  half the memory, the same pictures -- and the one model then serves two
+  bricks. The table above has the figures.
 - **Two pictures with one description need two seeds**, or they are the same
   picture; each takes its seed from its file name, so a request also draws
   the same pictures again.

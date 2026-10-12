@@ -22,7 +22,7 @@ from launcher import portrait_studio_runner
 from launcher.errors import Conflict
 from launcher.registry import REGISTRY
 from pantherlake_ai_core import models as inventory
-from portrait_studio import model as klein
+from pantherlake_ai_core import flux2_klein as klein
 from portrait_studio import photo, styles
 from portrait_studio.stylist import STEPS, Restyled
 
@@ -239,7 +239,9 @@ def test_the_build_is_fetched_at_the_revision_it_was_tried_with_and_says_when_it
 
 def test_the_inventory_lists_the_build_for_the_brick_at_that_same_revision(monkeypatch):
     spec = next(spec for spec in inventory.MODELS if spec.repo_id == klein.REPO)
-    assert spec.demos == ("portrait-studio",) and spec.revision == klein.REVISION and spec.engine == inventory.OPENVINO
+    # Two bricks draw with it: the Page Agent from a description, this one from a photo.
+    assert spec.demos == ("page-agent", "portrait-studio") and spec.revision == klein.REVISION and spec.engine == inventory.OPENVINO
+    assert not [other for other in inventory.MODELS if "schnell" in (other.repo_id or "").lower()]  # the model it replaced is gone
     # Nothing else in the inventory is held at a revision: the others are Intel's builds or the model's own publisher's.
     assert [other.key for other in inventory.MODELS if other.revision] == [spec.key]
     import huggingface_hub
@@ -249,6 +251,20 @@ def test_the_inventory_lists_the_build_for_the_brick_at_that_same_revision(monke
     inventory.download(spec)
     assert inventory.is_cached(spec)
     assert asked == [(klein.REPO, klein.REVISION), (klein.REPO, klein.REVISION)]
+
+
+def test_the_page_agent_draws_with_the_same_build_and_the_model_it_replaced_is_nowhere():
+    """One image model for the two bricks: the Page Agent's pictures come
+    from the build Portrait Studio brought, found the same way."""
+    import inspect
+
+    from page_agent import images
+
+    source = inspect.getsource(images.ImageMaker.__init__)
+    assert "flux2_klein.resolve(" in source and not hasattr(images, "DEFAULT_REPO")
+    wanted = {spec.key for spec in inventory.for_demo("page-agent")}
+    assert "flux2-klein-ov" in wanted and not any("schnell" in key for key in wanted)
+    assert "flux2-klein-ov" in {spec.key for spec in inventory.for_demo("portrait-studio")}
 
 
 # --- the launcher's side ------------------------------------------------------------------

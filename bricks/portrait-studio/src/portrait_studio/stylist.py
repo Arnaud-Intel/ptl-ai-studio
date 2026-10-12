@@ -20,10 +20,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
-from pantherlake_ai_core import npu
+from pantherlake_ai_core import flux2_klein, npu
 from pantherlake_ai_core.engine import ov_config_for
 
-from . import model
 from .photo import DEFAULT_SIZE, square
 from .styles import Style
 
@@ -64,7 +63,7 @@ class Stylist:
         import openvino_genai as ov_genai
 
         self.device = device
-        self.model_dir = model.resolve(model_dir, on_downloading=on_downloading, on_preparing=on_preparing)
+        self.model_dir = flux2_klein.resolve(model_dir, on_downloading=on_downloading, on_preparing=on_preparing)
         self.pipeline = ov_genai.Image2ImagePipeline(self.model_dir, device, **ov_config_for(device))
 
     def restyle(

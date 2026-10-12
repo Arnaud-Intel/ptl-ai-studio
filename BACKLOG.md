@@ -129,7 +129,8 @@ here are under Original reports, each with the ticket it went into.
   the comic book. Its model is a build of FLUX.2 klein 4B from a community repository, held at one
   revision and adapted at first use, because Intel publishes none: an export of our own from Black Forest
   Labs' weights (16 GB to fetch, and somewhere to publish it) would remove that dependence, and would
-  allow a finer precision than int4. Not built: a style typed by hand (left out on purpose, for a stand),
+  allow a finer precision than int4. *Since the Page Agent draws with the same build (2026-10-12), the
+  Auto Demo's opening scene depends on that repository too: this is no longer about one experimental brick.* Not built: a style typed by hand (left out on purpose, for a stand),
   a scene of the Auto Demo, more than one person in the photo. (filed 2026-10-12, from the build)
 
 ## What we are showing
@@ -672,6 +673,18 @@ were here before.
   what the new brick draws with (`bricks/portrait-studio/README.md`). The
   Images category exists now; an Image Studio would sit in it, on that model.
   Painting a region again is still not measured.
+  *The same day, after an audit the user asked for ("see if we should swap
+  the image gen of the Page agent for this new diffusion model and if yes,
+  get rid of the old one"):* the Page Agent draws with FLUX.2 klein too, and
+  FLUX.1-schnell is out of the code, the model inventory and the setup
+  assistant. On the planner's own eighteen picture descriptions klein took
+  2.7 s for a 768x512 picture on the integrated GPU against 5.0, loaded in 7 s
+  against 18, held 7.7 GB against 13, and drew pictures that are a match.
+  What it cost is in `bricks/page-agent/README.md`: the build is a community
+  one. Left open: with 7.7 GB instead of 13 the image model might stay loaded
+  beside the 30B coder on one GPU instead of taking turns with it -- not
+  tried; and a picture of a built page could now be *changed* by a sentence
+  rather than drawn again from a new description.
 
 - [ ] **R41 · P2 · New brick: Look and Ask.** *Proves C1, C5.*
   Hold something up to the camera and ask about it aloud; the laptop answers

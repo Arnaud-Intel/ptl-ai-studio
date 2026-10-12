@@ -8,22 +8,31 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from pantherlake_ai_core import npu
+from pantherlake_ai_core import flux2_klein, npu
 from pantherlake_ai_core.engine import ov_config_for
-from pantherlake_ai_core.model_cache import resolve_snapshot
 
-# FLUX.1-schnell: a picture in four steps instead of twenty-five or more,
-# which is what makes three pictures for one page affordable, and Apache-2.0.
-# Measured on the XPS 14 (2026-10-08):
-#   integrated GPU: loads in 27 s; 1024x576 in 6.5-8.5 s, 768x512 in 4.5-5.3 s;
-#                   about 13 GB of shared memory while loaded
-#   Arc Pro B60:    loads in 41 s; 1024x576 in 3.3 s, 768x512 in 2.3 s once warm
-# 9.2 GB on disk. The lighter candidate, LCM Dreamshaper v7 (2.3 GB, loads in
-# 13 s, 0.3-0.8 s a picture after 6 s for the first of each size), draws
-# soft, painterly pictures and follows the description loosely -- asked for
-# croissants on a counter it drew a room with bread-like shapes; FLUX drew
-# the croissants, and a "flat vector illustration" came out flat and vector.
-DEFAULT_REPO = "OpenVINO/FLUX.1-schnell-int4-ov"
+# FLUX.2 klein 4B: a picture in four steps instead of twenty-five or more,
+# which is what makes six pictures for one page affordable, and Apache-2.0.
+# Where the build comes from, and how it is made one the pipeline opens, is
+# in pantherlake_ai_core.flux2_klein -- Portrait Studio draws with the same.
+#
+# Measured on the XPS 14 (2026-10-12), the eighteen pictures the planner asks
+# for on three of the sample requests:
+#   integrated GPU: loads in 7 s; 1024x576 in 4.1 s, 768x512 in 2.7 s,
+#                   640x768 in 3.4 s; the process holds 7.7 GB
+#   Arc Pro B60:    loads in 16 s; 1024x576 in 1.8 s, 768x512 in 1.3 s
+#
+# It took the place of FLUX.1-schnell that day. The same eighteen pictures by
+# schnell: loads in 18 s and 35 s; 7.3, 5.0 and 6.2 s on the integrated GPU,
+# 3.3 and 2.3 s on the B60; 13 GB held; 9.2 GB on disk against 4.6. Side by
+# side the pictures are a match: klein keeps to a number said ("a single
+# bean", "three people") where schnell drew a cupful and four, schnell's
+# bicycles are a little finer; both letter a newspaper or a bag in gibberish.
+#
+# Before schnell, the lighter candidate was LCM Dreamshaper v7 (2.3 GB, 0.3
+# to 0.8 s a picture): soft, painterly pictures that follow the description
+# loosely -- asked for croissants on a counter it drew a room with bread-like
+# shapes.
 _STEPS = 4
 _JPEG_QUALITY = 88
 
@@ -33,14 +42,13 @@ class ImageMaker:
         self,
         device: str = "GPU",
         model_dir: str | None = None,
-        model_repo: str | None = None,
         on_downloading: Callable[[], None] | None = None,
     ):
         if npu.is_npu(device):
             raise ValueError("The image model does not run on the NPU: choose a GPU, or the CPU.")
         import openvino_genai as ov_genai
 
-        self._model_dir = resolve_snapshot(model_repo or DEFAULT_REPO, local_dir=model_dir, on_downloading=on_downloading)
+        self._model_dir = flux2_klein.resolve(model_dir, on_downloading=on_downloading)
         self.device = device
         self.pipeline = ov_genai.Text2ImagePipeline(self._model_dir, device, **ov_config_for(device))
         # About the last picture drawn: how many denoising steps, and what

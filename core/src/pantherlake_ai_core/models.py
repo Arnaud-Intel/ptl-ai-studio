@@ -108,9 +108,7 @@ MODELS: tuple[ModelSpec, ...] = (
               OPENVINO, "OpenVINO/Qwen3-8B-int4-cw-ov",
               note="What writes notes and page plans on the NPU. Document Q&A answers with it too when it is here, "
                    "and three other demos can be told to."),
-    ModelSpec("flux-schnell-ov", "FLUX.1-schnell (draws pictures)", ("page-agent",), OPENVINO,
-              "OpenVINO/FLUX.1-schnell-int4-ov", note="About 9 GB."),
-    ModelSpec("flux2-klein-ov", "FLUX.2 klein 4B (redraws a portrait)", ("portrait-studio",), OPENVINO,
+    ModelSpec("flux2-klein-ov", "FLUX.2 klein 4B (draws pictures, redraws a portrait)", ("page-agent", "portrait-studio"), OPENVINO,
               "rupeshs/flux2-klein-4b-int4-ov", revision="2adc62976ad32ca941fc783e2599c45c9d0c3f5a",
               note="About 4.6 GB, and as much again the first time it is used: the build is not Intel's, and a copy "
                    "is made that the app can open."),

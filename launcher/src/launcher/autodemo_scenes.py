@@ -192,14 +192,14 @@ def page_agent(stand: Stand, loop: int) -> Scene | Skip:
     if two:
         chips = (
             planner,
-            Chip(_IGPU, say("Draws the pictures · FLUX.1-schnell", "Dessine les images · FLUX.1-schnell"), "page-agent", ("images",)),
+            Chip(_IGPU, say("Draws the pictures · FLUX.2 klein", "Dessine les images · FLUX.2 klein"), "page-agent", ("images",)),
             Chip(_DGPU, say("Writes the page · Qwen3-Coder 30B", "Écrit la page · Qwen3-Coder 30B"), "page-agent", ("page",)),
             Chip(_CPU, say("Conducts and checks · plain code", "Dirige et vérifie · du simple code")),
         )
     else:
         chips = (
             planner,
-            Chip(_IGPU, say("Draws, then writes · FLUX.1 then Qwen3-Coder 30B", "Dessine puis écrit · FLUX.1 puis Qwen3-Coder 30B"),
+            Chip(_IGPU, say("Draws, then writes · FLUX.2 then Qwen3-Coder 30B", "Dessine puis écrit · FLUX.2 puis Qwen3-Coder 30B"),
                  "page-agent", ("images", "page")),
             Chip(_CPU, say("Conducts and checks · plain code", "Dirige et vérifie · du simple code")),
         )

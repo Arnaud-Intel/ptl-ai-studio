@@ -227,7 +227,7 @@ class PageAgentRunner:
                 }
 
             def on_downloading() -> None:
-                events.set_phase(_DEMO_ID, "loading", "Downloading a model (first run only: the image model is 9 GB)...")
+                events.set_phase(_DEMO_ID, "loading", "Downloading a model (first run only: the image model is 5 GB)...")
 
             # The conductor is code on the CPU, and says so in the hardware panel.
             activity.set_active(_DEMO_ID, engine=_ENGINE, device="CPU", stage=_CONDUCTOR, stage_label=_CONDUCTOR)

@@ -1,11 +1,13 @@
-"""Where the image model comes from, and how the build on the Hub is made
-one that OpenVINO GenAI opens.
+"""The studio's image model: where it comes from, and how the build on the
+Hub is made one that OpenVINO GenAI opens. Two bricks draw with it -- the
+Page Agent, from a description, and Portrait Studio, from a photo.
 
 The model is FLUX.2 [klein] 4B (Black Forest Labs, Apache-2.0): it draws a
-picture from a sentence *and a picture to start from*, in four steps, which
-is what restyling a portrait needs. The image model the Page Agent draws
-with (FLUX.1-schnell) cannot do it: given a photo, it hands the photo back,
-or draws somebody else (tried 2026-10-11, see the README).
+picture from a sentence, or from a sentence *and a picture to start from*,
+in four steps. The second is what restyling a portrait needs, and what the
+model the Page Agent first drew with (FLUX.1-schnell) cannot do: given a
+photo, it hands the photo back or draws somebody else. For the first, klein
+takes half the time and half the memory (see page_agent/images.py).
 
 Intel publishes no OpenVINO build of klein (2026-10-12). The one used here
 was exported for another program, FastSD CPU, with the same exporter, and

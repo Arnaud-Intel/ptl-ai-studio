@@ -56,19 +56,21 @@ That difference is the brick. The image model the Page Agent draws with,
 FLUX.1-schnell, was tried first because it is already on disk (2026-10-11,
 two portraits, four styles): up to a strength of 0.75 it hands the photo
 back unchanged, at 0.9 it draws somebody else, and there is nothing in
-between.
+between. The Page Agent has drawn with klein too since 2026-10-12: it is
+also the faster and the lighter of the two at drawing from a description.
 
 **Where it comes from.** Intel publishes no OpenVINO build of klein
 (2026-10-12). The one used is `rupeshs/flux2-klein-4b-int4-ov` (4.6 GB,
 Apache-2.0, made for the FastSD CPU program with the same exporter), held at
 the one revision it was tried with: the repository is somebody else's, and
 what is fetched is that state of it, not whatever it holds on the day
-(`model.REVISION`, and the same in the app's model inventory). It differs
+(`REVISION` in `pantherlake_ai_core/flux2_klein.py`, and the same in the
+app's model inventory). It differs
 from what the pipeline asks for in three small ways, none in the weights:
 its text encoder gives one output where the pipeline asks for three layers
 by name, its transformer takes its tokens' positions without a batch in
 front, and its VAE's normalisation figures are in a file of their own.
-`model.prepare` writes a copy with those three changed, once, in 4 seconds,
+`flux2_klein.prepare` writes a copy with those three changed, once, in 4 seconds,
 under `~/.cache/pantherlake-ai-studio/models` (4.6 GB more: the two large
 files are written again, the rest linked). A build made for the pipeline --
 a recent optimum-intel export, or Intel's when there is one -- is used as it
@@ -139,4 +141,5 @@ may not have. `tests/test_portrait_studio.py` holds the styles to that.
   dark, a child.
 - The CPU (it should run, slowly), and a build at a finer precision than
   int4.
-- A second image model beside it on the same GPU (the Page Agent's).
+- The Page Agent's copy of the same model loaded beside this one on the same
+  GPU: each brick loads its own (7.7 GB each).

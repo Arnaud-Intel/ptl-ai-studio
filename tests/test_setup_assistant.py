@@ -50,7 +50,7 @@ def test_each_set_is_what_it_says_it_is():
         return re.findall(r'"([^"]+)"', block)
 
     light, whole = keys_of("auto-light"), keys_of("auto")
-    assert set(whole) - set(light) == {"flux-schnell-ov", "coder-30b-ov", "PLANNER"}  # what building a page takes
+    assert set(whole) - set(light) == {"flux2-klein-ov", "coder-30b-ov", "PLANNER"}  # what building a page takes
     for demo in ("doc-qa", "expense-extract", "smart-city-monitor", "video-commentary", "object-detection"):
         needed = {spec.key for spec in models.MODELS if demo in spec.demos and not spec.key.endswith("-portable")}
         assert needed <= set(light), f"{demo} would be missing {sorted(needed - set(light))}"
