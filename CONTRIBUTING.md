@@ -186,14 +186,18 @@ not just one.
      session through to the factory: the launcher wires them to its
      "Downloading (first run only)" / "loading -> running" status.
    - `engine.ov_config_for(device)` as the config for every OpenVINO
-     `compile_model` / `openvino_genai` pipeline, so an NPU compile lands in
-     the one shared cache under `~/.cache/pantherlake-ai-studio/ov_cache`
-     (one folder per OpenVINO version; what an older version compiled is
-     removed when the launcher starts) instead of a per-CWD `ov_cache/`.
-     Don't add `CACHE_DIR` yourself: that helper deliberately gives the GPU
-     no cache, because up to OpenVINO 2026.3 a cached GPU model came back
-     numerically wrong on this hardware (see its docstring) -- silently,
-     which is far worse than the second it saves.
+     `compile_model` / `openvino_genai` pipeline, so what the NPU or a GPU
+     compiles lands in the one shared cache under
+     `~/.cache/pantherlake-ai-studio/ov_cache` (one folder per OpenVINO
+     version; what an older version compiled is removed when the launcher
+     starts) instead of a per-CWD `ov_cache/`. Don't add `CACHE_DIR`
+     yourself: that helper gives it to the GPU only from OpenVINO 2026.4.1,
+     because up to 2026.3 a cached GPU model came back numerically wrong
+     on this hardware (see its docstring) -- silently, which is far worse
+     than the seconds it saves -- and only while the disk has room. A new
+     model that runs on a GPU is worth one check before it ships: the same
+     input compiled (`PTL_GPU_CACHE=0`) and read back from the cache must
+     give the same output.
 4. Flip its entry in [`launcher/src/launcher/registry.py`](launcher/src/launcher/registry.py)
    from `status="planned"` to `status="available"`, declare which hardware
    lists its controls need (`devices=("microphones", "cameras", ...)`) and
@@ -323,7 +327,11 @@ check what a runtime changes, which no test here can:
   through them, and reword the prompts in `sample-data/catalog.json` where
   a page has a fault (see the [HTML Creator notes](bricks/html-creator/README.md)).
   Then play one whole turn of the Auto Demo.
-- **Models on the NPU compile again**, once, the first time each is used:
+- **What a GPU reads back from the cache.** `engine.GPU_CACHE_SINCE` says
+  from which OpenVINO the GPU is given the compiled-model cache. On a new
+  version, compare each GPU model compiled and read back before trusting
+  it: the versions up to 2026.3 read back wrong answers without an error.
+- **Models on the NPU and the GPU compile again**, once, the first time each is used:
   the compiled-model cache has a folder per OpenVINO version, and the
   launcher removes the folders of older versions when it starts. The 8B
   planner takes a minute and a half, and Whisper medium over three minutes

@@ -315,7 +315,10 @@ it.
 
 On one GPU nothing stays loaded from one build to the next but the planner:
 every build loads the image model (20 s), draws, then loads the coding
-model (20 s) and writes.
+model (20 s) and writes. (Those were the loads when every GPU model was
+compiled each time. Since v1.0.4 a GPU reads its models back from the
+compiled-model cache: the image model in 6 s and the coding model in 5 on
+the integrated GPU, after the first build.)
 
 These pages take about twice as long to build as the first version's (44 s
 for a warm bakery page): they have six pictures instead of three and eight

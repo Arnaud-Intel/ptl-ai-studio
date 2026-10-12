@@ -274,7 +274,7 @@ def _tidy_compiled_models() -> None:
     freed = engine_mod.clear_stale_ov_cache()
     if freed:
         print(f"Removed {freed / 1024**3:.1f} GB of models compiled by an older OpenVINO: each is compiled again the "
-              "first time it is used on the NPU.")
+              "first time it is used on the NPU or a GPU.")
 
 
 def runtime_notice() -> str | None:

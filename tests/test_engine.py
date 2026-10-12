@@ -61,19 +61,60 @@ def test_preferred_large_model_device_picks_the_discrete_gpu_then_the_integrated
     assert preferred_large_model_device() == "AUTO"
 
 
-def test_only_the_npu_gets_a_compiled_model_cache(monkeypatch, tmp_path):
-    """A cached GPU model comes back numerically wrong on this hardware --
-    YOLO11n-int8 finds a scene full of objects on the load that compiles it
-    and exactly one on every load from cache, silently. So the GPU gets no
-    CACHE_DIR at all; the NPU keeps it (2.4s to compile, 0.04s cached)."""
+def test_the_npu_and_the_gpu_keep_what_they_compile_the_gpu_only_where_it_reads_it_back_right(monkeypatch, tmp_path):
+    """Up to OpenVINO 2026.3 a GPU model read back from the cache answered
+    wrong on this hardware -- YOLO11n-int8 found a scene full of objects on
+    the load that compiled it and exactly one on every load from the cache,
+    silently -- so the GPU got no CACHE_DIR at all. On 2026.4.1 every GPU
+    model the app loads gives from the cache what it gives compiled, and
+    the GPU has the cache: there, never on an older OpenVINO that a copy
+    updated by hand may still run, and not when it is switched off."""
     monkeypatch.setattr(engine_mod, "OV_CACHE_DIR", tmp_path / "ov_cache")
     monkeypatch.setattr(engine_mod, "openvino_version", lambda: "2026.4.1")
-    for device in ("NPU", "npu"):
+    monkeypatch.delenv(engine_mod.GPU_CACHE_SWITCH, raising=False)
+    monkeypatch.setattr(engine_mod, "_free_gb", lambda path: 400.0)
+    for device in ("NPU", "npu", "GPU", "GPU.0", "GPU.1", "gpu.0"):
         cache_dir = Path(ov_config_for(device)["CACHE_DIR"])
         assert cache_dir.is_absolute() and cache_dir.is_dir()
         assert cache_dir == tmp_path / "ov_cache" / "2026.4.1"  # one folder per OpenVINO version
-    for device in ("GPU", "GPU.0", "GPU.1", "gpu.0", "CPU", "AUTO"):
+    for device in ("CPU", "AUTO"):  # the CPU loads fast without it, and AUTO may land on the CPU
         assert ov_config_for(device) == {}, f"{device} must not be cached"
+
+    for older in ("2026.3.0", "2026.4.0", "2025.4.1"):
+        monkeypatch.setattr(engine_mod, "openvino_version", lambda older=older: older)
+        assert ov_config_for("GPU.0") == {} and ov_config_for("GPU") == {}, older
+        assert "CACHE_DIR" in ov_config_for("NPU")  # the NPU's cache never had the fault
+    for newer in ("2026.4.1", "2026.5.0", "2027.0.0"):
+        monkeypatch.setattr(engine_mod, "openvino_version", lambda newer=newer: newer)
+        assert "CACHE_DIR" in ov_config_for("GPU.1"), newer
+
+    monkeypatch.setattr(engine_mod, "openvino_version", lambda: "2026.4.1")
+    for word in ("0", "off", "OFF", " no ", "false"):  # the way out, should a model ever answer differently from the cache
+        monkeypatch.setenv(engine_mod.GPU_CACHE_SWITCH, word)
+        assert ov_config_for("GPU.0") == {} and "CACHE_DIR" in ov_config_for("NPU"), word
+    for word in ("1", "on", ""):
+        monkeypatch.setenv(engine_mod.GPU_CACHE_SWITCH, word)
+        assert "CACHE_DIR" in ov_config_for("GPU.0"), word
+
+
+def test_a_gpu_keeps_nothing_on_a_disk_that_is_nearly_full(monkeypatch, tmp_path):
+    """What a GPU keeps is as large as the model: 15 GB for the 30B coder,
+    32 GB for everything on one GPU. A disk that fills half-way through
+    such a write is a demo that stops, so with little room the GPU compiles
+    every time, as it did before it had the cache. The NPU's blobs are a
+    few gigabytes in all and a compile there takes minutes: it keeps its."""
+    monkeypatch.setattr(engine_mod, "OV_CACHE_DIR", tmp_path / "ov_cache")
+    monkeypatch.setattr(engine_mod, "openvino_version", lambda: "2026.4.1")
+    monkeypatch.delenv(engine_mod.GPU_CACHE_SWITCH, raising=False)
+    for free, kept in ((5.0, False), (engine_mod.GPU_CACHE_FREE_GB - 0.1, False), (engine_mod.GPU_CACHE_FREE_GB, True),
+                       (400.0, True), (None, True)):  # None: the drive would not say -- not a reason to go without
+        monkeypatch.setattr(engine_mod, "_free_gb", lambda path, free=free: free)
+        assert ("CACHE_DIR" in ov_config_for("GPU.0")) is kept, free
+        assert "CACHE_DIR" in ov_config_for("NPU")
+    assert engine_mod.GPU_CACHE_FREE_GB > 15  # more than the largest single model kept
+    monkeypatch.undo()
+    # The real thing answers for a folder that is not there yet: its drive is.
+    assert engine_mod._free_gb(tmp_path / "not" / "made" / "yet") > 0
 
 
 def test_what_an_older_openvino_compiled_is_removed_and_a_newer_ones_is_left(monkeypatch, tmp_path):

@@ -223,8 +223,11 @@ with it; a token that was nearly a tie tips the other way and the page
 diverges from there.
 
 **"Same page every time"** (the launcher's switch, `--repeatable`, off by
-default) therefore loads the model afresh before each page -- about 20 s
-more on the integrated GPU -- and takes the most likely next token, which
+default) therefore loads the model afresh before each page -- about 5 s
+more on the integrated GPU now that it is read back from the
+compiled-model cache, 20 s the first time and wherever that cache is off;
+the page is the same file either way, all five were compared -- and takes
+the most likely next token, which
 is what llama.cpp needs, whose draw is seeded at random. With it on, each
 bundled scenario has one definite page, and those five pages are the ones
 that were checked. With it off, pages are drawn rather than first-choice,
@@ -273,10 +276,11 @@ What made the prompts hold up:
   giving the handler or the function to use, as the game's input handler
   already was, settled it in one go.
 - **End with "Keep the code compact."** The cap is 6,144 tokens. With the
-  switch on, the five scenarios write 3,150 to 5,100 tokens and take 100 to
-  165 s on the integrated GPU, about 20 s of that being the model's reload
-  (37 to 40 tokens/s). The lamp page is the long one, and one run of it
-  took five minutes.
+  switch on, the five scenarios write 3,150 to 5,100 tokens and take 95 to
+  146 s on the integrated GPU, about 5 s of that being the model's reload
+  from the compiled-model cache (36 to 40 tokens/s). Without that cache the
+  reload is 20 s and they took 100 to 165 s. The lamp page is the long
+  one, and one run of it took five minutes.
 
 The five pages as checked on the XPS 14 (OpenVINO 2026.4.1), switch on: the
 travel site places all seven pictures, with its lightbox, keys and

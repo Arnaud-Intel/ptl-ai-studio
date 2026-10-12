@@ -147,7 +147,7 @@ function Get-SystemFacts {
     if ($null -ne $free) {
         $where = [IO.Path]::GetPathRoot($cache)
         if ($free -ge 60) {
-            $checks += (New-Check 'disk' 'Free disk space' "$free GB on $where" 'ok' 'The Studio takes about 2 GB, and every model together nearly 50 GB. You choose which models to fetch.')
+            $checks += (New-Check 'disk' 'Free disk space' "$free GB on $where" 'ok' 'The Studio takes about 2 GB, and every model together nearly 50 GB. You choose which models to fetch. Later, a GPU keeps a prepared copy of the models it runs, to load them faster: up to 32 GB more, and only while 20 GB stay free.')
         } elseif ($free -ge 8) {
             $checks += (New-Check 'disk' 'Free disk space' "$free GB on $where" 'warn' 'Enough for the Studio (2 GB) and some models, not for all of them (nearly 50 GB). You choose which to fetch in step 5.')
         } else {

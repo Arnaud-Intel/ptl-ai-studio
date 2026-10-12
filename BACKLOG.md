@@ -140,9 +140,11 @@ here are under Original reports, each with the ticket it went into.
   base 17 s; the 8B planner about a minute and a half. The panel shows "Loading models..." all that
   time, as on a first installation. Two things would help: saying it ("compiling for the NPU, once: a
   few minutes") while it happens, and letting **Prepare models** compile ahead what a demo runs on the
-  NPU, so that it is done before a show and not during one. Also to decide, from the same work: the
-  GPU's compiled-model cache, which answered right on 2026.4.1 in three tests and would cut the 30B
-  coder's load (not measured) for 17 GB of disk (see the note of the same day on R37).
+  NPU, so that it is done before a show and not during one. *The same day the GPU was given the
+  compiled-model cache too, on the user's word ("turn on the GPU compiled-model cache now"; note on
+  R37): the first load of each GPU model after an upgrade now writes up to 15 GB, and takes a few
+  seconds longer than a plain compile (the 30B coder: 26 s against 22.5). The same two remedies
+  apply to it, and Prepare models would be the place to show what the cache holds and to empty it.*
   (filed 2026-10-12, from the OpenVINO upgrade)
 
 ## What we are showing
@@ -903,6 +905,26 @@ were here before.
   *Left of this ticket:* the models (the 4B reader, a second reviewer, the
   Model menu), the trial models to use or delete, and R47's six faults,
   still not looked for on 2026.4.1.
+  *2026-10-12, v1.0.4: the GPU has the compiled-model cache, on the user's
+  word.* Every model the app loads on a GPU was run three ways, each in a
+  process of its own -- compiled with the cache off, compiled into it, read
+  back from it -- on the Arc B390 and on the Arc Pro B60: detector,
+  embedder, the 1.5B, 8B and 30B language models, Whisper medium, the
+  vision 7B, and the image model drawing and restyling. Eighteen
+  comparisons, eighteen times the same output to the last digit or pixel;
+  and the five "Same page every time" pages, written by the coder read
+  back from the cache, are the same files as the ones checked. Loads on the
+  B390, compiled then read back: coder 22.5 -> 5.3 s, 8B 10.0 -> 2.9,
+  vision 8.2 -> 4.5, Whisper 7.7 -> 2.7, image model 7.8 -> 6.4; on the
+  B60: 38.7 -> 18.6, 17.9 -> 7.3, 17.0 -> 9.9, 11.8 -> 4.9, 21.8 -> 11.8.
+  Writing speed is unchanged (44.8 tokens/s compiled, 44.1 read back, three
+  alternating runs). The cost is disk: 31.8 GB a GPU for all of it (the
+  coder 15.1), 68 GB on the demo laptop with both GPUs and the NPU. So the
+  GPU keeps nothing with less than 20 GB free, nothing on an OpenVINO
+  before 2026.4.1 (a copy not synced), and nothing when `PTL_GPU_CACHE=0`.
+  Not covered: the segmentation model of Webcam Effects, which the brick
+  keeps off the GPU for another fault, and OpenVoice on a GPU (tried only
+  through the launcher, once).
 
 - [ ] **R42 · P2 · New brick: Visual Inspection.** *Proves C1, C2, C5.* Spike
   first.

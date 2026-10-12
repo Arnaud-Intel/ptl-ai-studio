@@ -44,6 +44,18 @@ OV_CACHE_DIR = Path.home() / ".cache" / "pantherlake-ai-studio" / "ov_cache"
 # still in an environment that was not synced is said at start (see
 # `openvino_behind`), not refused: the bricks run on it, less well tried.
 TESTED_OPENVINO = "2026.4.1"
+# The first OpenVINO whose GPU gives the same answers from the cache as from
+# compiling (see `ov_config_for`). A copy still on an older one -- updated by
+# hand, its environment not synced -- keeps compiling its GPU models.
+GPU_CACHE_SINCE = "2026.4.1"
+# Set to 0 (or "off") to compile GPU models every time, as before 1.0.4:
+# the way out if a model ever answers differently from the cache.
+GPU_CACHE_SWITCH = "PTL_GPU_CACHE"
+# What the GPU keeps is as large as the models: 15 GB for the 30B coder, 32 GB
+# for everything the app loads on one GPU. With less than this free on the
+# cache's drive the GPU compiles every time instead, as it did: a disk filled
+# half-way through a 15 GB write is a demo that stops.
+GPU_CACHE_FREE_GB = 20.0
 
 
 def openvino_version() -> str | None:
@@ -73,6 +85,33 @@ def openvino_behind() -> str | None:
 def ov_cache_dir() -> Path:
     """Where this OpenVINO keeps what it compiles."""
     return OV_CACHE_DIR / (openvino_version() or "none")
+
+
+def gpu_cache_allowed() -> bool:
+    """Whether GPU models may be kept in the compiled-model cache and read
+    back from it: on an OpenVINO that reads them back right, with room on
+    the disk, unless it was switched off."""
+    import os
+
+    if os.environ.get(GPU_CACHE_SWITCH, "").strip().lower() in ("0", "off", "no", "false"):
+        return False
+    installed = openvino_version()
+    if not installed or _numbers(installed) < _numbers(GPU_CACHE_SINCE):
+        return False
+    free = _free_gb(OV_CACHE_DIR)
+    return free is None or free >= GPU_CACHE_FREE_GB
+
+
+def _free_gb(path: Path) -> float | None:
+    """Free space on the drive `path` is (or will be) on; None if it can't be told."""
+    import shutil
+
+    for folder in (path, *path.parents):
+        try:
+            return shutil.disk_usage(folder).free / 1024**3
+        except OSError:
+            continue
+    return None
 
 
 def clear_stale_ov_cache() -> int:
@@ -356,28 +395,38 @@ def preferred_realtime_vision_device() -> str:
 def ov_config_for(device: str) -> dict[str, str]:
     """OpenVINO compile/pipeline config for `device`: the shared on-disk
     compiled-model cache (`ov_cache_dir()`, one folder per OpenVINO
-    version) for the NPU, and nothing for anything else.
+    version) for the NPU and, where `gpu_cache_allowed()`, for a GPU; and
+    nothing for anything else.
 
     The NPU is where the cache earns its keep -- YOLO11n compiles in 2.4s
     cold and 0.04s from cache, and a large LLM takes minutes.
 
-    **The GPU deliberately gets no cache**, even though it is slow to
-    compile. On this machine (Arc B390 iGPU) a cached GPU model comes back
-    *numerically wrong* rather than failing: YOLO11n-int8 finds 7-10
-    objects in a street scene when it compiles, and 1 on every subsequent
-    load from cache -- silently, with no error anywhere. It is not stale
-    blobs: a brand-new cache directory does it on its very first hit, and
-    no precision or execution-mode hint changes it. Measured, the cache
-    was buying between nothing and 1.7s there anyway (a cache hit on
-    YOLO11n costs the same 1.73s as compiling from scratch), so this trades
-    an optimization worth ~0-1.7s for correctness.
+    **The GPU has it from OpenVINO 2026.4.1, and never before.** Up to
+    2026.3, on this machine (Arc B390 iGPU), a cached GPU model came back
+    *numerically wrong* rather than failing: YOLO11n-int8 found 7-10
+    objects in a street scene when it compiled, and 1 on every subsequent
+    load from cache -- silently, with no error anywhere. It was not stale
+    blobs: a brand-new cache directory did it on its very first hit, and
+    no precision or execution-mode hint changed it. So a copy whose
+    OpenVINO is older (updated by hand, not synced) still compiles its GPU
+    models every time.
 
-    That was OpenVINO 2026.3 and before. On 2026.4.1 the same test gives
-    the same answer from the cache as from compiling, three loads running,
-    and two language models answered the same and loaded in a quarter of
-    the time (2026-10-12; BACKLOG R37). The GPU still gets no cache here:
-    one detector and two language models are not every model the app
-    loads, and a cached 30B model is 17 GB of disk.
+    On 2026.4.1, every model the app loads on a GPU was tried three ways,
+    each in a process of its own -- compiled without the cache, compiled
+    into it, read back from it -- on the Arc B390 and on the Arc Pro B60
+    (2026-10-12): the detector's boxes, the embedder's vector, the answers
+    of the 1.5B, 8B and 30B language models, Whisper's text, the vision
+    model's reading of a receipt and the image model's pictures (drawn and
+    restyled) are the same to the last digit and the last pixel, and the
+    five HTML Creator pages of "Same page every time" are the same files.
+    Loading, compiled then read back, in seconds on the B390 / the B60:
+    30B coder 22.5 -> 5.3 / 38.7 -> 18.6, 8B 10.0 -> 2.9 / 17.9 -> 7.3,
+    vision 7B 8.2 -> 4.5 / 17.0 -> 9.9, Whisper medium 7.7 -> 2.7 /
+    11.8 -> 4.9, image model 7.8 -> 6.4 / 21.8 -> 11.8. The coder writes
+    as fast either way (44.8 and 44.1 tokens/s over three alternating
+    runs). What it costs is disk: 15 GB for the coder, 32 GB for
+    everything on one GPU, as much again for a second GPU -- hence
+    `GPU_CACHE_FREE_GB`, and `PTL_GPU_CACHE=0` to go without.
 
     CPU loads fast without it, and "AUTO" is excluded too: it may land on
     CPU, whose cache blobs for a large LLM run to gigabytes of disk for no
@@ -386,7 +435,8 @@ def ov_config_for(device: str) -> dict[str, str]:
     Use as `core.compile_model(model, device, ov_config_for(device))` or
     `ov_genai.SomePipeline(model_dir, device, **ov_config_for(device))`.
     """
-    if device.upper() == "NPU":
+    name = device.upper()
+    if name == "NPU" or (name.split(".")[0] == "GPU" and gpu_cache_allowed()):
         folder = ov_cache_dir()
         folder.mkdir(parents=True, exist_ok=True)
         return {"CACHE_DIR": str(folder)}

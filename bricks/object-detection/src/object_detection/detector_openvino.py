@@ -69,10 +69,11 @@ class OpenVINODetector:
         # path has no way to pass OpenVINO's compile config (its `cache_dir`
         # is the Hub's), and handing it a Core trips an UnboundLocalError in
         # create_model. This is the same adapter it would build, plus
-        # whatever `ov_config_for` decides this device should get -- for
-        # this model that means the NPU's compiled-model cache and, very
-        # deliberately, no GPU cache: a cached GPU YOLO11n returns one
-        # garbage box instead of a scene full of them (see ov_config_for).
+        # whatever `ov_config_for` decides this device should get: the
+        # compiled-model cache on the NPU, and on the GPU only from the
+        # OpenVINO that reads it back right -- before 2026.4.1 a cached GPU
+        # YOLO11n returned one garbage box instead of a scene full of them
+        # (see ov_config_for).
         self.device = device
         # npu.guard: on the NPU, one brick's request at a time, and none at
         # all once Windows has reset the chip (see core's npu module).

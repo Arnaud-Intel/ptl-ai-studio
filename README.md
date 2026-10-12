@@ -55,7 +55,9 @@ Lake. One launcher, no cloud.**
 Nothing has to be installed first: no Python, no git, no administrator
 rights. You need Windows 11, an internet connection for the installation,
 and disk space: 2 GB for the Studio, then the models you choose, from 2 GB
-for a first look to nearly 50 GB for all of them.
+for a first look to nearly 50 GB for all of them. A GPU also keeps a
+prepared copy of each model it runs, to load it faster the next time: up to
+32 GB more, and only while 20 GB of the disk stay free.
 
 1. **Update the Intel drivers** (graphics and NPU), for instance with the
    [Intel Driver & Support Assistant](https://www.intel.com/content/www/us/en/support/detect.html).
@@ -111,6 +113,13 @@ uv run panther-lake-launcher
   ahead, use **Prepare models** in the footer (what each is for, its size,
   whether this machine has it), or `uv run panther-lake-prefetch`
   (`--list` to look, `--demo doc-qa` for one demo).
+- **Prepared models.** The first time a model runs on the NPU or a GPU it
+  is compiled for that chip, and the result is kept in
+  `%USERPROFILE%\.cache\pantherlake-ai-studio\ov_cache`, so that the next
+  load is two to four times faster (the 30B coding model: 5 s instead of
+  22 on the integrated GPU). That folder can be deleted at any time: what
+  is missing is compiled again. To keep GPU models out of it, set the
+  environment variable `PTL_GPU_CACHE=0` before starting the Studio.
 - **Offline.** Install and fetch the models first; after that the Studio
   starts and runs with the network off. Only live city cameras and the
   update check want a connection.
