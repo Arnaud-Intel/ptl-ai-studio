@@ -67,11 +67,49 @@ def test_only_the_npu_gets_a_compiled_model_cache(monkeypatch, tmp_path):
     and exactly one on every load from cache, silently. So the GPU gets no
     CACHE_DIR at all; the NPU keeps it (2.4s to compile, 0.04s cached)."""
     monkeypatch.setattr(engine_mod, "OV_CACHE_DIR", tmp_path / "ov_cache")
+    monkeypatch.setattr(engine_mod, "openvino_version", lambda: "2026.4.1")
     for device in ("NPU", "npu"):
         cache_dir = Path(ov_config_for(device)["CACHE_DIR"])
         assert cache_dir.is_absolute() and cache_dir.is_dir()
+        assert cache_dir == tmp_path / "ov_cache" / "2026.4.1"  # one folder per OpenVINO version
     for device in ("GPU", "GPU.0", "GPU.1", "gpu.0", "CPU", "AUTO"):
         assert ov_config_for(device) == {}, f"{device} must not be cached"
+
+
+def test_what_an_older_openvino_compiled_is_removed_and_a_newer_ones_is_left(monkeypatch, tmp_path):
+    """After the runtime is upgraded nothing can use what the old one
+    compiled, and on the demo laptop that was 26 GB."""
+    root = tmp_path / "ov_cache"
+    monkeypatch.setattr(engine_mod, "OV_CACHE_DIR", root)
+    monkeypatch.setattr(engine_mod, "openvino_version", lambda: "2026.4.1")
+    assert engine_mod.clear_stale_ov_cache() == 0  # no cache yet: nothing to do, and nothing made
+    assert not root.exists()
+    for folder in ("2026.3.0", "2026.4.0", "2026.4.1", "2026.5.0", "none"):
+        (root / folder).mkdir(parents=True)
+        (root / folder / "model.blob").write_bytes(b"x" * 100)
+    (root / "1234567890.blob").write_bytes(b"y" * 1000)  # from before the cache was kept per version
+    # The NPU's larger blobs are read-only files, which Windows refuses to
+    # delete as they are: the first run of this on the demo laptop left 27 GB.
+    for kept_from_writing in (root / "1234567890.blob", root / "2026.3.0" / "model.blob"):
+        kept_from_writing.chmod(0o444)
+    assert engine_mod.clear_stale_ov_cache() == 1300
+    assert sorted(entry.name for entry in root.iterdir()) == ["2026.4.1", "2026.5.0"]
+    assert engine_mod.clear_stale_ov_cache() == 0
+    monkeypatch.setattr(engine_mod, "openvino_version", lambda: None)  # no OpenVINO here: not this copy's to tidy
+    assert engine_mod.clear_stale_ov_cache() == 0 and (root / "2026.4.1").exists()
+
+
+def test_an_openvino_older_than_the_one_the_app_is_tried_on_is_noticed(monkeypatch):
+    for installed, behind in (("2026.3.0", "2026.3.0"), ("2026.4.0", "2026.4.0"), (engine_mod.TESTED_OPENVINO, None),
+                              ("2026.5.0", None), ("2027.0.0", None), (None, None)):
+        monkeypatch.setattr(engine_mod, "openvino_version", lambda installed=installed: installed)
+        assert engine_mod.openvino_behind() == behind
+    # What the app is tried on is what the lock installs: the two cannot drift apart unnoticed.
+    import re
+
+    lock = (Path(__file__).resolve().parents[1] / "uv.lock").read_text(encoding="utf-8")
+    assert re.search(r'name = "openvino"\nversion = "([^"]+)"', lock).group(1) == engine_mod.TESTED_OPENVINO
+    assert re.search(r'name = "openvino-genai"\nversion = "([^"]+)"', lock).group(1).startswith(engine_mod.TESTED_OPENVINO)
 
 
 def test_a_live_video_model_defaults_to_the_integrated_gpu(monkeypatch):

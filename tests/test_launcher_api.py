@@ -305,6 +305,24 @@ def test_no_restart_is_claimed_when_the_process_matches_the_disk(client, monkeyp
     assert body["restart_needed"] is False
 
 
+def test_a_copy_running_an_older_openvino_than_it_is_tried_on_says_so_and_how_to_put_it_right(client, monkeypatch):
+    """Code updated by hand and an environment that was not: the Studio
+    starts, on the OpenVINO of the version before. It is said where the
+    version is, with what to do -- not left to be found out in a demo."""
+    from launcher import app as app_module
+
+    tried_on = app_module.engine_mod.TESTED_OPENVINO
+    monkeypatch.setattr(app_module.engine_mod, "openvino_version", lambda: "2026.3.0")
+    body = client.get("/api/version").json()
+    assert body["openvino"] == "2026.3.0"
+    assert "2026.3.0" in body["runtime_notice"] and tried_on in body["runtime_notice"]
+    assert "start_launcher.bat" in body["runtime_notice"] and "uv sync --extra openvino" in body["runtime_notice"]
+    for installed in (tried_on, "2099.1.0", None):  # the one it is tried on, a newer one, the portable engines alone
+        monkeypatch.setattr(app_module.engine_mod, "openvino_version", lambda installed=installed: installed)
+        body = client.get("/api/version").json()
+        assert body["openvino"] == installed and body["runtime_notice"] is None
+
+
 def test_a_taken_port_is_reported_as_already_running(monkeypatch):
     """Starting a second copy used to open a browser tab -- at the copy
     already running -- and only then die on the bind, so a restart looked

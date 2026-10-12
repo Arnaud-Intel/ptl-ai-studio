@@ -34,7 +34,95 @@ class Engine(str, Enum):
 # per run. Absolute on purpose: the old per-brick `"ov_cache"` was relative
 # to the current working directory, so the launcher, each CLI, and every
 # directory a CLI was run from each recompiled into their own copy.
+#
+# Under it, one folder per OpenVINO version (`ov_cache_dir`): what one
+# version compiled is of no use to the next, and until 2026-10-12 it all
+# lay in this folder itself, where a year of versions and trials had left
+# 26 GB on the demo laptop.
 OV_CACHE_DIR = Path.home() / ".cache" / "pantherlake-ai-studio" / "ov_cache"
+# The OpenVINO the app is tried on: what `uv.lock` installs. An older one
+# still in an environment that was not synced is said at start (see
+# `openvino_behind`), not refused: the bricks run on it, less well tried.
+TESTED_OPENVINO = "2026.4.1"
+
+
+def openvino_version() -> str | None:
+    """The OpenVINO installed here ("2026.4.1"), or None if there is none.
+    Read from the package's own record, so that asking does not load it."""
+    from importlib import metadata
+
+    try:
+        return metadata.version("openvino")
+    except metadata.PackageNotFoundError:
+        return None
+
+
+def _numbers(version: str) -> tuple[int, ...]:
+    import re
+
+    return tuple(int(part) for part in re.findall(r"\d+", version)[:3])
+
+
+def openvino_behind() -> str | None:
+    """The installed OpenVINO, if it is older than the one the app is tried
+    on; None when it is that one, a newer one, or not installed at all."""
+    installed = openvino_version()
+    return installed if installed and _numbers(installed) < _numbers(TESTED_OPENVINO) else None
+
+
+def ov_cache_dir() -> Path:
+    """Where this OpenVINO keeps what it compiles."""
+    return OV_CACHE_DIR / (openvino_version() or "none")
+
+
+def clear_stale_ov_cache() -> int:
+    """Remove what older OpenVINO versions compiled: their folders, and
+    everything from before the cache was kept per version. Returns the
+    bytes freed. A newer version's folder is left alone -- a second copy of
+    the app, further ahead, may be using it. Never raises: it is tidying."""
+    import stat
+
+    def remove(path: Path) -> int:
+        """One file's size if it could be removed, 0 if it stays for next
+        time (held open by another copy of the app)."""
+        try:
+            size = path.stat().st_size
+            # The NPU's larger blobs are written read-only, and Windows
+            # deletes no read-only file: 27 GB stayed behind for that.
+            path.chmod(stat.S_IWRITE | stat.S_IREAD)
+            path.unlink()
+        except OSError:
+            return 0
+        return size
+
+    current = openvino_version()
+    if current is None or not OV_CACHE_DIR.is_dir():
+        return 0
+    freed = 0
+    for entry in list(OV_CACHE_DIR.iterdir()):
+        if not entry.is_dir():
+            freed += remove(entry)
+            continue
+        versioned = _numbers(entry.name) if entry.name[:1].isdigit() else ()
+        if versioned and versioned >= _numbers(current):
+            continue
+        try:
+            inside = sorted(entry.rglob("*"), key=lambda path: len(path.parts), reverse=True)
+        except OSError:
+            continue
+        for path in inside:
+            if path.is_dir():
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass  # something in it stayed
+            else:
+                freed += remove(path)
+        try:
+            entry.rmdir()
+        except OSError:
+            pass
+    return freed
 
 
 @functools.lru_cache(maxsize=1)
@@ -267,8 +355,8 @@ def preferred_realtime_vision_device() -> str:
 
 def ov_config_for(device: str) -> dict[str, str]:
     """OpenVINO compile/pipeline config for `device`: the shared on-disk
-    compiled-model cache (OV_CACHE_DIR) for the NPU, and nothing for
-    anything else.
+    compiled-model cache (`ov_cache_dir()`, one folder per OpenVINO
+    version) for the NPU, and nothing for anything else.
 
     The NPU is where the cache earns its keep -- YOLO11n compiles in 2.4s
     cold and 0.04s from cache, and a large LLM takes minutes.
@@ -284,6 +372,13 @@ def ov_config_for(device: str) -> dict[str, str]:
     YOLO11n costs the same 1.73s as compiling from scratch), so this trades
     an optimization worth ~0-1.7s for correctness.
 
+    That was OpenVINO 2026.3 and before. On 2026.4.1 the same test gives
+    the same answer from the cache as from compiling, three loads running,
+    and two language models answered the same and loaded in a quarter of
+    the time (2026-10-12; BACKLOG R37). The GPU still gets no cache here:
+    one detector and two language models are not every model the app
+    loads, and a cached 30B model is 17 GB of disk.
+
     CPU loads fast without it, and "AUTO" is excluded too: it may land on
     CPU, whose cache blobs for a large LLM run to gigabytes of disk for no
     load-time win.
@@ -292,8 +387,9 @@ def ov_config_for(device: str) -> dict[str, str]:
     `ov_genai.SomePipeline(model_dir, device, **ov_config_for(device))`.
     """
     if device.upper() == "NPU":
-        OV_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        return {"CACHE_DIR": str(OV_CACHE_DIR)}
+        folder = ov_cache_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        return {"CACHE_DIR": str(folder)}
     return {}
 
 

@@ -13,8 +13,8 @@ dependencies = [
 # There is no portable engine here: the image model runs through OpenVINO only,
 # and FLUX.2 klein needs the pipelines of 2026.3 or later.
 openvino = [
-    "openvino>=2026.3",
-    "openvino-genai>=2026.3",
+    "openvino>=2026.4.1",
+    "openvino-genai>=2026.4.1",
 ]
 
 [project.scripts]

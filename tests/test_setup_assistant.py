@@ -137,12 +137,63 @@ def test_a_studio_that_was_stopped_is_not_started_again():
     the Studio is started once, whichever way."""
     lines = [line.strip() for line in (ROOT / "start_launcher.bat").read_text(encoding="ascii").splitlines()]
     code = [line for line in lines if line and not line.upper().startswith(("REM", "ECHO"))]
-    asked = code.index('"%PTL_UV%" run --offline python -c "pass" >nul 2>&1')
-    assert code[asked + 1] == "if errorlevel 1 goto online"
-    offline, online = code.index('"%PTL_UV%" run --offline panther-lake-launcher %*'), code.index('"%PTL_UV%" run panther-lake-launcher %*')
-    assert asked < offline < online
-    assert code[offline + 2] == "goto ended" and code[online - 1] == ":online"  # one or the other, never both
-    assert sum("panther-lake-launcher" in line for line in code) == 2
+    asked = code.index('"%PTL_UV%" run --offline %PTL_EXTRA% python -c "pass" >nul 2>&1')
+    assert code[asked - 1] == 'set "PTL_OFFLINE=--offline"' and code[asked + 1] == 'if errorlevel 1 set "PTL_OFFLINE="'
+    started = code.index('"%PTL_UV%" run %PTL_OFFLINE% %PTL_EXTRA% panther-lake-launcher %*')
+    assert asked < started
+    assert sum("panther-lake-launcher" in line for line in code) == 1  # offline or with the network, never both
+
+
+def test_an_upgrade_can_replace_the_start_script_under_a_window_that_is_using_it():
+    """cmd reads a command file by position, a line at a time. The window
+    that started the Studio is still open when the upgrade replaces
+    start_launcher.bat, and it carries on in the new file at the place it
+    had reached in the old one: the first time the file grew, that was the
+    middle of a sentence, run as a command, then "run first_launch.bat" and
+    "Press any key". Two things keep that from happening. Everything from
+    the Studio's start to the end of its window is one block, which cmd reads
+    whole beforehand and never comes back from. And for the windows of the
+    versions that had no such block, the places they come back to are all
+    inside lines of colons -- labels, whatever the place -- ending on an exit."""
+    raw = (ROOT / "start_launcher.bat").read_bytes()
+    leave = raw.index(b"exit /b 0")
+    for resume in (355, 1041, 2101, 2397):  # the byte after "timeout /t 10" in every start script released so far
+        assert resume < leave and set(raw[resume:leave]) <= set(b":\r\n"), resume
+    assert raw.startswith(b"@echo off\r\ngoto main\r\n:")  # and a new window jumps over them
+    lines = [line.strip() for line in raw.decode("ascii").splitlines()]
+    opened = lines.index("(")
+    start = lines.index('"%PTL_UV%" run %PTL_OFFLINE% %PTL_EXTRA% panther-lake-launcher %*')
+    assert start == opened + 1
+    depth, closed = 0, None
+    for index in range(opened, len(lines)):
+        depth += lines[index].endswith("(") - (lines[index] == ")")
+        if depth == 0:
+            closed = index
+            break
+    block = lines[start:closed]
+    assert block[-1] == "exit /b 0" and "timeout /t 10 >nul" in block  # the upgrade's wait is inside it, and it ends there
+    assert not any(re.match(r"(goto|call\s+:)", line, re.I) for line in block)  # nothing in it goes back to the file
+    printed = [line for line in block if line.lower().startswith("echo")]
+    assert printed and not any("(" in line or ")" in line for line in printed)  # a bracket in a message would end the block
+
+
+def test_a_copy_updated_by_hand_gets_the_openvino_its_version_is_tried_on():
+    """uv re-syncs the environment at every start -- everything but the
+    OpenVINO engine, which is an extra it has to be told about. A copy whose
+    code was updated by hand (a git pull, a ZIP unpacked over it) kept the
+    OpenVINO of the version before, with nothing saying so. The start
+    script names the extra wherever OpenVINO is installed, in the check and
+    in both starts, and never where it is not: a copy on the portable
+    engines alone is not given an engine it did not ask for."""
+    lines = [line.strip() for line in (ROOT / "start_launcher.bat").read_text(encoding="ascii").splitlines()]
+    code = [line for line in lines if line and not line.upper().startswith(("REM", "ECHO"))]
+    empty = code.index('set "PTL_EXTRA="')
+    found = code.index('if exist "%~dp0.venv\\Lib\\site-packages\\openvino\\__init__.py" set "PTL_EXTRA=--extra openvino"')
+    first_run = next(index for index, line in enumerate(code) if '"%PTL_UV%" run' in line)
+    assert empty < found < first_run
+    assert all("%PTL_EXTRA%" in line for line in code if '"%PTL_UV%" run' in line)
+    # ...and the installation and the in-app upgrade install that same extra from the lock.
+    assert "'sync', '--locked', '--extra', 'openvino'" in (ROOT / "setup" / "assistant.ps1").read_text(encoding="ascii")
 
 
 @pytest.mark.skipif(os.name != "nt", reason="the assistant is Windows PowerShell")

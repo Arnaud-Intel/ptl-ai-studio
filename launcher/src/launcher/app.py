@@ -49,6 +49,7 @@ from fastapi.staticfiles import StaticFiles
 from live_translation.languages import SPOKEN_LANGUAGES, spoken_language
 from page_agent import conductor as page_agent_conductor
 from pantherlake_ai_core import audio, npu, video
+from pantherlake_ai_core import engine as engine_mod
 from pantherlake_ai_core.engine import (
     Engine,
     default_device,
@@ -269,6 +270,27 @@ async def ws_drain(websocket: WebSocket, queue: asyncio.Queue) -> None:
 # --- app ----------------------------------------------------------------------
 
 
+def _tidy_compiled_models() -> None:
+    freed = engine_mod.clear_stale_ov_cache()
+    if freed:
+        print(f"Removed {freed / 1024**3:.1f} GB of models compiled by an older OpenVINO: each is compiled again the "
+              "first time it is used on the NPU.")
+
+
+def runtime_notice() -> str | None:
+    """What to tell whoever runs a copy whose OpenVINO is older than the
+    one this version is tried on: a copy whose code was updated by hand
+    (git pull, a ZIP unpacked over it) and whose environment was not."""
+    behind = engine_mod.openvino_behind()
+    if behind is None:
+        return None
+    return (
+        f"This copy runs OpenVINO {behind}; this version of the Studio is tried on {engine_mod.TESTED_OPENVINO}. "
+        "Close it and start it with start_launcher.bat, which installs what is missing -- or run: "
+        "uv sync --extra openvino"
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.live_translation_queue = asyncio.Queue()
@@ -278,6 +300,9 @@ async def lifespan(app: FastAPI):
     app.state.smart_recall_queue = asyncio.Queue()
     telemetry_poller.start()
     updates.check_in_background()
+    # What older OpenVINO versions compiled is of no use to this one: removed
+    # off to the side, so that tens of gigabytes do not hold up the start.
+    threading.Thread(target=_tidy_compiled_models, daemon=True, name="ov-cache-tidy").start()
     yield
     telemetry_poller.stop()
 
@@ -364,6 +389,9 @@ def api_version() -> JSONResponse:
         # Which copy of the project this is: the setup assistant must not
         # take a Studio started from another folder for the one it installed.
         "root": str(updates.REPO_ROOT),
+        # The runtime under the OpenVINO engine, and what to do about it
+        # when it is older than the one this version is tried on.
+        "openvino": engine_mod.openvino_version(), "runtime_notice": runtime_notice(),
     })
 
 
@@ -2331,6 +2359,9 @@ def main() -> None:
         print(f"To run a second copy alongside it instead: panther-lake-launcher --port {args.port + 1}", file=sys.stderr)
         raise SystemExit(1)
 
+    notice = runtime_notice()
+    if notice:
+        print(notice, file=sys.stderr)
     if not args.no_browser:
         browse_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
         webbrowser.open(f"http://{browse_host}:{args.port}")

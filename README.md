@@ -117,6 +117,11 @@ uv run panther-lake-launcher
 - **Updates.** A copy made with git checks GitHub when it starts and offers
   the new version with what changed; **Upgrade** in the footer does the
   rest and restarts. A copy from a ZIP is updated by downloading it again.
+  After updating by hand (`git pull`, or a ZIP unpacked over the old
+  folder), start with `start_launcher.bat`, which also brings the AI
+  runtime to the version the new code was tried on -- or run
+  `uv sync --extra openvino` yourself. The footer says when the installed
+  OpenVINO is older than that.
 - **YouTube city cameras** in the Smart City demo also need Deno or Node;
   `first_launch.bat console` checks and offers to install Deno. Everything
   else works without. See the [Smart City notes](bricks/smart-city-monitor/README.md#connection-recovery-and-setup-checks).

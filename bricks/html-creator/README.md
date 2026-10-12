@@ -262,13 +262,23 @@ What made the prompts hold up:
   telling a better prompt from a luckier run. With "Same page every time"
   on, a prompt has one page: read it, fix what is wrong in the wording,
   generate again.
+- **Where a new runtime gets a part wrong, give the code.** The same five
+  prompts on OpenVINO 2026.4.1 wrote other pages than on 2026.3, and four
+  had a fault: the travel site's counters stayed at 0, the game no longer
+  followed the pointer, the lamp's counter took minutes and lost its units,
+  the wall's feed grew past six rows with 12-hour times and its doughnut
+  came out in three loose pieces. Each had been asked for in words ("a
+  feed of six rows", "stroke-dashoffset 25 minus the sum of the shares
+  before it"). Saying it again with more words moved the fault elsewhere;
+  giving the handler or the function to use, as the game's input handler
+  already was, settled it in one go.
 - **End with "Keep the code compact."** The cap is 6,144 tokens. With the
-  switch on, the five scenarios write 3,200 to 5,400 tokens and take two to
-  three and a half minutes on the integrated GPU, about 20 s of that being
-  the model's reload (29 to 35 tokens/s, slower after several runs in a
-  row). The lamp page is the long one.
+  switch on, the five scenarios write 3,150 to 5,100 tokens and take 100 to
+  165 s on the integrated GPU, about 20 s of that being the model's reload
+  (37 to 40 tokens/s). The lamp page is the long one, and one run of it
+  took five minutes.
 
-The five pages as checked on the XPS 14 (OpenVINO 2026.3), switch on: the
+The five pages as checked on the XPS 14 (OpenVINO 2026.4.1), switch on: the
 travel site places all seven pictures, with its lightbox, keys and
 fictional badge; the game was stepped frame by frame through start, pause,
 game over and restart, and its level-up path was read in the code; the
@@ -277,7 +287,9 @@ buttons light the right chips; the lamp's slider, pricing toggle, accordion
 and closing button were driven; the wall's numbers tick, pause and resume.
 Animations were not watched playing: the tool used to check them does not
 draw frames in the background. A new runtime or graphics driver can change
-the arithmetic and with it the pages, so check them again after an update.
+the arithmetic and with it the pages, so check them again after an update:
+going from OpenVINO 2026.3 to 2026.4.1 changed all five, and four prompts
+had to be reworded before their page passed again.
 
 ## Document handling
 

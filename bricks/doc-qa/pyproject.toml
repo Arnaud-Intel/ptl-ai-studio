@@ -13,8 +13,8 @@ dependencies = [
 
 [project.optional-dependencies]
 openvino = [
-    "openvino>=2024.4",
-    "openvino-genai>=2024.4",
+    "openvino>=2026.4.1",
+    "openvino-genai>=2026.4.1",
 ]
 
 [project.scripts]

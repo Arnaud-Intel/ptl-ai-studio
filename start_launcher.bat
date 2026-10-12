@@ -1,4 +1,55 @@
 @echo off
+goto main
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+exit /b 0
+
+REM The lines of colons above are where the window of an older version comes
+REM back to. cmd reads a command file by position, a line at a time: a window
+REM that started the Studio before an upgrade is still open after it, and
+REM carries on in THIS file at the place it had reached in ITS own -- which
+REM was the last line of each of them, "exit /b 0", at byte 355, 1041, 2101 or
+REM 2397. A line of colons is a label and does nothing, wherever in it the
+REM reading starts, so such a window reads down to the "exit /b 0" above and
+REM closes. Nothing may be put before those lines, nor taken from them.
+
+:main
 title Panther Lake AI Studio
 cd /d "%~dp0"
 
@@ -23,41 +74,47 @@ REM if something genuinely has to be fetched is the network used.
 REM That is asked with a command that does nothing, before the Studio is
 REM started: a Studio that ends -- stopped by stop_launcher.bat, say -- must
 REM not be taken for one that could not start, and be started again.
-"%PTL_UV%" run --offline python -c "pass" >nul 2>&1
-if errorlevel 1 goto online
-"%PTL_UV%" run --offline panther-lake-launcher %*
-set "rc=%errorlevel%"
-goto ended
+REM
+REM Where the OpenVINO engine is installed, uv is told to look after it too
+REM (--extra openvino). Without that it re-syncs everything but OpenVINO,
+REM and a copy updated by hand -- a git pull, a ZIP unpacked over it -- kept
+REM the OpenVINO of the version before, with nothing saying so.
+set "PTL_EXTRA="
+if exist "%~dp0.venv\Lib\site-packages\openvino\__init__.py" set "PTL_EXTRA=--extra openvino"
+set "PTL_OFFLINE=--offline"
+"%PTL_UV%" run --offline %PTL_EXTRA% python -c "pass" >nul 2>&1
+if errorlevel 1 set "PTL_OFFLINE="
+if not defined PTL_OFFLINE echo Something is missing from what is installed -- fetching it...
+if not defined PTL_OFFLINE echo.
 
-:online
-echo Something is missing from what is installed -- fetching it...
+REM From the Studio's start to its window's last word is one block, which cmd
+REM reads whole before running any of it: an upgrade replaces this file while
+REM the block waits, and the block neither sees that nor comes back to the
+REM file. Keep it one block, with no "goto" and no "call" to a label in it,
+REM and no bracket in what it prints.
+(
+"%PTL_UV%" run %PTL_OFFLINE% %PTL_EXTRA% panther-lake-launcher %*
+if errorlevel 3 if not errorlevel 4 (
 echo.
-"%PTL_UV%" run panther-lake-launcher %*
-set "rc=%errorlevel%"
-
-:ended
-if "%rc%"=="3" goto upgrading
-if "%rc%"=="0" goto done
+echo Upgrading: the new version starts in a new window once it is installed.
+echo This window can be closed.
+timeout /t 10 >nul
+exit /b 0
+)
+if errorlevel 1 (
 echo.
 echo The Studio has stopped.
 echo If it did not start at all, the message above says why: when a copy is
 echo already running, stop_launcher.bat stops it; to repair the installation,
 echo run first_launch.bat.
-goto done
+)
+pause
+exit /b 0
+)
 
 :notinstalled
 echo.
 echo  The Studio is not installed on this laptop yet.
 echo  Double-click first_launch.bat in this folder: it installs everything, step by step.
 echo.
-goto done
-
-:upgrading
-echo.
-echo Upgrading: the new version starts in a new window once it is installed.
-echo This window can be closed.
-timeout /t 10 >nul
-exit /b 0
-
-:done
 pause

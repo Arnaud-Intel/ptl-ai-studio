@@ -7112,9 +7112,14 @@ async function loadVersion() {
       label.textContent = `v${data.version} -- restart to load v${data.on_disk}`;
       label.classList.add("version-stale");
       label.title = `This launcher started on v${data.version}. v${data.on_disk} is on disk; restart it to run that.`;
+    } else if (data.runtime_notice) {
+      // The code was updated and what it runs on was not: said where the version is.
+      label.textContent = `v${data.version} -- OpenVINO ${data.openvino} is out of date`;
+      label.classList.add("version-stale");
+      label.title = data.runtime_notice;
     } else {
       label.classList.remove("version-stale");
-      label.title = "See what changed in each version";
+      label.title = data.openvino ? `OpenVINO ${data.openvino}. See what changed in each version` : "See what changed in each version";
     }
   } catch {
     // Best-effort -- an empty footer label beats breaking page load over it.

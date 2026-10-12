@@ -188,10 +188,12 @@ not just one.
    - `engine.ov_config_for(device)` as the config for every OpenVINO
      `compile_model` / `openvino_genai` pipeline, so an NPU compile lands in
      the one shared cache under `~/.cache/pantherlake-ai-studio/ov_cache`
-     instead of a per-CWD `ov_cache/`. Don't add `CACHE_DIR` yourself: that
-     helper deliberately gives the GPU no cache, because a cached GPU model
-     comes back numerically wrong on this hardware (see its docstring) --
-     silently, which is far worse than the second it saves.
+     (one folder per OpenVINO version; what an older version compiled is
+     removed when the launcher starts) instead of a per-CWD `ov_cache/`.
+     Don't add `CACHE_DIR` yourself: that helper deliberately gives the GPU
+     no cache, because up to OpenVINO 2026.3 a cached GPU model came back
+     numerically wrong on this hardware (see its docstring) -- silently,
+     which is far worse than the second it saves.
 4. Flip its entry in [`launcher/src/launcher/registry.py`](launcher/src/launcher/registry.py)
    from `status="planned"` to `status="available"`, declare which hardware
    lists its controls need (`devices=("microphones", "cameras", ...)`) and
@@ -298,6 +300,50 @@ that package publishes no wheels past **cp311**, so the workspace can't
 install on Linux with 3.12+ (which is why CI pins 3.11). Windows never
 installs `tflite-runtime` at all -- it's a `sys_platform == 'linux'`
 dependency -- so a Windows dev machine is free to run 3.12 or later.
+
+## Changing the OpenVINO version
+
+One version of OpenVINO is installed for every brick, the one in
+`uv.lock`, and it is named in one more place: `TESTED_OPENVINO` in
+[`core/.../engine.py`](core/src/pantherlake_ai_core/engine.py). A test
+fails when the two differ.
+
+```bash
+uv lock --upgrade-package openvino --upgrade-package openvino-genai --upgrade-package openvino-tokenizers
+uv sync --extra openvino   # with the Studio stopped: Windows keeps its files locked while it runs
+```
+
+Then raise the floors (`openvino>=...`, `openvino-genai>=...`) in the
+bricks' `pyproject.toml` to the same version, set `TESTED_OPENVINO`, and
+check what a runtime changes, which no test here can:
+
+- **What the coding model writes.** With "Same page every time" on, the
+  five HTML Creator scenarios each have one page, and it is another page
+  on another runtime. Generate the five on the integrated GPU, walk
+  through them, and reword the prompts in `sample-data/catalog.json` where
+  a page has a fault (see the [HTML Creator notes](bricks/html-creator/README.md)).
+  Then play one whole turn of the Auto Demo.
+- **Models on the NPU compile again**, once, the first time each is used:
+  the compiled-model cache has a folder per OpenVINO version, and the
+  launcher removes the folders of older versions when it starts. The 8B
+  planner takes a minute and a half, and Whisper medium over three minutes
+  (198 s, then 6 s from the cache): run each NPU demo once after an
+  upgrade, before showing it.
+- **The start script is replaced under the window that runs it.** cmd
+  reads `start_launcher.bat` by position, so an upgrade that changes it
+  must not move what an open window comes back to: see the two comments in
+  that file, and the test that holds them.
+- **The faults worked around in the code** (BACKLOG R47, and the docstring
+  of `engine.ov_config_for`) are worth trying again: one may be gone.
+
+How the new version reaches a copy that is already installed:
+
+| The copy is updated... | ...and gets the new OpenVINO from |
+| --- | --- |
+| with **Upgrade** in the footer | `upgrade_helper.py`: `git pull --ff-only`, then `uv sync --extra openvino` |
+| by hand (`git pull`, a ZIP unpacked over it), then `start_launcher.bat` | the start script: where OpenVINO is installed it passes `--extra openvino` to `uv run`, which installs what the lock says |
+| by hand, then `uv run panther-lake-launcher` | nothing -- `uv run` leaves an extra it was not told about as it is. The launcher says so when it starts and in the footer (`runtime_notice`), with the command: `uv sync --extra openvino` |
+| not at all: a fresh copy | `first_launch.bat`: `uv sync --locked --extra openvino` |
 
 ## Versioning
 

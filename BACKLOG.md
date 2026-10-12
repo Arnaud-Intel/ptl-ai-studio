@@ -133,6 +133,18 @@ here are under Original reports, each with the ticket it went into.
   Auto Demo's opening scene depends on that repository too: this is no longer about one experimental brick.* Not built: a style typed by hand (left out on purpose, for a stand),
   a scene of the Auto Demo, more than one person in the photo. (filed 2026-10-12, from the build)
 
+- [ ] **After a new OpenVINO, the first start of every NPU demo is slow, and nothing says why.**
+  The compiled-model cache has one folder per OpenVINO version since the move to 2026.4.1 (2026-10-12),
+  so each model on the NPU is compiled once more the first time it is used after an upgrade: Whisper
+  medium, Live Translation's default, took 198 s on the XPS 14 where the second load takes 6; Whisper
+  base 17 s; the 8B planner about a minute and a half. The panel shows "Loading models..." all that
+  time, as on a first installation. Two things would help: saying it ("compiling for the NPU, once: a
+  few minutes") while it happens, and letting **Prepare models** compile ahead what a demo runs on the
+  NPU, so that it is done before a show and not during one. Also to decide, from the same work: the
+  GPU's compiled-model cache, which answered right on 2026.4.1 in three tests and would cut the 30B
+  coder's load (not measured) for 17 GB of disk (see the note of the same day on R37).
+  (filed 2026-10-12, from the OpenVINO upgrade)
+
 ## What we are showing
 
 The demo unit is a Dell XPS 14 (DA14260). These are the figures OpenVINO and
@@ -870,6 +882,27 @@ were here before.
   update (the 8B: a minute and a half); R47's six faults have not been looked
   for on 2026.4.1; and 1.0.0 has just gone out measured on 2026.3.
   The upgrade is one change to `uv.lock`: the bricks ask for `>=2024.4`.
+  *2026-10-12, later the same day: the upgrade itself is done, on the user's
+  word ("now upgrade OpenVINO to 2026.4.1 ...").* The lock and the bricks'
+  floors are on 2026.4.1, and `engine.TESTED_OPENVINO` names it. With "Same
+  page every time", all five HTML Creator pages came out different and four
+  had a fault (counters at 0, a game deaf to the pointer, a feed past six
+  rows, a doughnut in pieces): their prompts now give the code for those
+  parts, and each page passes its walk-through again (10 to 14 checks a
+  page). One whole turn of the Auto Demo played in 549 s with no failure,
+  and code review, object detection on both chips, Portrait Studio, OCR,
+  voice cloning and speech on the NPU each ran once. The compiled-model cache
+  is kept per OpenVINO version and the older folders are removed at start
+  (27 GB on this laptop). How the new runtime reaches a copy already
+  installed was tried on a v1.0.2 copy against a local origin: **Upgrade**
+  in the footer (18 s), a `git pull` by hand then `start_launcher.bat`
+  (86 MB fetched), and `uv run` alone, which keeps the old runtime and now
+  says so. Trying the first found that the window of the version before
+  carried on in the middle of the new start script: fixed, see
+  CONTRIBUTING, "Changing the OpenVINO version".
+  *Left of this ticket:* the models (the 4B reader, a second reviewer, the
+  Model menu), the trial models to use or delete, and R47's six faults,
+  still not looked for on 2026.4.1.
 
 - [ ] **R42 · P2 · New brick: Visual Inspection.** *Proves C1, C2, C5.* Spike
   first.
