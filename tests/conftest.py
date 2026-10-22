@@ -15,3 +15,15 @@ def _activity_log_of_its_own(monkeypatch, tmp_path):
     NPU, a detector on a GPU the machine did not have that day. A test that
     wants the file somewhere in particular still says so itself."""
     monkeypatch.setattr(events, "LOG_FILE", tmp_path / "events.log")
+
+
+@pytest.fixture(autouse=True)
+def _a_laptop_with_memory_to_spare(monkeypatch):
+    """Every test plays a 64 GB laptop, whatever runs it: the 30B coding
+    model is greyed out under 32 GB (pantherlake_ai_core.machine), and
+    GitHub's test machine has 16 -- on 2026-10-22 that turned ten tests
+    about compiling, downloading and building a page into tests of a small
+    laptop. A test about a smaller one says so itself (test_memory_fit.py)."""
+    from pantherlake_ai_core import machine
+
+    monkeypatch.setenv(machine.MEMORY_SWITCH, "64")
