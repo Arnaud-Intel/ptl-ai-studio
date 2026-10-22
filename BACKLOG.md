@@ -19,6 +19,15 @@ was closed, tickets the work had touched got a dated note, and R33 to R51 were
 added: what the app needs next, six new bricks among them. Tickets keep their
 numbers and their wording.
 
+Refreshed on 2026-10-12, at v1.0.5: two days and eleven versions later, 1.0.0
+among them. Built in between: a part of a generated page changed by pointing
+at it, a choice of language model in four bricks, Portrait Studio and an
+Images category, FLUX.2 klein under the Page Agent, OpenVINO 2026.4.1 under
+everything, a compiled-model cache for the GPUs, and Prepare models compiling
+ahead. The Inbox's three entries were sorted, R52 was added for Portrait
+Studio, the demos' table was brought up to date, and every ticket the work
+touched has a note of that day. No priority was changed.
+
 ## Inbox
 
 Unsorted findings, newest last. Planning sorts each into an existing ticket,
@@ -27,138 +36,160 @@ a new one or the deferred list, and moves its original wording to
 
 <!-- - [ ] **Title.** Short description. (filed YYYY-MM-DD, source) -->
 
-Sorted on 2026-10-10: nothing is waiting. The twenty-six entries that were
-here are under Original reports, each with the ticket it went into.
+Sorted on 2026-10-12. The three entries filed since 2026-10-10 are at the end
+of Original reports, each with the ticket it went into; the twenty-six sorted
+that day are there too. The entries below were filed after the sort.
 
-- [x] **Change one place of a generated page, by pointing at it.** Asked for
-  by the user on 2026-10-10, for the Page Agent and the HTML Creator: "target
-  modification on selected area of the page", in "a new tab using the
-  previous page as a starting point where we can point at places to comment
-  and change those". Today the only way to change a page is to build it
-  again: 30 s to over a minute, and everything that was right moves too (a
-  page is not the same twice on the GPU).
-  As understood: beside the page just built, a second tab opens on a copy of
-  it. Clicking a part of the page -- a heading, a card, a section, a picture
-  -- outlines it and pins a comment there ("shorter", "three columns", "a
-  warmer picture"); several can be pinned before anything is run. Applying
-  them gives the model the part pointed at and its comment, not the page: it
-  writes that part again and it is put back where it was, the rest left
-  byte for byte as it stood. For a picture in the Page Agent the comment
-  goes to the image model, by way of the planner. The page before the
-  change stays in the first tab, so the two can be compared, and a change
-  can be undone.
-  Why it suits the app: a section is a few hundred tokens where a page is
-  two to four thousand, so a change should come back in seconds on the
-  integrated GPU; and it shows a model working on what a person points at,
-  which a one-shot page does not. Not known, and to try before building:
-  whether the 30B coder rewrites one fragment well when the stylesheet is
-  somewhere else in the page (it may need to hand back a few rules of its
-  own with the fragment); how a click is caught inside the preview, which is
-  sandboxed (a small script in the copy shown, never in the page saved); what
-  the Page Agent's own checks -- figures carried from the brief, its layout
-  rules -- make of a page edited in pieces. It belongs with R39 for the Page
-  Agent, and is new for the HTML Creator. (filed 2026-10-10, user request)
-  *Built on 2026-10-11, at the user's word ("let's work on the page-editing
-  request").* Both bricks have the second tab, **Change a part**: a copy of
-  the page in a frame, a click on a part pins a numbered comment (wider and
-  narrower to choose the part around it), Apply writes those parts again and
-  nothing else, the first tab keeps the page as it was made, and a change can
-  be undone. For a picture the Page Agent drew, the comment goes to the image
-  model by way of the planner. How it works and what was measured are in
-  `bricks/html-creator/README.md` and `bricks/page-agent/README.md`; the code
-  is `html_creator/revise.py`, `launcher/page_revisions.py` and the routes
-  under `/api/<brick>/revision`.
-  *The three things that were not known.* **Does the coder write one fragment
-  well with the stylesheet elsewhere?** Yes for what it is told and shown:
-  fourteen changes of fourteen came back usable, in 1.6 to 14.6 s (integrated
-  GPU, mains), once it was given the part's own rules, what the rest of the
-  page says, the page's blocks, the lines of script that name the part and the
-  list of pictures, and allowed to hand back rules and a script. Given the
-  part and its rules alone, three changes of eleven made the page worse. It
-  still makes changes that are not finished -- a class nothing dresses, a link
-  to nowhere, a badge placed against nothing: the first two are checked for
-  and asked about once more, the third is put right in code. **How is a click
-  caught in the sandboxed frame?** By a script in the copy shown, which posts
-  the number of the part clicked; the numbers are attributes written into the
-  copy's tags and never into the page kept. **What do the Page Agent's checks
-  make of a page edited in parts?** They are made again after every change and
-  shown; on the bakery sample all seven still passed after two parts and a
-  picture were changed.
-  *In the launcher, on the XPS 14 alone (2026-10-11, on battery):* two parts
-  of an HTML Creator page changed in 8 s; two parts of a built page in 27 s; a
-  picture drawn again in 39 s and the heading after it in 23 s, the two models
-  changing places on the one GPU.
-  *Left.* Layout changes are the weak side (three cards "side by side" may
-  wrap to two rows). A part filled or animated by the page's own script is
-  changed in its HTML only: a fourth number added to a band the script counts
-  up came back as a plain 12, and a chart or a game board cannot be changed at
-  all this way. Two comments of which one is inside the other are refused. Not
-  tried: a second GPU (both models staying loaded), document summaries, a page
-  cut off before its end, the portable engine, a page with more than a few
-  hundred parts, a person other than its author using the tab. The Auto Demo
-  does not show any of it.
-  *Reworked the same day, at the user's word ("a full rework of the UI for
-  the page modification: messy, hard to see what we do, hard to compare the
-  before and after, the pointer still there while looking at the result";
-  then "three modes, side by side, and auto-jump to What changed").* The
-  second tab is gone. **Change this page** opens a workspace over the app
-  with three modes: Look (the page, nothing pointed at), Comment (parts
-  clicked and commented, each with the path down to it to pick the part
-  around), What changed (before and after side by side at the same layout
-  width, the parts written again outlined in both, scrolled together; what
-  was asked, what was done, the HTML lines changed; Keep, or Undo with the
-  comments put back). Apply ends in What changed. Every earlier change can
-  be looked at again and gone back from. Not done: a comparison that marks
-  the changed parts across several changes at once ("Everything since the
-  page was made" shows the two pages without outlines); a keyboard way to
-  point at a part; the workspace on a window under about 900 pixels wide,
-  where the two versions are too small side by side and *One at a time* is
-  the way.
-  *In the Auto Demo since 2026-10-11 (user: "let's add this to the auto
-  demo feature"):* the Page Agent scene ends with it -- the director points
-  at the headline and one card of the page just built, and the stage shows
-  before and after side by side. Not there: a picture drawn again (40 s and
-  two models changing places on one GPU), and HTML Creator, which has no
-  scene.
+- [ ] **The repository states no licence of its own.** It is public on
+  GitHub and has no LICENSE file: GitHub reports none. Without one nobody
+  outside has been given the right to use, copy or change the code, which is
+  not what a README that says how to install it means; and the question R17
+  leaves to the product owner -- whether an app that downloads a detector
+  under AGPL-3.0 is within its terms -- cannot be answered either way while
+  the app's own terms are unsaid. Whose decision it is (the account's owner,
+  the company's open-source office) is the first thing to find out. (filed
+  2026-10-12, R17's inventory)
 
-- [ ] **Portrait Studio: try it on real faces, and decide where its model comes from.**
-  The brick (v1.0.1, 2026-10-12) was tuned on four portraits an image model drew and on the browser's
-  stand-in camera: not one photograph of a real person, because whose face to use was not the builder's
-  to decide. To look at first with the brick in hand: how well a real face is kept, in which styles, and
-  for whom less well -- on the drawn portraits dark skin came out lighter in the 3D cartoon and orange in
-  the comic book. Its model is a build of FLUX.2 klein 4B from a community repository, held at one
-  revision and adapted at first use, because Intel publishes none: an export of our own from Black Forest
-  Labs' weights (16 GB to fetch, and somewhere to publish it) would remove that dependence, and would
-  allow a finer precision than int4. *Since the Page Agent draws with the same build (2026-10-12), the
-  Auto Demo's opening scene depends on that repository too: this is no longer about one experimental brick.* Not built: a style typed by hand (left out on purpose, for a stand),
-  a scene of the Auto Demo, more than one person in the photo. (filed 2026-10-12, from the build)
+- [ ] **Two copyleft packages are installed with the app.** Read from the
+  installed environment (124 packages): `mutagen` is GPL-2.0-or-later, asked
+  for by `openwakeword` and by `yt-dlp`; `soxr` is LGPL-2.1-or-later, asked
+  for by `librosa`. `uv` installs them on the user's machine and the project
+  ships neither, so this may ask for nothing; it is for the review of what
+  goes out with a release (R16) to say so. The project's own eighteen packages
+  state no licence in their metadata, for the reason above. (filed
+  2026-10-12, R17's inventory)
 
-- [ ] **After a new OpenVINO, the first start of every NPU demo is slow, and nothing says why.**
-  The compiled-model cache has one folder per OpenVINO version since the move to 2026.4.1 (2026-10-12),
-  so each model on the NPU is compiled once more the first time it is used after an upgrade: Whisper
-  medium, Live Translation's default, took 198 s on the XPS 14 where the second load takes 6; Whisper
-  base 17 s; the 8B planner about a minute and a half. The panel shows "Loading models..." all that
-  time, as on a first installation. Two things would help: saying it ("compiling for the NPU, once: a
-  few minutes") while it happens, and letting **Prepare models** compile ahead what a demo runs on the
-  NPU, so that it is done before a show and not during one. *The same day the GPU was given the
-  compiled-model cache too, on the user's word ("turn on the GPU compiled-model cache now"; note on
-  R37): the first load of each GPU model after an upgrade now writes up to 15 GB, and takes a few
-  seconds longer than a plain compile (the 30B coder: 26 s against 22.5). The same two remedies
-  apply to it, and Prepare models would be the place to show what the cache holds and to empty it.*
-  *Later that day, on the user's word ("let Prepare models compile the NPU and GPU models ahead"),
-  the second remedy was built (v1.0.5): Prepare models has a Compile button, a tick-box a chip,
-  and a badge for each chip a model is compiled for; each model is loaded in a process of its own;
-  the footer says how many are to compile. Tried cold on four NPU models: 240 s (the embedder 149
-  s, the 1.5B 57, Whisper base 29), then 15 s when they are compiled already. Left of this entry:
-  saying "compiling, once" in a demo's panel while it happens; showing what the cache weighs and
-  emptying it from the dialog; offering the compile at the end of the setup assistant, after the
-  models are fetched; and the Auto Demo's check before a show, which could say what is not compiled.*
-  (filed 2026-10-12, from the OpenVINO upgrade)
+- [ ] **The live city cameras' terms have not been read.** The Smart City
+  Monitor's curated feeds are YouTube streams read with `yt-dlp` and
+  Transport for London's cameras. R17 read the models' licences and the
+  sample videos have their credits; nobody has read what YouTube's terms and
+  TfL's open-data terms ask of a screen at a company's stand (a credit line,
+  at the least, for TfL). Less pressing since 2026-10-09, when the panel and
+  the Auto Demo began opening on videos kept on the machine. (filed
+  2026-10-12, R17's inventory)
+
+- [ ] **On the NPU, the Voice Assistant can write an English question in
+  French.** Found on 2026-10-13 while trying its new button, and not caused
+  by it: three questions said by the studio's own voice, given to Whisper
+  base (OpenVINO 2026.4.1) alone and as the button hands them over. On the
+  NPU: "What is the capital of France?" came back right alone and as
+  "Qu'est-ce que le capital de France?" with a little silence around it; "How
+  many days are there in a week?" as "Comment les jours sont dans le
+  week-end?"; "Name a colour of the rainbow." as "N'aim à colorer le
+  rainbow." On the CPU, the same model and the same sounds: all three word
+  for word. Told that the language is English (`language="en"`, which the
+  transcriber takes and Live Translation offers), the NPU reads all three
+  right. The Voice Assistant does not say which language to expect, answers
+  and speaks in English only, and the NPU is where it is meant to run. The
+  language model then answers the French in French, and the English voice
+  reads that. Not known: whether a person's voice does it too (the speech was
+  synthetic), whether it came with OpenVINO 2026.4.1 (the twelve spoken
+  questions of 2026-10-10 were on 2026.3 and were read), whether Whisper
+  small or medium on the NPU do it. The plain remedy is to tell Whisper the
+  language -- English fixed, or the menu Live Translation has. Meeting Notes
+  and the commentator's ears are worth the same look. (filed 2026-10-13,
+  from trying the button)
+
+- [ ] **The launcher stops answering while the Page Agent's image model
+  loads.** Seen in each of the three Auto Demo loops sampled on 2026-10-13
+  (the third from 13:45:54, for twelve seconds), on the integrated GPU
+  alone, at the same step each time -- between "Planning on
+  NPU" and "Drawing picture 1": `/api/telemetry` asked at 10:23:17 had no
+  answer after 5 s and the next request, sent at 10:23:27, was answered at
+  10:23:33; one loop later nothing was answered from 10:33:22 to 10:33:35.
+  Thirteen to sixteen seconds. Of the 527 other answers sampled once a
+  second across a whole loop (the page being written, the coding model
+  loading, the camera, the receipts, the street cameras, the documents, the
+  commentary) the slowest took 1.3 s, so it is that load and not loading in
+  general. While it lasts the page gets no status, no telemetry
+  and no narration step. My reading, not verified: the image pipeline is
+  built in a call that keeps Python's lock. Not known: whether it is as long
+  on the B60, and whether Portrait Studio does the same. (filed 2026-10-13,
+  from a morning the app was called sluggish)
+
+- [ ] **What R34 asked for besides the run, and two things the run found.**
+  R34 was closed on 2026-10-13 on a morning's run (its note is under Done).
+  Not built, from its Done line: the loop does not remove its own expense
+  reports (twenty that morning, seventy-five in the database, half a
+  megabyte); it writes no report when it stops (turns, scenes played,
+  failures, the fastest and slowest of each scene -- the morning's figures
+  were read out of the activity log by a script); `docs/AUTO_DEMO.md` has no
+  checklist for a stand. Not shown by that run: eight hours, a stand with
+  the B60, the camera scene in front of several people with somebody
+  watching the picture, the large models unloaded between scenes on a
+  machine short of memory. Found by it: the launcher's handles go up by
+  about a hundred a turn (4,123 in the street scene at 10:19, 6,170 there at
+  13:54; its memory does not move), which is days away from mattering and is
+  not explained; and the freeze at the image model's load, filed above.
+  (filed 2026-10-13, from closing R34)
+  *2026-10-13, later:* two of the three built the same day, at the user's
+  word. The receipts scene starts its batch with `keep_report` false, and the
+  report is deleted when the scene closes it -- at the next turn if the batch
+  was still stopping then; a person's batches are kept as before, and the
+  seventy-five already saved are left for "Delete saved reports". The
+  director keeps count and writes `logs/autodemo/run-<start>.json` at the
+  end of every turn and when the loop ends (turns; each scene's plays,
+  failures, cut short, fastest and slowest; the failures), so a launcher
+  closed mid-loop has left its report; `GET /api/autodemo/report` gives it,
+  and the start screen says it in a sentence under "This stand". Checked by
+  seven new tests against stand-ins (732 pass), and the sentence seen on a second
+  launcher, fed a report made up for the purpose. Not seen in a real loop:
+  the launcher that was playing keeps the Python it was started with, so both
+  begin at its next start. The handles are explained in the entry below.
+  Left of this entry: the checklist for a stand, and what the run did not
+  show.
+
+- [ ] **Each time the camera is opened, OpenCV's DirectShow capture leaves
+  ninety handles behind.** This is the launcher's hundred handles a turn.
+  Counted by kind over two turns of the Auto Demo on 2026-10-13, the launcher
+  gained 75 to 83 Event handles a turn, 3 to 7 File and 3 or 4
+  WaitCompletionPacket, all of it between the start of the camera scene and
+  the start of the receipts. Outside the app, in a process that does nothing
+  else: `cv2.VideoCapture(0, cv2.CAP_DSHOW)`, five frames read, `release()`,
+  six times over, leaves 76 to 80 Events, 5 Files, 3 Semaphores, 3
+  WaitCompletionPackets and 2 to 6 Thread handles each time (opencv 4.14.0;
+  the same when each open has a thread of its own). `video.py` releases what
+  it opens: what stays is inside OpenCV or the camera's driver. Not fixed,
+  and my advice is to leave it: one camera scene a turn is some five
+  thousand handles in a ten-hour day, against a limit of sixteen million a
+  process, and the launcher's memory did not move in four hours. What would
+  end it: the camera read in a process of its own, which takes what it leaked
+  with it when it ends (the way models are compiled ahead), at the price of
+  a second process and a second's wait in front of every camera demo; or an
+  OpenCV built with Media Foundation -- this one has none (`CAP_MSMF` opens
+  nothing), and whether that one leaks was not tried. `list_cameras` opens
+  every camera it finds each time its thirty-second memory has run out, so a
+  camera panel opened costs as much as a turn. For a stand: start the
+  launcher fresh each day. (filed 2026-10-13, from the handles R34's run
+  found)
+
+- [x] **The tests write into the live activity log.** Running the suite on
+  2026-10-13 beside a launcher at work put at least twenty-nine events into
+  `logs/events.log` between 10:30:24 and 10:30:39: a voice assistant
+  "loading" on the NPU, a commentator on GPU.0, a detector on the portable
+  engine, two downloads -- none of which happened. Most test files point
+  `events.LOG_FILE` at a temporary folder; the ones that made these do not
+  (the voice assistant's, the commentator's, the detector's and the sample
+  videos' are where to look). It is what a review of the log reads, and what
+  `/api/logs` serves. A fixture for every test, in place of one line per
+  file, would end it. (filed 2026-10-13, from reading the morning's log)
+  **Done 2026-10-13.** `tests/conftest.py` gives every test an activity log
+  of its own, in its temporary folder, asked for or not;
+  `tests/test_live_log_untouched.py`, which asks for nothing, holds it to
+  that. The whole suite run beside the launcher afterwards (732 tests) put
+  nothing into `logs/`. The lines per file stay: they do no harm. Before the
+  fixture a second run of mine had added twelve more, at 15:03:57
+  ("Extracting receipts...", "Structuring extracted text..."): with the
+  twenty-nine of 10:30 that is forty-one lines in today's log about things
+  that did not happen. They are still there; the file was not rewritten
+  under a launcher that was writing to it.
 
 ## What we are showing
 
 The demo unit is a Dell XPS 14 (DA14260). These are the figures OpenVINO and
-Windows report on it (2026-09-11), not datasheet numbers.
+Windows report on it (2026-09-11), not datasheet numbers. On 2026-10-12 the
+NPU's driver is the same one, the graphics driver is 32.0.101.8991, and the
+runtime is OpenVINO 2026.4.1.
 
 | Part | On this machine |
 | --- | --- |
@@ -187,24 +218,25 @@ The demos should make five claims visible:
 
 ### Where the demos stand
 
-Fifteen demos and the Auto Demo, on 2026-10-10.
+Sixteen demos and the Auto Demo, on 2026-10-12, on OpenVINO 2026.4.1.
 
 | Demo | Proves today | What holds it back |
 | --- | --- | --- |
-| Auto Demo | C1 in one click, C3 | Never left alone for hours, never a whole turn of six scenes (R34) |
+| Auto Demo | C1 in one click, C3 | Left alone for a morning on 2026-10-13: twenty turns, no failure (R34, done). The launcher stops answering for 13 s at every turn while the image model loads (Inbox). Since that afternoon the loop removes its own expense reports and writes a report of each run, neither seen in a real loop yet |
 | Live speech translation | C2 (joules per line), C4, C5 | In a call the other participants are transcribed as the presenter (R40); the chips are not side by side (R19) |
-| Voice assistant | C4, C5 | Not run with a microphone since its voice moved to the CPU (R35); speaks only once the whole answer is written (R38); its wake word is a non-commercial model (R17) |
-| Meeting notes | C1 (two bricks at once), C4 | On the NPU it finds 11 stated tasks of 20; 17-18 on the integrated GPU (R36) |
+| Voice assistant | C4, C5 | Not run with a microphone since its voice moved to the CPU, nor since it listens by a button and not a wake word (R35, R17); speaks only once the whole answer is written (R38); on the NPU it can write an English question in French (Inbox) |
+| Meeting notes | C1 (two bricks at once), C4 | On the NPU it finds 11 stated tasks of 20; 17-18 on the integrated GPU. Two models tried on the NPU found 17 and 20, and neither is adopted (R36) |
 | Voice clone studio | C5 | The voice models do not compile for the NPU; the more faithful voice takes 8 to 11 s a line (R38) |
 | Webcam effects | C5 | Integrated GPU gated off after NaN masks (R03) |
 | Object detection | C5 | Detector licence (R17) |
-| Screen OCR | C2 (joules per read), C3 (7B vision-language model, 6 GB on the iGPU) | 7 to 9 s an image; a 4B model read as much in 5 s, on the next OpenVINO (R37) |
+| Screen OCR | C2 (joules per read), C3 (7B vision-language model, 6 GB on the iGPU) | 7 to 9 s an image; a 4B model read as much in 5 s, and the OpenVINO it needs is now installed: it is not adopted yet (R37) |
 | Smart city | C1 (a chip per feed), C5 | Counts run high, and small people in a crowd are mostly missed (R03) |
 | Video commentator (experimental) | C1, C3, C5 | The mood model embroiders on what was seen; its lines are too long to be said in time (R23) |
 | Document Q&A | C4 | Answers with the 8B where the laptop has it: 4 s a short answer, and one sentence in four long answers breaks off (R36, its calibrated build) |
 | Expense extraction | C1 (two stages, two chips), C4 | 66 fields of 70 on the samples: a credit note filed under Software, a banner taken for a vendor (R36) |
-| Code review, HTML creator | C2 (joules per answer), C3 (30B model on the iGPU, ~40 tokens/s), C4 | Each loads its own copy of the model (R11); HTML Creator can run a page into a loop (R47) |
-| Page agent (experimental) | C1 (three models, two or three chips), C3 | Page length unbounded, one skeleton, pictures never looked at (R39) |
+| Code review, HTML creator | C2 (joules per answer), C3 (30B model on the iGPU, ~40 tokens/s), C4 | Each loads its own copy of the model (R11); HTML Creator can run a page into a loop (R47); a part of a page can be changed by pointing at it, layout changes being the weak side (R39) |
+| Page agent (experimental) | C1 (three models, two or three chips), C3 | Page length unbounded, one skeleton, pictures never looked at by a model (R39); its image model is a community build (R52) |
+| Portrait studio (experimental) | C3, C5 (a photo drawn again in a style in 8 to 11 s on the iGPU) | Never tried on a real face; dark skin comes out lighter or orange in two styles; its model is a community build (R52) |
 | Screen memory | C1, C4 | Out of the pilot until retention lands (R08); its search reads the embedding model the old way (R06) |
 
 What the September list called missing is there now: the Auto Demo shows C1 in
@@ -212,15 +244,25 @@ one click (R21, done), the Page Agent draws its pictures on the integrated GPU
 (half of R22), and it is three models working on one job, though plain code
 conducts them, not a model (R26).
 
-What is thin on 2026-10-10 is of another kind. Nothing has been installed or
+What is thin on 2026-10-12 is what was thin on 2026-10-10, because none of it
+can be settled by writing code at this desk. Nothing has been installed or
 run on a laptop other than this one, and the README says Lunar Lake and
 Panther Lake (R33). Changes to the speech demos are checked without a
-microphone or a loudspeaker, so the latest have not been heard (R35). The Auto
-Demo has not been left alone for more than a few turns (R34). The small model on the NPU is what the
-quality of most demos rests on, and it is their weakest part (R36). Energy per
-result is on four demos and no view puts the three chips side by side (R18,
-R19). And licences are not settled, with one model in use already found to be
-non-commercial (R17).
+microphone or a loudspeaker, so the latest have not been heard (R35), and
+Portrait Studio has not seen a real face (R52). The Auto Demo had not been
+left alone for more than a few turns; on 2026-10-13 it was, for a morning
+(R34, done). Licences are not settled, with one
+model in use already found to be non-commercial (R17), and the image model
+under two bricks and the Auto Demo's first scene now comes from somebody
+else's repository (R52). Version 1.0.0 was tagged on 2026-10-11 with all of
+that open, and with no gate between a failed test and a tag (R16).
+
+Two things did move. The small model on the NPU is still the weakest part of
+the demos it serves, but Document Q&A no longer rests on it where the 8B is on
+disk, and four builds measured on 2026-10-12 do better than the one Meeting
+Notes uses: what is left is to choose one (R36, R37). And energy per result
+is on six demos, the Page Agent and Portrait Studio having joined the four;
+no view puts the three chips side by side yet (R18, R19).
 
 ## How this backlog works
 
@@ -253,6 +295,14 @@ at this desk can settle: an install on another laptop (R33), the Auto Demo
 left alone for a day (R34), the speech demos heard (R35). R18 and R10 are
 mostly done and keep what is left of them; then the fixes that stop a demo
 showing something wrong, and the release gate.
+
+*2026-10-12:* the order stands, and all nine are open. Two days of building
+moved none of the first four, which wait on a decision (R17), on two laptops
+(R33), on a day of this machine's time (R34) and on half an hour of its
+owner's (R35).
+
+*2026-10-13:* R34 is closed, on a morning of that time and not a day (its
+note is under Done). Eight are open, in the same order.
 
 - [ ] **R17 · P1 · Settle model licences before measuring on the models.**
   Every YOLO11 size is AGPL-3.0 (model cards of `OpenVINO/YOLO11s-int8-ov`,
@@ -287,6 +337,84 @@ showing something wrong, and the release gate.
   for the project, a button instead of a wake word, or the licence cleared.
   The new bricks name their candidates' licences as questions for this ticket
   (R42, R44, R49).
+  **Status 2026-10-12:** still not started, and the list has changed.
+  FLUX.1-schnell is out of the app. FLUX.2 klein 4B is in, for Portrait Studio
+  and the Page Agent: Apache-2.0 by its card, fetched as a community build
+  (`rupeshs/flux2-klein-4b-int4-ov`) held at one revision (R52). Portrait
+  Studio's four bundled portraits were drawn by an image model. Measured that
+  day and to go in the inventory before any is adopted (R36, R37): K2 Horizon
+  7B and 3.7B (a community build, Apache-2.0 by its card), Gemma 4 E2B and E4B
+  (Apache-2.0 by its card, re-compressed on this laptop), Whisper
+  large-v3-turbo (Intel's build) and LCM Dreamshaper v7. Intel's NPU build of
+  Gemma 3 4B is behind a licence to accept with a Hugging Face login.
+  **Status 2026-10-12, later: the inventory is done, the decisions are not.**
+  [docs/MODEL_LICENCES.md](docs/MODEL_LICENCES.md) has every model the app
+  fetches -- 22 entries -- with its repository, the revision it was tried at,
+  its licence and that of the model it was made from, and whether it is
+  gated, as the Hub's API and the installed packages gave them that day. Each
+  entry of `core`'s `models.py` carries its `licence`, and a test fails when
+  one is added without it, when the page does not name it, or when a licence
+  that is not Apache-2.0 or MIT has no decision written.
+  *What it found.* Nineteen are Apache-2.0 or MIT, none is gated. Two are
+  not free to use anywhere, the two already known: YOLO11 (AGPL-3.0, every
+  size Intel publishes) and the wake word (CC BY-NC-SA 4.0 -- and by its
+  README's wording the feature models that come with it; the Voice
+  Assistant's README called them "Apache-2.0 / MIT-licensed" and is
+  corrected). One model was missing from the inventory: WavMark (MIT), which
+  OpenVoice's converter fetches by itself the first time a voice is cloned,
+  so that **Prepare models** did not fetch it and that first clone needed
+  the network; it is listed now. The portable detector's build names no
+  licence (its original is Apache-2.0), and Silero's voice detection is
+  fetched at its `master` (R10). The candidates of R36, R37, R24 and R26 are
+  read too: all Apache-2.0 or MIT but LCM Dreamshaper's ancestry (OpenRAIL-M)
+  and the gated Gemma 3 build.
+  *What makes the detector's decision easier.* Intel publishes detectors
+  under Apache-2.0 already converted for OpenVINO: `yolox_s-int8-ov` (10 MB),
+  `deimv2_s-int8-ov` (13 MB), `rfdetr_small-int8-ov` (31 MB),
+  `rtdetr_50-int8-ov` (46 MB). None has been run here. A replacement is a
+  trial of a day or two, not an export.
+  *Left.* The product owner's decision on the two, each written with its ways
+  out and a proposal in the page: for the detector, replace after a trial of
+  those four; for the wake word, a button to talk, and Whisper listening for
+  the phrase as a spike. Then R03 and R12 on the detector chosen.
+  **Status 2026-10-13: the wake word is decided and done; the detector is
+  the one thing left.** Asked that day, the product owner chose **a button to
+  talk** for the Voice Assistant, and it was built: with no wake word chosen
+  -- the default now, in the launcher and from a terminal -- a question is
+  what is said while the panel's **Hold to talk** button or the space bar is
+  held, and no model of openWakeWord's is loaded or fetched. The wake words
+  stay in the menu, each marked "non-commercial model". Tried in the launcher
+  on the NPU with questions made by the studio's own voice in the
+  microphone's place and nothing played: held with the pointer and with the
+  space bar, a click too short (told so), a page reloaded in the middle of a
+  run, a wake word chosen instead (no button, as before). An answer was back
+  0.9 to 3.3 s after the button came up, the voice not counted. Not heard
+  with a person and a microphone: R35.
+  For the detector the owner asked first what AGPL-3.0 means here, and was
+  told (the page has it, with what Ultralytics itself says of its licence):
+  running it asks nothing; the questions are what the app's own licence would
+  have to be, and what a partner's legal department makes of an AGPL
+  component. **Nothing about the detector has been changed, and no detector
+  has been downloaded to try.** Waiting for: replace after a trial, keep with
+  the terms cleared, or drop the two demos from company shows.
+  **Later that day: replace, after a trial -- decided, and the trial run.**
+  The owner's word: "download them, measure speed and counts, and propose
+  one". Four of Intel's Apache-2.0 detectors (98 MB) against YOLO11s, on the
+  three chips and over the six sample clips with the Monitor's own tracker;
+  tables, method and what was seen in the pictures are in
+  `docs/MODEL_LICENCES.md`. In short: **YOLOX-s is proposed.** As fast as
+  YOLO11s on the integrated GPU (100 to 150 frames a second, both), faster on
+  the NPU (70 against 45), slower on the CPU (36 against 46), and it boxes
+  the people YOLO11s does not see -- 36 on screen in the Tokyo crossing
+  against 3. DEIMv2-s and RT-DETR-50 are clean and four to eight times
+  slower (8 and 5.5 frames a second on the CPU; RT-DETR does not compile for
+  the NPU); RF-DETR-small's int8 build is unusable as published. What
+  YOLOX-s costs: some twenty lines to decode it quickly (the library takes
+  180 ms a frame over it), cattle called horses in the herd clip, and counts
+  that double (R03, note of this day). **The app still loads YOLO11s.** Left:
+  the owner's yes to YOLOX-s (or a look at the larger YOLOX first), the swap
+  in the brick with its decoding and tests, the sizes and figures in the two
+  bricks' READMEs, and then R03 and R12 on it.
 
 - [ ] **R33 · P1 · Prove the install on laptops that are not this one.**
   *Every claim rests on it.*
@@ -314,30 +442,13 @@ showing something wrong, and the release gate.
   defaults that follow the memory if the smaller machine needs them. **Depends
   on:** the laptops. **Files:** `setup/`, README, `core`'s engine defaults,
   the registry's memory badges. (filed 2026-10-10, backlog refresh)
-
-- [ ] **R34 · P1 · The Auto Demo, left alone for a day.** *Proves C1 where it
-  will be shown.*
-  The loop is what a stand runs with nobody at the keyboard, and it has been
-  round a few times: never for hours, never with all six scenes in one turn.
-  What is known to be waiting for it: an expense report is added to the
-  database at every turn and none is removed; the large models are not
-  unloaded between scenes on a machine short of memory; after two hours of
-  builds this laptop held itself to 15 W and everything took half as long
-  again (R45); the camera scene has met one person sitting at the laptop, not
-  a visitor holding things up, nor a crowd; the stage for a stand without the
-  discrete GPU is built and tested, not watched; the commentator's lines are
-  in English whatever language was chosen.
-  **Done:** eight hours on mains with every scene ticked: no failure the loop
-  does not recover from by itself, nothing left loaded at the end, memory and
-  disk flat from the first hour to the last, and each scene's figures at hour
-  one and hour eight side by side; when it stops the loop writes a short
-  report (turns, scenes played, failures, the fastest and slowest of each
-  scene); it removes its own expense reports; half an hour of the camera scene
-  in front of several people, with somebody watching; `docs/AUTO_DEMO.md` ends
-  on a checklist for a stand, made from what the run showed.
-  **Estimate:** 2-3 days, most of it the machine running. **Depends on:**
-  none; R45 explains what it finds. (filed 2026-10-10, backlog refresh;
-  carries what is left of R21)
+  *2026-10-12:* not started. Three things for the two installs to look at that
+  were not there when this was written. The image model holds 7.7 GB now, not
+  13. The GPU keeps what it compiles (v1.0.4): 31.8 GB a GPU with every model,
+  and nothing kept under 20 GB free, which a smaller disk will meet. And the
+  first start of each NPU demo is a compile of half a minute to over three
+  (198 s for Whisper medium) unless **Prepare models** was asked to compile ahead: whether
+  somebody new finds that button is part of what the installs should say.
 
 - [ ] **R35 · P1 · A rehearsal with real sound.** *A release should not ship
   unheard.*
@@ -360,6 +471,17 @@ showing something wrong, and the release gate.
   Inbox.
   **Estimate:** half a day to write the list and what it needs, half an hour
   to run it. **Depends on:** the user. (filed 2026-10-10, backlog refresh)
+  *2026-10-12:* nothing has been heard since. Speech on the NPU and voice
+  cloning each ran once on OpenVINO 2026.4.1, on recorded speech, read back.
+  One step to add to the list, which is not sound: Portrait Studio's camera
+  with a person in front of it, where only the browser's stand-in camera has
+  been (R52).
+  *2026-10-13:* the Voice Assistant's step has changed: it listens while a
+  button is held (R17), and that was tried with a stand-in for the microphone
+  and nothing played. To hear: a person holding the button, and the space
+  bar, and asking; whether the first word is whole; whether the laptop's own
+  speakers, saying the answer, leave anything in the next question; and on
+  the NPU, whether an English question is written in English (Inbox).
 
 - [ ] **R18 · P1 · Measure power and show energy per result.** *Proves C2.*
   Nothing in the app measures power, so the efficiency story -- the reason an
@@ -407,6 +529,11 @@ showing something wrong, and the release gate.
   1.5B model) and nothing said so. R45 has the rest of that. The language
   calls inside the loop bricks (expense lines, screen memory, the voice
   assistant's reply) still have no live figure.
+  **Status 2026-10-12:** energy per result is measured in six runners, not
+  four: the Page Agent's build and Portrait Studio's picture (139 to 332 J a
+  768 picture above idle, integrated GPU) beside live translation, code
+  review, HTML creator and screen OCR. The ten others are as listed on
+  2026-09-14, and the mains-or-battery label and the drain rate are not built.
 
 - [ ] **R10 · P1 · Make installation and model readiness predictable.**
   Add a preflight for Python/runtime, FFmpeg where needed, devices, disk space
@@ -453,6 +580,17 @@ showing something wrong, and the release gate.
   which a re-encode there would make fail their checksum; a model download cut
   half-way, which was not tried. The clean Windows setup this ticket's Done
   line asks for was imitated, not done: that is R33.
+  **Status 2026-10-12:** the show prep's "compiles the NPU cache" is built
+  (v1.0.5): **Prepare models** has a Compile button, a tick-box a chip and a
+  badge for each chip a model is compiled for, and
+  `uv run python -m launcher.compile_ahead` does the same from a console. Four
+  NPU models cold: 240 s, then 15 s once compiled. One model has a pinned
+  revision, the first: the FLUX.2 klein build. From the Inbox entry sorted
+  today, left: saying "compiling for the NPU, once" in a demo's panel while it
+  happens, instead of "Loading models..."; showing what the compiled-model
+  cache weighs (68 GB on this laptop with both GPUs and the NPU) and emptying
+  it from the dialog; offering the compile at the end of the setup assistant,
+  once the models are fetched.
 
 - [ ] **R03 · P1 · Reproduce vision defects and fix or gate affected paths.**
   Covers original smart-city overcount and webcam GPU NaN reports above.
@@ -484,6 +622,19 @@ showing something wrong, and the release gate.
   them: a larger input, or tiles, for small people; and counting at a line
   that is crossed rather than at a track that is created. The webcam's GPU
   path is still gated.
+  **Status 2026-10-13, from R17's trial of detectors:** the detector this
+  ticket will measure on is about to change, and the one proposed moves both
+  of its faults. YOLOX-s sees the small people: a median of 36 boxes on
+  screen in the Tokyo crossing where YOLO11s has 3, with no frame empty
+  (28% were). And it makes the counts worse: counting a track at its birth,
+  the Monitor gives Toronto 1,121 where it gave 469, Tokyo 2,779 where it
+  gave 238, the herd 292 with 110 "horses" where it gave 130 -- small and far
+  things come and go at the threshold, and each return is a birth. Raising
+  the threshold to 0.6 takes Toronto to 838, not to the truth. So with that
+  detector, counting at a line that is crossed stops being one of two things
+  to try and becomes what the demo needs before it is shown; a larger input
+  or tiles may not be needed at all. The six clips are still not counted by
+  hand: every figure here is one detector against another.
 
 - [ ] **R06 · P1 · Invalidate stale document and embedding caches.**
   *2026-10-09:* reported from the field -- "it said it had looked at three
@@ -535,6 +686,13 @@ showing something wrong, and the release gate.
   and R46 needs it (a tag that means "tested"). The install instructions were
   rewritten and walked on an imitated bare laptop (R10, R33). The four pilot
   journeys named above still fit; the Auto Demo is the fifth.
+  **Status 2026-10-12:** the gate is still not there: `version-bump.yml` runs
+  on every push beside the test job, not after it. Eleven versions were tagged
+  since 2026-10-10, and one of them is 1.0.0 (2026-10-11, asked for by a line
+  in a commit message: CONTRIBUTING, "Versioning"). The test job passed on the
+  four pushes of 2026-10-12. So a 1.0 is out and this ticket's Done line is
+  not met: no pilot was run, and the eight P1s above are open. Seen in passing:
+  the README's first line says fifteen demos, and there are sixteen.
 
 ## Next -- P2
 
@@ -547,6 +705,11 @@ Ask); the side-by-side table (R19); the two experimental bricks out of their
 label (R23, R39); the call (R40); the OpenVINO upgrade (R37); then the bricks
 that start with a question to settle (R42, R43, R44), and the tickets that
 were here before.
+
+*2026-10-12:* the upgrade half of R37 is done, and it changed what R36 is:
+four builds now do better on the NPU than the model Meeting Notes uses, so the
+ticket is a choice between them more than an export of our own. R52, Portrait
+Studio, joins the experimental bricks (R23, R39), after R39.
 
 - [ ] **R36 · P2 · A better small model on the NPU.** *Proves C2, C4 -- with
   answers worth showing.*
@@ -667,6 +830,16 @@ were here before.
   model is, or exported by us from the 18 GB original; and R17 for its place
   in the inventory. Not tried: the voice assistant, the commentator's voice,
   long transcripts split in parts, a second meeting language.
+  *2026-10-12, later, where the ticket stands.* A second family came out of
+  the same audit: Gemma 4, made symmetric from Intel's published builds by a
+  script (the last note on R37). On the four test meetings, on the NPU: E4B 17
+  tasks of 20 with none misgiven, in 16 s a meeting; E2B 15 of 20 in 14 s.
+  So for the NPU's notes there are three ways and none is taken: K2 Horizon 7B
+  (20 of 20, two misgiven, 36 s, English only, one person's build), Gemma 4
+  E4B (17, none misgiven, 16 s, a build that exists only on this laptop and a
+  tokenizer that loses the odd word), and step (3) as written, which nobody
+  has started and which asks for the most. Choosing is what is left, with R17;
+  each has been measured once.
 
 - [ ] **R38 · P2 · Voices that keep up with the talk.** *Proves C5.*
   The Voice Assistant writes its whole answer, then speaks it. The commentator
@@ -809,6 +982,13 @@ were here before.
   city camera as a source, and a count of invented details on the six sample
   clips, before and after. **Not to be built as a mood:** a judge of how
   people look (see Deferred).
+  *2026-10-12:* the 8B was tried as the voice (R36's table, 2026-10-10): it
+  says something not seen in about 4 lines of 48 where the 1.5B does in 18,
+  and hands 29 of 48 back unchanged -- 12 with rules of its own. The
+  commentator keeps the 1.5B and has a Model menu, so the "voice that keeps to
+  the facts" exists as a choice, not as the default. The count on the six
+  sample clips, lines short enough to be said, French and a city camera are
+  as they were.
 
 - [ ] **R39 · P2 · The Page Agent out of "experimental".** *Proves C1, C3.*
   It opens the Auto Demo and it is the picture at the top of the README. What
@@ -837,6 +1017,59 @@ were here before.
   page lost, a picture that is not what was asked -- and does not close any of
   its items: a picture is still never looked at by a model, and a page's
   length is what it was.
+  *2026-10-12:* the pictures are drawn by FLUX.2 klein 4B (v1.0.2): 2.7 s a
+  768x512 picture on the integrated GPU against 5.0, loaded in 7 s against 18,
+  7.7 GB held against 13; a whole page on the integrated GPU alone in 171 and
+  188 s with the models loading, where it took 214 to 224. So "13 GB for the
+  image model alone" above is 7.7 GB, and whether it can now stay beside the
+  coder on one GPU instead of taking turns with it is not tried. Lettering in
+  a picture is still gibberish. The model is a community build (R52).
+  *From the Inbox entry sorted the same day, what is left of* Change this
+  page, *for this brick and the HTML Creator.* Layout changes are the weak
+  side (three cards "side by side" may wrap to two rows). A part filled or
+  animated by the page's own script is changed in its HTML only, and a chart
+  or a game board cannot be changed this way at all. Two comments of which one
+  is inside the other are refused. No comparison marks the changed parts
+  across several changes at once; there is no keyboard way to point at a part;
+  under about 900 pixels wide the two versions are too small side by side. In
+  the Auto Demo, a picture drawn again is not shown, and the HTML Creator has
+  no scene. Not tried: a second GPU with both models staying loaded, document
+  summaries, a page cut off before its end, the portable engine, a page of
+  more than a few hundred parts, a person other than its author.
+
+- [ ] **R52 · P2 · Portrait Studio on real faces, and a model the project can
+  count on.** *Proves C3, C5.*
+  The brick (v1.0.1, experimental, under a new Images category) draws a photo
+  of a person again in one of eight styles with FLUX.2 klein 4B: 8 to 11 s a
+  768 picture on the integrated GPU, 139 to 332 J above idle. It was tuned on
+  four portraits an image model drew and on the browser's stand-in camera: not
+  one photograph of a real person, because whose face to use was not the
+  builder's to decide. On those drawn portraits dark skin came out a shade
+  lighter in the 3D cartoon and orange in the comic book, which is not
+  something to find out at a stand. And its model is a community build
+  (`rupeshs/flux2-klein-4b-int4-ov`), held at one revision and adapted at
+  first use, because Intel publishes none. The Page Agent has drawn with the
+  same build since v1.0.2, so the Auto Demo's opening scene rests on that
+  repository too.
+  (1) Real faces, with the laptop's owner and people who agree to it: each of
+  the eight styles on several people, and what was kept of whom written down.
+  A style that does not keep a person's colours is put right or taken out of
+  the menu. (2) The model: an export of our own from Black Forest Labs'
+  weights (16 GB to fetch, and somewhere to publish it), which removes the
+  dependence and allows a finer precision than int4; or the community build
+  kept, as a decision recorded in R17. (3) To decide, not built: a scene of
+  the Auto Demo, more than one person in the photo. A style typed by hand was
+  left out on purpose, for a stand.
+  **Done:** every style has been drawn from photographs of real people of
+  several skin tones, with and without glasses or a beard, and the brick's
+  README says what was seen in place of "What was not tried"; each style in
+  the menu keeps skin colour on them; the model the two bricks fetch is one
+  the project controls, or the decision to depend on the community build is
+  in R17's inventory with what would be done if it went away; the Auto Demo
+  has a scene for it, or a line here saying why not.
+  **Estimate:** half a day for the faces once people are at hand; 1-2 days for
+  an export. **Depends on:** the user, for the faces and for an account; R17.
+  (filed 2026-10-12, from the brick's Inbox entry)
 
 - [ ] **R40 · P2 · Live translation in a real call, with captions that stay on
   top.** *Proves C4, C5.*
@@ -1141,6 +1374,9 @@ were here before.
   draft head went from 7.6 to 14 tokens/s on the integrated GPU and from 22 to
   35 on the B60. That is a draft on the same chip, not on the NPU, and the
   model needs OpenVINO 2026.4 (R37). The spike as written is still to do.
+  *2026-10-12:* the project is on OpenVINO 2026.4.1, so that model can be
+  loaded in it. For the draft on the NPU, the audit of that day says what the
+  chip takes: a build compressed int4 symmetric (R37).
 
 - [ ] **R25 · P2 · Listening all day for a few watts.** *Proves C2.*
   The NPU's purpose is sustained low-power inference; show it in watts and
@@ -1158,6 +1394,12 @@ were here before.
   answer spoken back; and the wake word's licence is an open question (R17).
   Noise suppression is still a planned card in the app: it is the *new brick*
   this ticket delivers.
+  *2026-10-13:* the wake word is no longer what the Voice Assistant listens
+  with by default: its models are non-commercial and a button took its place
+  (R17). "Listening all day" for a company's stand therefore needs a
+  listener with a licence that suits -- Whisper waiting for a phrase behind
+  Silero's voice detection is the one named in `docs/MODEL_LICENCES.md`, and
+  what it costs the NPU is this ticket's kind of measurement.
 
 - [ ] **R27 · P2 · Health-check the curated live feeds.** From the Inbox
   (original wording under Original reports). Check each curated source in the
@@ -1275,6 +1517,12 @@ installs (R46), and the runtime's faults (R47).
   failed`, `CL_INVALID_EVENT`) while the Expense Extractor was reading
   receipts -- not reproduced, possibly memory. A memory figure per brick in
   the hardware panel would have said.
+  *2026-10-12:* the image model holds 7.7 GB since the move to FLUX.2 klein,
+  not 13 -- and there are two copies of it when Portrait Studio and the Page
+  Agent are both open, each brick loading its own: a second pair for "one
+  model shared between bricks", after the 30B coder. Letting a model go costs
+  less than it did: with the GPU's compiled-model cache (v1.0.4) the coder
+  comes back in 5.3 s instead of 22.5, the 8B in 2.9 instead of 10.0.
 
 - [ ] **R12 · P2 · Profile before optimizing video and screen history.**
   Covers the original smart-city throughput report. Instrument capture, infer,
@@ -1321,6 +1569,8 @@ installs (R46), and the runtime's faults (R47).
   *2026-10-10:* the case is stronger. Since the review `app.py` has gone from
   1,224 lines to 2,111 and `app.js` from 2,282 to 5,580, with five bricks and
   a director added; nothing has been extracted.
+  *2026-10-12:* 2,396 and 7,346 lines, two days later: a sixth brick, the
+  workspace for changing a page, and the Compile dialog.
 
 - [ ] **R15 · P2 · Expand platform and output-quality regression checks.**
   Retain Linux portable CI; add Windows portable/OpenVINO import and API checks,
@@ -1362,6 +1612,39 @@ installs (R46), and the runtime's faults (R47).
   presenter's notes say what to do about each.
   **Estimate:** 3 days. **Depends on:** R18. (filed 2026-10-10, from three
   Inbox entries and R10's show prep)
+  *2026-10-12:* one line of the page exists, somewhere else. **Prepare
+  models** shows for each model whether it is on disk and which chips it is
+  compiled for, and compiles what is missing (v1.0.5); after an upgrade the
+  footer says how many are to compile. From the Inbox entry sorted today: the
+  Auto Demo's check before a show should say what is not compiled for the
+  scenes ticked. Mains or battery, the 15 W state, which GPUs are there, the
+  sample run once and the run with the network off are not built.
+  *2026-10-13:* a morning this page would have explained in one line. The
+  app was called sluggish; the laptop had been off its dock and on battery
+  since 08:39, without the B60, and the Auto Demo was playing on the
+  integrated GPU alone: the package drew 12-20 W with that GPU at 100 %
+  (36 W for a moment), the 30B coder wrote 31 tokens/s there, and a page
+  that two GPUs write in under a minute took 132 s. Three more things for
+  the page to say. Windows' power mode *when plugged in* was "Best power
+  efficiency" on this machine (Balanced on battery): on external power from
+  10:16 to 10:23 the package drew 13-25 W with the GPU at 95-100 %, no more
+  than on battery. The lid was closed for 84 s in the middle of a loop
+  (10:00:37), and the camera scene's detector was still "loading" when the
+  scene ended. And after the restart at 10:04 the first load of each model
+  took 84-96 s though all were in the compiled cache (planner on the NPU
+  95 s, coder on the GPU 96 s, detector on the NPU 84 s, so the camera
+  scene's 60 s wait ran out and it played empty); one loop later the coder
+  loaded in 12 s and the detector in 1 s. Not known why the first ones were
+  slow: the disk read 2.2 GB/s and nothing was compiled again. Nothing else
+  was using the machine, and the 724 tests passed on the working tree.
+  *2026-10-13, later:* plugged in at 11:11 and left to loop until 14:00, the
+  machine was slower on mains than it had been on battery: a picture went
+  from 4.0-5.1 s to 5.8-7.2 s (4.7 to 6.1 in the middle) at the turn after
+  the plug went in, and stayed there for thirteen turns without drifting
+  further; the plan on the NPU, about 15 s then about 20 s. The coder wrote
+  31 tokens/s on battery and 34 on mains; on 2026-10-12, same OpenVINO, same
+  GPU, it wrote 44 to 45. My reading, not tried: the plugged-in power mode.
+  Setting it to "Best performance" and playing three turns would say.
 
 - [ ] **R46 · P2 · Upgrades for a copy that came from a ZIP.**
   The setup assistant made "Download ZIP" the first way to get the app -- it
@@ -1380,6 +1663,12 @@ installs (R46), and the runtime's faults (R47).
   silently overwritten; a copy made with git keeps upgrading as it does today.
   **Estimate:** 3 days. **Depends on:** R16, for a tag that means "tested".
   (filed 2026-10-10, backlog refresh)
+  *2026-10-12:* not built; the README still says a copy from a ZIP is updated
+  by downloading it again. What the move to OpenVINO 2026.4.1 added for such a
+  copy: `start_launcher.bat` brings the runtime to the version the new code
+  was tried on, so a ZIP unpacked over the old folder ends on the right one,
+  and the footer says when the installed runtime is not it. Tried on a v1.0.2
+  copy made with git, not on one from a ZIP.
 
 - [ ] **R47 · P2 · Runtime faults to pin down and report upstream.**
   Six things seen in the OpenVINO runtime or the drivers, worked around in the
@@ -1410,6 +1699,20 @@ installs (R46), and the runtime's faults (R47).
   Qwen3-Coder-30B on the integrated GPU, asked it for two short answers (11 s)
   and printed them took more than six minutes to end; six others like it that
   day ended at once.
+  *2026-10-12:* the project now runs on OpenVINO 2026.4.1 and none of the six
+  has been looked for there: each script should say which runtime it was run
+  on. One fault of the kind is gone with the upgrade: a GPU model read back
+  from the compiled-model cache answered garbage on 2026.3 and answers as
+  compiled on 2026.4.1 (R37). Three seen that day, to add to the list: (7)
+  the NPU's compiler ends the process after 44 s when handed FLUX.2 klein, as
+  in (1); (8) Intel's int4 asymmetric builds (Qwen3.5-4B, Gemma 4 E2B,
+  MiniCPM5-1B) never finish compiling for the NPU, stopped after 15 to 42
+  minutes, where the same weights made symmetric compile in 35 s to 5; (9)
+  Qwen3.5-4B, once it compiles for the NPU, writes rows of dashes and zeros
+  from files that answer on the GPU, as Qwen3-4B did. For (6): the five "Same
+  page every time" prompts were rewritten for 2026.4.1 and pass their
+  walk-throughs; the watch is still in the Page Agent alone
+  (`page_agent/runaway.py`).
 
 ## Later -- P3
 
@@ -1585,6 +1888,9 @@ installs (R46), and the runtime's faults (R47).
     integrated GPU, before and after.
   - *Ask the code* -- Document Q&A over a repository, answered by the 30B
     coder with the files named.
+  - *Type and it draws* (added 2026-10-12) -- a picture that follows the
+    words as they are typed, on the NPU: LCM Dreamshaper v7 draws a 512-pixel
+    picture there in 0.7 s, the one image model the NPU takes (R37's audit).
   - Already tickets: photo search (R29), an assistant in every app (R30), a
     local agent (R26), text-to-video and speech-to-speech (R31).
 
@@ -1601,6 +1907,78 @@ Closed straight from the Inbox, with their reports under Original reports: the
 same page every time (2026-10-04), a page answered with a code fence
 (2026-10-08), the voice that took the launcher down on the NPU (v0.2.91), the
 setup assistant (v0.2.92) and a Studio that stays stopped (v0.2.93).
+
+Since the refresh of 2026-10-10, closed straight from the Inbox: a part of a
+generated page changed by pointing at it (2026-10-11; what is left of it is a
+note on R39). No R-ticket was closed. Done inside tickets that stay open: a
+choice of language model in four bricks and the receipts' three rules (R36,
+steps 1 and 2); OpenVINO 2026.4.1 and the GPU's compiled-model cache (R37);
+models compiled ahead from Prepare models (R10); FLUX.2 klein in place of
+FLUX.1-schnell (R22). And one brick that had no ticket, Portrait Studio,
+which has one now for what it still needs (R52).
+
+On 2026-10-13 the user closed R34 on a morning's run of the Auto Demo: its
+note says what the run showed and what it did not.
+
+- [x] **R34 · P1 · The Auto Demo, left alone for a day.** *Proves C1 where it
+  will be shown.*
+  The loop is what a stand runs with nobody at the keyboard, and it has been
+  round a few times: never for hours, never with all six scenes in one turn.
+  What is known to be waiting for it: an expense report is added to the
+  database at every turn and none is removed; the large models are not
+  unloaded between scenes on a machine short of memory; after two hours of
+  builds this laptop held itself to 15 W and everything took half as long
+  again (R45); the camera scene has met one person sitting at the laptop, not
+  a visitor holding things up, nor a crowd; the stage for a stand without the
+  discrete GPU is built and tested, not watched; the commentator's lines are
+  in English whatever language was chosen.
+  **Done:** eight hours on mains with every scene ticked: no failure the loop
+  does not recover from by itself, nothing left loaded at the end, memory and
+  disk flat from the first hour to the last, and each scene's figures at hour
+  one and hour eight side by side; when it stops the loop writes a short
+  report (turns, scenes played, failures, the fastest and slowest of each
+  scene); it removes its own expense reports; half an hour of the camera scene
+  in front of several people, with somebody watching; `docs/AUTO_DEMO.md` ends
+  on a checklist for a stand, made from what the run showed.
+  **Estimate:** 2-3 days, most of it the machine running. **Depends on:**
+  none; R45 explains what it finds. (filed 2026-10-10, backlog refresh;
+  carries what is left of R21)
+  *2026-10-12:* one whole turn played in 549 s with no failure, on OpenVINO
+  2026.4.1 (R37's note of that day): one turn, not a day. The Page Agent scene
+  has a second act since v1.0.0 (a change pointed at, before and after side by
+  side), and the camera no longer opens on the last video's commentary
+  (v1.0.5). With the GPU's compiled-model cache the coder comes back in 5 s
+  instead of 22, which makes unloading the large models between scenes cheaper
+  than when this was written. Every item of the Done line is still to do, and
+  `docs/AUTO_DEMO.md` still lists a whole turn among what was not watched.
+  **Closed 2026-10-13, at the user's word, on a morning's run and not the day
+  the Done line asks for.** The loop played from 10:07 to 13:56 on the XPS 14
+  in one launcher process, OpenVINO 2026.4.1, v1.0.5 and the uncommitted work
+  of that day: twenty whole turns, and one cut short when the loop was started
+  again at 10:59, every scene of the playlist ticked, the streets and "Count
+  whatever passes" taking turns. Without the B60: the integrated GPU and the
+  NPU did all of it, on battery until 11:11 and on mains after. Against the
+  Done line. *No failure:* the director's list of failures is empty, the
+  activity log has no error among some seven hundred events, and Windows
+  logged no reset of a chip and no crash (its newest kernel report is of
+  2026-10-11). *Memory and disk flat:* the launcher held 19.4 GB of its own
+  in the street scene at 10:19 and 19.7 GB there at 13:54, and 25.1 GB at the
+  end of two turns running; 386 GB free on the disk at both ends, the
+  compiled-model cache 69.2 GB with nothing compiled again. *Figures at the
+  first hour and the last:* loads did not move after the first turn (image
+  model 11.5 to 12.9 s, coder 10.6 to 11.5 s, detector 0.8 to 0.9 s, vision
+  model 5.7 to 6.3 s, from turn 2 to turn 20); the five receipts were read to
+  the same character in all twenty reports; a picture took 4.0 to 5.1 s on
+  battery and 5.8 to 7.2 s once on mains, where this machine's power mode is
+  "Best power efficiency" (R45's note of this day). Not as written: under four
+  hours and not eight; nothing was looked at "at the end", the loop being
+  left running; the camera scene was in front of whoever was in the room. What
+  the Done line asks for and was not built is one entry in the Inbox, with
+  two things the run found.
+  *2026-10-13, later:* two of those were built the same afternoon -- the loop
+  removes its own expense reports, and writes a report of each run -- and one
+  of the two things found was explained: the handles are the camera's,
+  through OpenCV. The Inbox says what is left.
 
 - [x] **R21 · P2 · One-click stage scenarios.** *Proves C1, and C2 with R18.*
   The app's strongest moment -- every chip busy at once -- takes several panels
@@ -2522,3 +2900,134 @@ line names the ticket the work now lives in.
   comes back, note what else was running and how much memory was free.
   (filed 2026-10-10, events.log review)
   Sorted into **R11** on 2026-10-10.
+
+- [x] **Change one place of a generated page, by pointing at it.** Asked for
+  by the user on 2026-10-10, for the Page Agent and the HTML Creator: "target
+  modification on selected area of the page", in "a new tab using the
+  previous page as a starting point where we can point at places to comment
+  and change those". Today the only way to change a page is to build it
+  again: 30 s to over a minute, and everything that was right moves too (a
+  page is not the same twice on the GPU).
+  As understood: beside the page just built, a second tab opens on a copy of
+  it. Clicking a part of the page -- a heading, a card, a section, a picture
+  -- outlines it and pins a comment there ("shorter", "three columns", "a
+  warmer picture"); several can be pinned before anything is run. Applying
+  them gives the model the part pointed at and its comment, not the page: it
+  writes that part again and it is put back where it was, the rest left
+  byte for byte as it stood. For a picture in the Page Agent the comment
+  goes to the image model, by way of the planner. The page before the
+  change stays in the first tab, so the two can be compared, and a change
+  can be undone.
+  Why it suits the app: a section is a few hundred tokens where a page is
+  two to four thousand, so a change should come back in seconds on the
+  integrated GPU; and it shows a model working on what a person points at,
+  which a one-shot page does not. Not known, and to try before building:
+  whether the 30B coder rewrites one fragment well when the stylesheet is
+  somewhere else in the page (it may need to hand back a few rules of its
+  own with the fragment); how a click is caught inside the preview, which is
+  sandboxed (a small script in the copy shown, never in the page saved); what
+  the Page Agent's own checks -- figures carried from the brief, its layout
+  rules -- make of a page edited in pieces. It belongs with R39 for the Page
+  Agent, and is new for the HTML Creator. (filed 2026-10-10, user request)
+  *Built on 2026-10-11, at the user's word ("let's work on the page-editing
+  request").* Both bricks have the second tab, **Change a part**: a copy of
+  the page in a frame, a click on a part pins a numbered comment (wider and
+  narrower to choose the part around it), Apply writes those parts again and
+  nothing else, the first tab keeps the page as it was made, and a change can
+  be undone. For a picture the Page Agent drew, the comment goes to the image
+  model by way of the planner. How it works and what was measured are in
+  `bricks/html-creator/README.md` and `bricks/page-agent/README.md`; the code
+  is `html_creator/revise.py`, `launcher/page_revisions.py` and the routes
+  under `/api/<brick>/revision`.
+  *The three things that were not known.* **Does the coder write one fragment
+  well with the stylesheet elsewhere?** Yes for what it is told and shown:
+  fourteen changes of fourteen came back usable, in 1.6 to 14.6 s (integrated
+  GPU, mains), once it was given the part's own rules, what the rest of the
+  page says, the page's blocks, the lines of script that name the part and the
+  list of pictures, and allowed to hand back rules and a script. Given the
+  part and its rules alone, three changes of eleven made the page worse. It
+  still makes changes that are not finished -- a class nothing dresses, a link
+  to nowhere, a badge placed against nothing: the first two are checked for
+  and asked about once more, the third is put right in code. **How is a click
+  caught in the sandboxed frame?** By a script in the copy shown, which posts
+  the number of the part clicked; the numbers are attributes written into the
+  copy's tags and never into the page kept. **What do the Page Agent's checks
+  make of a page edited in parts?** They are made again after every change and
+  shown; on the bakery sample all seven still passed after two parts and a
+  picture were changed.
+  *In the launcher, on the XPS 14 alone (2026-10-11, on battery):* two parts
+  of an HTML Creator page changed in 8 s; two parts of a built page in 27 s; a
+  picture drawn again in 39 s and the heading after it in 23 s, the two models
+  changing places on the one GPU.
+  *Left.* Layout changes are the weak side (three cards "side by side" may
+  wrap to two rows). A part filled or animated by the page's own script is
+  changed in its HTML only: a fourth number added to a band the script counts
+  up came back as a plain 12, and a chart or a game board cannot be changed at
+  all this way. Two comments of which one is inside the other are refused. Not
+  tried: a second GPU (both models staying loaded), document summaries, a page
+  cut off before its end, the portable engine, a page with more than a few
+  hundred parts, a person other than its author using the tab. The Auto Demo
+  does not show any of it.
+  *Reworked the same day, at the user's word ("a full rework of the UI for
+  the page modification: messy, hard to see what we do, hard to compare the
+  before and after, the pointer still there while looking at the result";
+  then "three modes, side by side, and auto-jump to What changed").* The
+  second tab is gone. **Change this page** opens a workspace over the app
+  with three modes: Look (the page, nothing pointed at), Comment (parts
+  clicked and commented, each with the path down to it to pick the part
+  around), What changed (before and after side by side at the same layout
+  width, the parts written again outlined in both, scrolled together; what
+  was asked, what was done, the HTML lines changed; Keep, or Undo with the
+  comments put back). Apply ends in What changed. Every earlier change can
+  be looked at again and gone back from. Not done: a comparison that marks
+  the changed parts across several changes at once ("Everything since the
+  page was made" shows the two pages without outlines); a keyboard way to
+  point at a part; the workspace on a window under about 900 pixels wide,
+  where the two versions are too small side by side and *One at a time* is
+  the way.
+  *In the Auto Demo since 2026-10-11 (user: "let's add this to the auto
+  demo feature"):* the Page Agent scene ends with it -- the director points
+  at the headline and one card of the page just built, and the stage shows
+  before and after side by side. Not there: a picture drawn again (40 s and
+  two models changing places on one GPU), and HTML Creator, which has no
+  scene.
+  Done 2026-10-11 (v0.2.97, v0.2.98; in the Auto Demo since v1.0.0). Sorted
+  on 2026-10-12: what is left, for both bricks, into **R39**.
+
+- [ ] **Portrait Studio: try it on real faces, and decide where its model comes from.**
+  The brick (v1.0.1, 2026-10-12) was tuned on four portraits an image model drew and on the browser's
+  stand-in camera: not one photograph of a real person, because whose face to use was not the builder's
+  to decide. To look at first with the brick in hand: how well a real face is kept, in which styles, and
+  for whom less well -- on the drawn portraits dark skin came out lighter in the 3D cartoon and orange in
+  the comic book. Its model is a build of FLUX.2 klein 4B from a community repository, held at one
+  revision and adapted at first use, because Intel publishes none: an export of our own from Black Forest
+  Labs' weights (16 GB to fetch, and somewhere to publish it) would remove that dependence, and would
+  allow a finer precision than int4. *Since the Page Agent draws with the same build (2026-10-12), the
+  Auto Demo's opening scene depends on that repository too: this is no longer about one experimental brick.* Not built: a style typed by hand (left out on purpose, for a stand),
+  a scene of the Auto Demo, more than one person in the photo. (filed 2026-10-12, from the build)
+  Sorted into **R52** on 2026-10-12, with the model's licence and source in
+  **R17**.
+
+- [ ] **After a new OpenVINO, the first start of every NPU demo is slow, and nothing says why.**
+  The compiled-model cache has one folder per OpenVINO version since the move to 2026.4.1 (2026-10-12),
+  so each model on the NPU is compiled once more the first time it is used after an upgrade: Whisper
+  medium, Live Translation's default, took 198 s on the XPS 14 where the second load takes 6; Whisper
+  base 17 s; the 8B planner about a minute and a half. The panel shows "Loading models..." all that
+  time, as on a first installation. Two things would help: saying it ("compiling for the NPU, once: a
+  few minutes") while it happens, and letting **Prepare models** compile ahead what a demo runs on the
+  NPU, so that it is done before a show and not during one. *The same day the GPU was given the
+  compiled-model cache too, on the user's word ("turn on the GPU compiled-model cache now"; note on
+  R37): the first load of each GPU model after an upgrade now writes up to 15 GB, and takes a few
+  seconds longer than a plain compile (the 30B coder: 26 s against 22.5). The same two remedies
+  apply to it, and Prepare models would be the place to show what the cache holds and to empty it.*
+  *Later that day, on the user's word ("let Prepare models compile the NPU and GPU models ahead"),
+  the second remedy was built (v1.0.5): Prepare models has a Compile button, a tick-box a chip,
+  and a badge for each chip a model is compiled for; each model is loaded in a process of its own;
+  the footer says how many are to compile. Tried cold on four NPU models: 240 s (the embedder 149
+  s, the 1.5B 57, Whisper base 29), then 15 s when they are compiled already. Left of this entry:
+  saying "compiling, once" in a demo's panel while it happens; showing what the cache weighs and
+  emptying it from the dialog; offering the compile at the end of the setup assistant, after the
+  models are fetched; and the Auto Demo's check before a show, which could say what is not compiled.*
+  (filed 2026-10-12, from the OpenVINO upgrade)
+  Compiling ahead done 2026-10-12 (v1.0.5). Sorted the same day: what is
+  left into **R10**, and the check before a show into **R45**.

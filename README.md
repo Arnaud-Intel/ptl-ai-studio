@@ -34,15 +34,22 @@ Lake. One launcher, no cloud.**
 | --- | --- | --- |
 | Processor | Intel Core Ultra 200V series | Intel Core Ultra series 3 |
 | Chips the demos use | CPU, Arc integrated GPU, NPU | CPU, Arc integrated GPU, NPU |
+| Memory | 16 GB runs the Studio and most demos; 32 GB or more for the biggest models | the same |
 | System | Windows 11, current Intel graphics and NPU drivers | the same |
 
 - **No graphics card is needed.** A discrete GPU is used when there is one
   (the Page Agent then runs its two GPU jobs at once) and never required.
-- **Memory decides which demos fit.** The models live in system memory,
-  which the integrated GPU shares. Most demos need a few gigabytes; the
-  three that use the 30B coding model (HTML Creator, Code Review, Page
-  Agent) need about 17 GB for it, and say so on their cards. Code Review
-  and HTML Creator can run a 1.5B model on the CPU instead.
+- **16 GB is enough to start; the biggest models need 32 GB.** The models
+  live in system memory, which the integrated GPU shares. On a 16 GB laptop
+  the Studio and most demos run, as they need a few gigabytes each. The 30B
+  coding model alone takes about 17 GB, so it needs at least 32 GB, or an
+  Arc Pro B60 plugged in to hold it. On a laptop with less, the Studio sees
+  it and greys that model out everywhere: the Page Agent cannot be opened,
+  Code Review and HTML Creator run a 1.5B model on the CPU instead, the
+  Auto Demo leaves its page scene out and plays the others, and the model
+  is left out of the downloads, in the Studio and in the setup assistant.
+  `PTL_MEMORY_GB=16` makes a larger laptop behave like a 16 GB one, to
+  rehearse.
 - **What was measured where.** Every figure and screenshot on this page
   comes from a Panther Lake laptop (Dell XPS 14, Core Ultra X7 358H, 64 GB).
   A Lunar Lake laptop runs the same build on the same three chips, at its
@@ -199,7 +206,7 @@ videos, prompts.
 | --- | --- | --- |
 | **Live Speech Translation** | Any spoken language to English text, live | CPU · GPU · NPU |
 | **Live Meeting Notes** | Transcribes a call; summary and action items on demand | CPU · GPU · NPU |
-| **Local Voice Assistant** | Wake word, question, spoken answer | CPU · GPU · NPU (the voice itself on the CPU) |
+| **Local Voice Assistant** | Hold a button, ask, hear the answer | CPU · GPU · NPU (the voice itself on the CPU) |
 | **Voice Clone Studio** | Enrol a short voice sample, then speak any text in that voice | CPU (GPU possible, slower) |
 | **Webcam Background Effects** | Background blur or replacement, live | CPU · NPU |
 | **Object Detection Overlay** | Labelled boxes on a video file, a webcam or the screen | CPU · GPU · NPU |
@@ -257,7 +264,9 @@ has what is planned and what is known to be wrong.
 
 The sample videos are openly licensed and credited in
 [`sample-data/videos`](sample-data/videos/README.md); the sample documents
-and receipts are fictional.
+and receipts are fictional. Each model's licence, and the two that are not
+free to use anywhere (the detector, the wake word), are in
+[docs/MODEL_LICENCES.md](docs/MODEL_LICENCES.md).
 
 ---
 

@@ -60,11 +60,11 @@ local_demo/
         voice_model.py            <- checkpoint loading + OpenVINO wrapper classes, shared by both engines
         pipeline.py               <- enroll-once/synthesize-many session, shared by the CLI and the launcher
         cli.py
-    voice-assistant/           <- wake word + LLM + TTS (three-bricks-composed-plus-one-new-piece template)
+    voice-assistant/           <- a button to talk + LLM + TTS (three-bricks-composed-plus-one-new-piece template)
       pyproject.toml
       src/voice_assistant/
-        wake_word.py              <- openWakeWord (ONNX Runtime), the one genuinely new model in this brick
-        session.py                 <- wake->listen->think->speak loop, composing live-translation + doc-qa + voice-clone-studio
+        wake_word.py              <- openWakeWord (ONNX Runtime): a choice, not the default (its models are non-commercial)
+        session.py                 <- listen->think->speak loop, while a button is held or after a wake word, composing live-translation + doc-qa + voice-clone-studio
         cli.py
     expense-extract/           <- receipts -> CSV (concurrent-two-device-pipeline template)
       pyproject.toml

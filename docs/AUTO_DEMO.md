@@ -72,6 +72,20 @@ Built, and tested without a browser or a model (`tests/test_autodemo.py`):
   /api/autodemo/result`, and `POST .../start` (which takes `scenes`, the
   keys to play, and `camera`: "auto" or "off"), `stop`, `pause`, `resume`,
   `skip`.
+- **A report of each run** (2026-10-13). The director keeps count: whole
+  turns, and for each scene how many times it played, failed or was cut
+  short, and the fastest and slowest it did its work, the time its result
+  stays on screen left out. It is written to `logs/autodemo/run-<when the
+  loop started>.json` at the end of every turn and when the loop ends, so a
+  launcher closed in the middle of a loop has left its report as of the last
+  whole turn; the newest thirty runs are kept. `GET /api/autodemo/report`
+  gives the run in hand, or the last one, with a sentence that sums it up,
+  and the start screen says that sentence under "This stand".
+- **Its own expense reports go.** The receipts scene starts its batch with
+  `keep_report` false, and the report is deleted when the scene closes it
+  (at the next turn, if the batch was still stopping then). A person's
+  batches are kept as before. Seventy-five had piled up by 2026-10-13: those
+  are still there, for "Delete saved reports" in the Expense panel.
 - **Keep-awake** while the loop runs (`launcher/keep_awake.py`), and no
   upgrade while it is on.
 - **The page's side** (`static/app.js`, "Start screen, and the Auto Demo's
@@ -212,13 +226,22 @@ overflowed, nothing failed, nothing was left running or loaded.
   of words and will miss some; it is there because asking was not enough.
   The scene does not play without the camera, or with it left out.
 
-Not built yet, most useful first (tracked as R34 in
-[BACKLOG.md](../BACKLOG.md) since 2026-10-10):
+**A morning left alone** (XPS 14 without the B60, 2026-10-13, read
+afterwards from the activity log and from samples of the launcher): twenty
+whole turns from 10:07 to 13:56 in one launcher process, every scene ticked,
+the integrated GPU and the NPU doing all of it. No failure in the director's
+list and no error in the log; the launcher's memory the same in the street
+scene at 10:19 and at 13:54 (19.4 and 19.7 GB); loads the same from the
+second turn to the twentieth (image model 12 s, coder 11 s, detector 1 s);
+the five receipts read to the same character twenty times. The first turn
+after a restart is the slow one (84 to 96 s for each first load). At every
+turn the launcher stops answering for some 13 s while the image model loads.
+R34 was closed on it in [BACKLOG.md](../BACKLOG.md), with what it did not
+show.
 
-- **A run of several hours** on the real machine, watched through the
-  activity log. The loop has been round a few times, not a day.
-- **A whole turn with all six scenes.** Each of the newer ones was watched
-  on its own or in a pair, not the loop from end to end.
+Not built yet, most useful first (tracked as R34 from 2026-10-10 until it
+was closed on 2026-10-13; since then in the backlog's Inbox):
+
 - **The camera scene in front of somebody else**: a visitor holding things
   up, two people, a crowd at a stand. It was watched with one person
   sitting at the laptop, and its picture was not looked at -- only what
@@ -237,8 +260,8 @@ Not built yet, most useful first (tracked as R34 in
 - A camera clip that starts over takes its chip off the hardware panel for
   a second or two; the stage holds its "at work" for six seconds to cover
   it, the panel does not.
-- Deleting the loop's own expense reports (they pile up: one per turn), and
-  unloading the large models between scenes on a machine short of memory.
+- Unloading the large models between scenes on a machine short of memory.
+- A checklist for a stand, at the end of this note.
 - The stage has not been looked at on a stand without the discrete GPU: the
   scenes for it are built and tested, not watched.
 - Step C of the plan below (start and stop by the clock, more camera
@@ -384,7 +407,7 @@ would slot into the playlist once R23 exists.
 | On battery | The integrated GPU ran a third slower on battery (backlog Inbox); warn before starting |
 | Heat | The 30B model went from 38 to 30 tok/s after many runs in a row; alternate heavy and light scenes, with a title card between |
 | Memory | Stop and unload were clean over eight cycles; keep the small models loaded, load the 30B and the 7B per scene |
-| Things pile up | Each expense run saves a report: the loop needs to delete its own report, which needs a delete-one route (today it is all or nothing). The activity log already rotates |
+| Things pile up | Each expense run saves a report: the loop deletes its own (2026-10-13; see "Its own expense reports go" above). The activity log already rotates. Each time the camera is opened, OpenCV's DirectShow capture leaves some ninety handles and two or three threads behind in the launcher: one camera scene a turn makes that five thousand handles in a ten-hour day, against a limit of sixteen million -- start the launcher fresh each day of a show and it never counts |
 | The same page twice | The HTML Creator scenes run with "Same page every time", so the audience gets the pages that were checked |
 | A visitor wants a go | Mouse, key or touch pauses the loop and says so; it resumes after two idle minutes |
 | People on camera | Nothing is recorded; a line on screen says so |
