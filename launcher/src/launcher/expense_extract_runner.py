@@ -38,6 +38,10 @@ class ExpenseExtractRunner:
         # started, until someone clears it. None after a restart, so the
         # brick opens on an empty workspace rather than on an old run.
         self.report_id: str | None = None
+        # Reports started with `keep_report=False`: the Auto Demo's, one at
+        # every turn of its loop, which go when the workspace lets go of
+        # them. Seventy-five had piled up by 2026-10-13.
+        self._not_kept: set[str] = set()
 
     @property
     def running(self) -> bool:
@@ -54,12 +58,16 @@ class ExpenseExtractRunner:
         llm_engine: Engine,
         llm_device: str,
         llm_model: str | None = None,
+        keep_report: bool = True,
     ) -> None:
         worker.refuse_if_busy(_DEMO_ID, self._thread, self._stop_event)
 
         if not pipeline.list_receipt_images(folder):
             raise ValueError("No receipt images found in that folder.")
+        self._let_go()  # of the report before this one, if it was not to be kept
         self.report_id = report_id = self.reports.create(folder)
+        if not keep_report:
+            self._not_kept.add(report_id)
 
         self.error = None
         self._stop_event = threading.Event()
@@ -138,16 +146,25 @@ class ExpenseExtractRunner:
             return
         self._thread = None
 
+    def _let_go(self) -> None:
+        """The workspace's report is no longer shown. One that was started
+        not to be kept is deleted; any other stays saved."""
+        shown, self.report_id = self.report_id, None
+        if shown in self._not_kept:
+            self._not_kept.discard(shown)
+            self.reports.delete(shown)
+
     def close_report(self) -> None:
-        """Empty the workspace for the next run. Nothing is deleted: the
-        report stays saved and can be reopened."""
+        """Empty the workspace for the next run. The report stays saved and
+        can be reopened, unless it was started not to be kept."""
         if self.running:
             raise Conflict("Wait for the batch to finish, or stop it, before clearing its results.")
-        self.report_id = None
+        self._let_go()
 
     def delete_reports(self) -> int:
         """Delete every saved report; returns how many there were."""
         if self.running:
             raise Conflict("Wait for the batch to finish, or stop it, before deleting saved reports.")
         self.report_id = None
+        self._not_kept.clear()
         return self.reports.clear()

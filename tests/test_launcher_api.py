@@ -365,6 +365,10 @@ def test_large_model_badges_state_a_measured_fact():
     for model in badged.values():
         assert model.label and model.gpu_memory_gb > 0 and model.measured_on
     assert not any(hasattr(d, "requires_dgpu") for d in REGISTRY)
+    # The coding model needs 32 GB: said on the three bricks that run it (2026-10-15).
+    needing = {d.id for d in REGISTRY if d.large_model and d.large_model.needs_memory_gb}
+    assert needing == {"code-review-assist", "html-creator", "page-agent"}
+    assert {d.large_model.needs_memory_gb for d in REGISTRY if d.id in needing} == {32}
 
 
 def test_code_review_reports_how_fast_the_answer_came(client, monkeypatch):

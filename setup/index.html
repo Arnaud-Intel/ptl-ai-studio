@@ -111,6 +111,9 @@
   .set small { grid-column: 2; color: var(--text-dim); font-size: 13.5px; }
   .set .size { font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .set .size.have { color: var(--success); font-weight: 600; }
+  .set.unfit { cursor: default; opacity: 0.55; }
+  .set.unfit small em, .demos label em { color: var(--warning); font-style: normal; }
+  .demos label.unfit { cursor: default; opacity: 0.55; }
   .demos { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 6px 14px; margin: 0 0 16px; padding: 12px 14px; border: 1px dashed var(--border-strong); border-radius: 10px; }
   .demos label { display: flex; gap: 8px; align-items: baseline; font-size: 14px; cursor: pointer; }
   .demos label span { margin-left: auto; color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -154,7 +157,7 @@ const STEPS = [
 // The sets of models offered, by the keys of the Studio's own catalogue
 // (core's models.py; a test checks that every key and demo here exists).
 const SETS = [
-  { id: "small", title: "Start small", keys: ["llm-1.5b-ov", "embed-ov", "yolo11s-ov", "street-videos", "whisper-base-ov", "openvoice", "wake-word"],
+  { id: "small", title: "Start small", keys: ["llm-1.5b-ov", "embed-ov", "yolo11s-ov", "street-videos", "whisper-base-ov", "openvoice"],
     text: "Document Q&A, Object Detection, the Smart City Monitor on its sample videos, and the Voice Assistant. Enough to see the three chips work." },
   { id: "auto-light", title: "The Auto Demo, without the page builder",
     keys: ["llm-1.5b-ov", "embed-ov", "vlm-7b-ov", "yolo11s-ov", "street-videos"],
@@ -471,12 +474,20 @@ const PANELS = {
       const keys = keysOf(set.id);
       const amount = weight(keys);
       const done = keys.length > 0 && have(keys);
-      return `<label class="set${set.id === chosenSet ? " on" : ""}"><input type="radio" name="set" value="${set.id}"${set.id === chosenSet ? " checked" : ""} />` +
-        `<b>${esc(set.title)}</b><span class="size${done ? " have" : ""}">${done ? "on this laptop" : set.id === "custom" && !keys.length ? "" : amount ? gb(amount) : "a few MB"}</span><small>${esc(set.text)}</small></label>`;
+      // A set built on a model this laptop cannot run: greyed out, saying why.
+      const blocked = setUnfit(set.id);
+      // "Everything" leaves such a model out, and says so.
+      const dropped = set.keys === null && unfitModels().length ? ` <em>${esc(unfitModels().map((model) => model.label).join(", "))}: left out, too big for this laptop.</em>` : "";
+      return `<label class="set${set.id === chosenSet ? " on" : ""}${blocked ? " unfit" : ""}"><input type="radio" name="set" value="${set.id}"${set.id === chosenSet ? " checked" : ""}${blocked ? " disabled" : ""} />` +
+        `<b>${esc(set.title)}</b><span class="size${done ? " have" : ""}">${blocked ? "" : done ? "on this laptop" : set.id === "custom" && !keys.length ? "" : amount ? gb(amount) : "a few MB"}</span>` +
+        `<small>${esc(set.text)}${blocked ? ` <em>${esc(blocked)}</em>` : dropped}</small></label>`;
     }).join("");
     const demos = chosenSet !== "custom" ? "" : `<div class="demos">` + Object.entries(DEMOS).map(([id, name]) => {
       const keys = keysOfDemo(id);
-      return `<label><input type="checkbox" data-demo="${id}"${chosenDemos.has(id) ? " checked" : ""} /> ${esc(name)}<span>${left(keys)}</span></label>`;
+      const blocked = demoUnfit(id);
+      if (blocked) return `<label class="unfit" title="${esc(blocked)}"><input type="checkbox" disabled /> ${esc(name)}<span><em>too big for this laptop</em></span></label>`;
+      const cpu = demoOnCpuHere(id) ? " <em>(on the CPU here)</em>" : "";
+      return `<label><input type="checkbox" data-demo="${id}"${chosenDemos.has(id) ? " checked" : ""} /> ${esc(name)}${cpu}<span>${left(keys)}</span></label>`;
     }).join("") + `</div>`;
     const tight = free !== null && free !== undefined && need / 1e9 > free - 2;
     return head(5, "The models", intro) +
@@ -519,15 +530,50 @@ const PANELS = {
 
 // ---------------------------------------------------------------- the models
 
+// What the Studio says this laptop cannot run (`unfit`: too little memory,
+// and no discrete GPU to hold it), downloaded already or not: on the disk it
+// does not run either. A Studio from before says nothing of it.
+function unfitModels() {
+  return models ? models.models.filter((model) => model.unfit) : [];
+}
+function isUnfit(key) {
+  return unfitModels().some((model) => model.key === key);
+}
+function intelKeys(id) {
+  return models.models.filter((model) => model.demos.includes(id) && !model.key.endsWith("-portable")).map((model) => model.key);
+}
+function portableKeys(id) {
+  return models.models.filter((model) => model.demos.includes(id) && model.key.endsWith("-portable")).map((model) => model.key);
+}
+// A demo that runs here only with its CPU model in place of a big one.
+function demoOnCpuHere(id) {
+  return intelKeys(id).some(isUnfit) && portableKeys(id).length > 0;
+}
+// Why a demo cannot run here at all, or "".
+function demoUnfit(id) {
+  if (!intelKeys(id).some(isUnfit) || portableKeys(id).length) return "";
+  return (models.models.find((model) => model.demos.includes(id) && isUnfit(model.key)) || {}).unfit || "";
+}
+// Why a set cannot be had here, or "": it is built on a model this laptop cannot run.
+function setUnfit(setId) {
+  const set = SETS.find((entry) => entry.id === setId);
+  if (!models || !set || !set.keys || !set.keys.length) return "";
+  const blocking = models.models.find((model) => set.keys.includes(model.key) && isUnfit(model.key));
+  return blocking ? blocking.unfit : "";
+}
 function keysOfDemo(id) {
   // What a demo needs to run on the Intel chips: its models, but for the
-  // stand-ins the CPU-only engine uses in their place.
-  return models.models.filter((model) => model.demos.includes(id) && !model.key.endsWith("-portable")).map((model) => model.key);
+  // stand-ins the CPU-only engine uses in their place -- unless one of them is
+  // too big for this laptop, and then its CPU model is what it runs on.
+  if (demoUnfit(id)) return [];
+  if (demoOnCpuHere(id)) return [...intelKeys(id).filter((key) => !isUnfit(key)), ...portableKeys(id)];
+  return intelKeys(id).filter((key) => !isUnfit(key));
 }
 function keysOf(setId) {
   if (!models) return [];
   const set = SETS.find((entry) => entry.id === setId);
-  if (set.keys === null) return models.models.map((model) => model.key);
+  if (setUnfit(setId)) return [];
+  if (set.keys === null) return models.models.map((model) => model.key).filter((key) => !isUnfit(key));
   if (setId === "custom") return [...new Set([...chosenDemos].flatMap(keysOfDemo))];
   // The page builder's planner: the NPU's own build where there is an NPU.
   const npu = !!(state.probe && state.probe.chips.some((chip) => chip.name === "NPU" && chip.found));
@@ -537,6 +583,8 @@ async function lookAtModels() {
   if (finished || !state || state.studio.state !== "running" || !["models", "ready"].includes(view)) return;
   try {
     models = await call("/studio/api/models");
+    if (setUnfit(chosenSet)) chosenSet = "auto-light";
+    for (const id of [...chosenDemos]) if (demoUnfit(id)) chosenDemos.delete(id);
     draw(false);
   } catch (error) {
     // The Studio is busy starting, or was closed: the next look will tell.

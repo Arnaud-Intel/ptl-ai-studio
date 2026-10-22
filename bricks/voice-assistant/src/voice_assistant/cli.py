@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+import threading
 
 from pantherlake_ai_core import engine as engine_mod
 
 from . import session
-from .wake_word import AVAILABLE_WAKE_WORDS, DEFAULT_WAKE_WORD
+from .wake_word import AVAILABLE_WAKE_WORDS
 
 # Whisper size per engine -- see live-translation's CLI for why.
 _WHISPER_SIZE_DEFAULTS = {engine_mod.Engine.PORTABLE: "small", engine_mod.Engine.OPENVINO: "base"}
@@ -16,11 +17,12 @@ _WHISPER_SIZE_DEFAULTS = {engine_mod.Engine.PORTABLE: "small", engine_mod.Engine
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="voice-assistant",
-        description="Say the wake word, ask a question, hear a spoken answer -- fully on-device.",
+        description="Press Enter, ask a question, press Enter again, hear a spoken answer -- fully on-device.",
     )
     p.add_argument(
-        "--wake-word", choices=AVAILABLE_WAKE_WORDS, default=DEFAULT_WAKE_WORD,
-        help=f"Wake word to listen for. Default: {DEFAULT_WAKE_WORD}",
+        "--wake-word", choices=AVAILABLE_WAKE_WORDS, default=None,
+        help="Listen for this wake word instead of waiting for Enter. Its model is openWakeWord's, "
+             "for non-commercial use (CC BY-NC-SA 4.0). Default: none.",
     )
     p.add_argument(
         "--wake-threshold", type=float, default=0.5,
@@ -74,13 +76,31 @@ def main(argv: list[str] | None = None) -> int:
     compute_device = args.compute_device or engine_mod.default_device(engine)
 
     print(
-        f"Loading wake word '{args.wake_word}', Whisper '{whisper_model}', LLM, and TTS "
+        (f"Loading wake word '{args.wake_word}', " if args.wake_word else "Loading ")
+        + f"Whisper '{whisper_model}', LLM, and TTS "
         f"(engine={engine.value}, device={compute_device})... this may download models on first use."
     )
-    print(f'Say "{args.wake_word.replace("_", " ")}" to start. Press Ctrl+C to stop.\n')
+    # With no wake word, Enter is the button: once to start a question, once to end it.
+    talk = threading.Event()
+    if args.wake_word:
+        print(f'Say "{args.wake_word.replace("_", " ")}" to start. Press Ctrl+C to stop.\n')
+    else:
+        print("Press Enter, ask, and press Enter again. Press Ctrl+C to stop.\n")
+
+        def enter_is_the_button() -> None:
+            for _ in sys.stdin:
+                if talk.is_set():
+                    talk.clear()
+                else:
+                    talk.set()
+
+        threading.Thread(target=enter_is_the_button, daemon=True).start()
 
     def handle_wake() -> None:
-        print("(wake word heard -- listening for your question...)")
+        print("(wake word heard -- listening for your question...)" if args.wake_word else "(listening -- Enter when you are done)")
+
+    def handle_missed(reason: str) -> None:
+        print(f"({reason})")
 
     def handle_heard(text: str) -> None:
         print(f"You: {text}")
@@ -96,8 +116,10 @@ def main(argv: list[str] | None = None) -> int:
             compute_device=compute_device,
             wake_word=args.wake_word,
             wake_threshold=args.wake_threshold,
+            talk=talk,
             llm_model=args.llm_model,
             on_wake=handle_wake,
+            on_missed=handle_missed,
             on_heard=handle_heard,
             on_reply=handle_reply,
             speak_replies=not args.no_speak,

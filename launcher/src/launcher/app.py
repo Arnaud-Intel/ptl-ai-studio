@@ -49,6 +49,7 @@ from fastapi.staticfiles import StaticFiles
 from live_translation.languages import SPOKEN_LANGUAGES, spoken_language
 from page_agent import conductor as page_agent_conductor
 from pantherlake_ai_core import audio, npu, video
+from pantherlake_ai_core import machine as machine_fit
 from pantherlake_ai_core import engine as engine_mod
 from pantherlake_ai_core.engine import (
     Engine,
@@ -374,9 +375,28 @@ def index() -> HTMLResponse:
     return HTMLResponse(html, headers={"Cache-Control": "no-store, must-revalidate"})
 
 
+def large_model_unfit(demo_id: str, device: str | None = None) -> str | None:
+    """Why this demo's large model cannot run on this laptop -- on `device`,
+    or wherever the app would put it -- or None. Only a model whose memory
+    need is stated (registry.LargeModel.needs_memory_gb) is asked about."""
+    demo = registry.get(demo_id)
+    needs = demo.large_model.needs_memory_gb if demo and demo.large_model else None
+    return machine_fit.unfit_reason(needs, device)
+
+
+def _refuse_if_unfit(demo_id: str, device: str, *, portable: bool) -> None:
+    """Refuse, before anything is loaded, a large model this laptop cannot
+    hold: the page greys it out, and a request made anyway gets the reason."""
+    reason = large_model_unfit(demo_id, device)
+    if reason:
+        raise ValueError(reason + (" Choose the portable engine: it runs a small model on the CPU." if portable else ""))
+
+
 @app.get("/api/demos")
 def list_demos() -> JSONResponse:
-    return JSONResponse([asdict(d) for d in registry.REGISTRY])
+    """Every demo, with `unfit`: why its large model cannot run on this
+    laptop, or None."""
+    return JSONResponse([{**asdict(d), "unfit": large_model_unfit(d.id)} for d in registry.REGISTRY])
 
 
 @app.get("/api/version")
@@ -576,6 +596,13 @@ _DEVICE_SOURCES: dict[str, Callable[[], Any]] = {
 }
 
 
+@app.get("/api/system/memory")
+def system_memory() -> JSONResponse:
+    """The laptop's memory and the discrete GPU that can hold a large model
+    by itself (pantherlake_ai_core.machine), for what offers such a model."""
+    return JSONResponse(machine_fit.describe())
+
+
 @app.get("/api/{demo_id}/devices")
 def demo_devices(demo_id: str) -> JSONResponse:
     """What this demo's controls can pick from on this machine: the
@@ -586,6 +613,18 @@ def demo_devices(demo_id: str) -> JSONResponse:
     if demo is None or demo.status != "available":
         return JSONResponse({"error": f"unknown demo '{demo_id}'"}, status_code=404)
     payload: dict[str, Any] = {"openvino_devices": list_openvino_devices()}
+    needs = demo.large_model.needs_memory_gb if demo.large_model else None
+    if needs:
+        # The large model, greyed out where this laptop cannot hold it: the
+        # whole engine with no discrete GPU to take it, else each chip that is
+        # not that GPU.
+        whole = large_model_unfit(demo_id)
+        if whole:
+            payload["openvino_unfit"] = whole
+        short = f"needs {needs} GB of memory on this laptop"
+        payload["openvino_unsupported"] = {
+            device: short for device in payload["openvino_devices"] if large_model_unfit(demo_id, device)
+        }
     choice = _language_models(demo_id)
     if choice is not None:
         payload["language_models"] = choice
@@ -1527,11 +1566,18 @@ class VoiceAssistantStartRequest(BaseModel):
     engine: str | None = None
     whisper_model: str | None = None
     compute_device: str | None = None
-    wake_word: str = "hey_jarvis"
+    # None: a question is what is said while the panel's button is held. A
+    # wake word is a choice -- its models are for non-commercial use
+    # (docs/MODEL_LICENCES.md).
+    wake_word: str | None = None
     wake_threshold: float = 0.5
     speak_replies: bool = True
     # Which language model answers: a key of doc-qa's language_models.
     llm_model: str | None = None
+
+
+class VoiceAssistantTalkRequest(BaseModel):
+    down: bool
 
 
 @app.post("/api/voice-assistant/start")
@@ -1546,20 +1592,31 @@ async def start_voice_assistant(req: VoiceAssistantStartRequest) -> JSONResponse
             engine=engine,
             whisper_model_size=req.whisper_model or _WHISPER_SIZE_DEFAULTS[engine],
             compute_device=device,
-            wake_word=req.wake_word,
+            wake_word=req.wake_word or None,
             wake_threshold=req.wake_threshold,
             speak_replies=req.speak_replies,
             llm_model=llm_model,
         )
     except Exception as exc:
         return error_response(exc)
-    return JSONResponse({"status": "started"})
+    return JSONResponse({"status": "started", "trigger": voice_assistant_runner.trigger})
 
 
 @app.post("/api/voice-assistant/stop")
 async def stop_voice_assistant() -> JSONResponse:
     voice_assistant_runner.stop()
     return JSONResponse({"status": "stopped"})
+
+
+@app.get("/api/voice-assistant/state")
+async def voice_assistant_state() -> JSONResponse:
+    return JSONResponse(voice_assistant_runner.state())
+
+
+@app.post("/api/voice-assistant/talk")
+async def voice_assistant_talk(req: VoiceAssistantTalkRequest) -> JSONResponse:
+    """The panel's button: down while a question is asked, up when it ends."""
+    return JSONResponse({"taken": voice_assistant_runner.talk(req.down), **voice_assistant_runner.state()})
 
 
 @app.websocket("/ws/voice-assistant")
@@ -1578,6 +1635,9 @@ class ExpenseExtractStartRequest(BaseModel):
     llm_compute_device: str | None = None
     # Which language model makes the lines: a key of doc-qa's language_models.
     llm_model: str | None = None
+    # False: the report is deleted when the workspace is emptied or the next
+    # batch starts. The Auto Demo's, which makes one at every turn of its loop.
+    keep_report: bool = True
 
 
 @app.post("/api/expense-extract/start")
@@ -1595,6 +1655,7 @@ async def start_expense_extract(req: ExpenseExtractStartRequest) -> JSONResponse
             llm_engine=llm_engine,
             llm_device=llm_device,
             llm_model=llm_model,
+            keep_report=req.keep_report,
         )
     except Exception as exc:
         return error_response(exc)
@@ -1617,7 +1678,8 @@ def expense_report(report_id: str | None = None):
 
 @app.post("/api/expense-extract/report/close")
 def close_expense_report() -> JSONResponse:
-    """Empty the workspace for the next run. The report stays saved."""
+    """Empty the workspace for the next run. The report stays saved, unless
+    it was started with `keep_report` false."""
     try:
         expense_extract_runner.close_report()
     except Exception as exc:
@@ -1812,6 +1874,8 @@ class CodeReviewRequest(BaseModel):
 async def code_review_assist_review(req: CodeReviewRequest) -> JSONResponse:
     try:
         engine, device = resolve(req.engine, req.compute_device, large_model=True)
+        if engine == Engine.OPENVINO:
+            _refuse_if_unfit("code-review-assist", device, portable=True)
         result = await run_in_threadpool(
             code_review_assist_runner.review,
             engine=engine.value,
@@ -1854,6 +1918,8 @@ class HtmlCreatorRequest(BaseModel):
 async def html_creator_generate(req: HtmlCreatorRequest) -> JSONResponse:
     try:
         engine, device = resolve(req.engine, req.compute_device, large_model=True)
+        if engine == Engine.OPENVINO:
+            _refuse_if_unfit("html-creator", device, portable=True)
         result = await run_in_threadpool(
             html_creator_runner.generate,
             engine=engine.value,
@@ -2035,6 +2101,7 @@ async def page_agent_build(req: PageAgentRequest) -> JSONResponse:
         if not req.request.strip():
             raise ValueError("Describe the page to build.")
         assignment = _page_agent_assignment(req.planner_device, req.image_device, req.page_device)
+        _refuse_if_unfit("page-agent", assignment.page, portable=False)  # the coding model writes the page
         result = await run_in_threadpool(page_agent_runner.build, request=req.request, assignment=assignment)
     except Exception as exc:
         return error_response(exc)
@@ -2169,7 +2236,11 @@ def _street_cameras_reachable() -> bool:
         return False
 
 
-autodemo_director = autodemo.Director(_own_route, autodemo_scenes.PLAYLIST, online=_street_cameras_reachable)
+# Each run's report, written at the end of every turn and when the loop ends.
+autodemo_reports = autodemo.ReportFiles(Path(__file__).resolve().parents[3] / "logs" / "autodemo")
+autodemo_director = autodemo.Director(
+    _own_route, autodemo_scenes.PLAYLIST, online=_street_cameras_reachable, report_to=autodemo_reports,
+)
 
 
 class AutoDemoRequest(BaseModel):
@@ -2211,6 +2282,21 @@ def autodemo_result() -> JSONResponse:
     if result is None:
         return JSONResponse({"error": "The scene in hand has no result yet."}, status_code=404)
     return JSONResponse(result)
+
+
+@app.get("/api/autodemo/report")
+def autodemo_report() -> JSONResponse:
+    """The run in hand in figures, or the last one: turns, each scene's
+    count and its fastest and slowest, the failures. `file` is where it is
+    kept, under logs/autodemo. After a restart, the last run on the disk."""
+    report = autodemo_director.report()
+    if report is not None:
+        report = {**report, "file": autodemo_reports.path(report).name}
+    else:
+        report = autodemo_reports.latest()
+    if report is None:
+        return JSONResponse({"error": "The Auto Demo has not been run yet."}, status_code=404)
+    return JSONResponse(report)
 
 
 @app.post("/api/autodemo/start")

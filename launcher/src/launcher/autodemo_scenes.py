@@ -36,6 +36,7 @@ from __future__ import annotations
 import re
 
 from html_creator import revise
+from pantherlake_ai_core import machine, models
 
 from .autodemo import Ask, Beat, Chip, Entry, Scene, Skip, Slot, Stand, Start, Until, Wait
 
@@ -121,6 +122,13 @@ def page_agent(stand: Stand, loop: int) -> Scene | Skip:
     title = say("Three models, three chips, one web page", "Trois modèles, trois puces, une page web")
     if not stand.igpu:
         return Skip(title, "needs a GPU for the image model and the coding model")
+    # The coding model alone takes 17 GB: on the integrated GPU, from the
+    # laptop's own memory. A discrete GPU that holds it makes up for that.
+    needs = models.BY_KEY["coder-30b-ov"].needs_memory_gb
+    held = stand.dgpu is not None and stand.dgpu == stand.big_gpu
+    if needs and not held and machine.short_of(needs, stand.memory_gb):
+        return Skip(title, f"needs {needs} GB of memory or an Arc Pro B60 for its coding model: "
+                           f"this laptop has {stand.memory_gb:.0f} GB")
     sample = _sample(stand, "page-agent", loop - 1)
     if sample is None:
         return Skip(title, "its sample requests could not be read")
@@ -282,6 +290,10 @@ def expense_extraction(stand: Stand, loop: int) -> Scene | Skip:
             Start("/api/expense-extract/start", {
                 "folder": sample["folder"], "ocr_engine": "openvino", "ocr_compute_device": stand.igpu,
                 "llm_engine": "openvino", "llm_compute_device": structuring,
+                # The loop's own, one a turn: it goes when the scene closes it
+                # (`stop`, below), or at the next turn if the batch was still
+                # stopping then.
+                "keep_report": False,
             }),
             Wait(3.0),
             Until("/api/expense-extract/report", "running", False, timeout=300.0),

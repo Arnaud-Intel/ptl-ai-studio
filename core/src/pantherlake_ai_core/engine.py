@@ -203,6 +203,10 @@ class GpuDevice:
     id: str  # "GPU.0", "GPU.1", ... or bare "GPU" on a single-GPU machine
     full_name: str  # e.g. "Intel(R) Arc(TM) Pro B60 Graphics (dGPU)"
     luid: str | None  # see _luid_to_perfcounter_key(); None if unavailable
+    # Its own memory, as OpenVINO reports it (GPU_DEVICE_TOTAL_MEM_SIZE); None
+    # if unavailable. What decides whether a discrete GPU holds a large model
+    # by itself (machine.big_discrete_gpu).
+    memory_bytes: int | None = None
 
 
 def _luid_to_perfcounter_key(raw_luid: str) -> str | None:
@@ -247,7 +251,11 @@ def _gpu_devices() -> tuple[GpuDevice, ...]:
         except Exception:
             raw_luid = None
         luid = _luid_to_perfcounter_key(raw_luid) if raw_luid else None
-        devices.append(GpuDevice(id=device_id, full_name=full_name, luid=luid))
+        try:
+            memory_bytes = int(core.get_property(device_id, "GPU_DEVICE_TOTAL_MEM_SIZE"))
+        except Exception:
+            memory_bytes = None
+        devices.append(GpuDevice(id=device_id, full_name=full_name, luid=luid, memory_bytes=memory_bytes))
     return tuple(devices)
 
 

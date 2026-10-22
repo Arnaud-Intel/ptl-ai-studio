@@ -22,6 +22,8 @@ processed/
 .cache/
 
 *.log
+# The activity log rolls over to events.log.1, .2, .3 (launcher/events.py).
+logs/events.log.*
 logs/expense-reports.sqlite3*
 .vscode/
 .idea/
@@ -37,6 +39,9 @@ sample-data/videos/*
 
 # What the in-app upgrade last did (see launcher/updates.py); its log is *.log.
 logs/upgrade-result.json
+
+# The Auto Demo's report of each run (launcher/autodemo.py, ReportFiles).
+logs/autodemo/
 
 # What the setup assistant leaves on a laptop (see setup/): the installer it
 # downloaded for a machine that had none, and what the chips check last found.

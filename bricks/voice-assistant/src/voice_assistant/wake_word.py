@@ -1,5 +1,11 @@
 """Always-listening wake-word detection via openWakeWord (ONNX Runtime).
 
+A choice, not the default: the assistant listens while a button is held
+unless a wake word is asked for. openWakeWord's code is Apache-2.0, but the
+models it comes with -- every word below -- are CC BY-NC-SA 4.0, for
+non-commercial use (docs/MODEL_LICENCES.md, decided 2026-10-13). Nothing of
+it is loaded or fetched until a wake word is chosen.
+
 Deliberately not split into portable/openvino engine variants like every
 other model in this workspace: wake-word detection is a tiny classifier
 meant to run continuously in the background at near-zero CPU cost -- it

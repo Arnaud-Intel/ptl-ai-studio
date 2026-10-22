@@ -23,9 +23,11 @@ to load one day takes fifteen the next.
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 from . import keep_awake as awake
@@ -170,6 +172,11 @@ class Stand:
     internet: bool = False
     big_screen: bool = False
     lang: str = "en"  # the language the story is told in
+    # The laptop's memory, and the discrete GPU that holds a large model by
+    # itself (pantherlake_ai_core.machine): a scene whose model needs more
+    # than the laptop has, with no such GPU in use, cannot play.
+    memory_gb: float | None = None
+    big_gpu: str | None = None
     # A demo's bundled samples, by demo id, fetched when a scene asks.
     samples: Callable[[str], list[dict]] = lambda demo: []
 
@@ -223,6 +230,49 @@ def _never(host: str = "", port: int = 0) -> bool:
     return False
 
 
+def _spoken(seconds: float) -> str:
+    """A length of time the way it is said: "45 s", "12 min", "3 h 49 min"."""
+    seconds = int(round(seconds))
+    if seconds < 90:
+        return f"{seconds} s"
+    hours, minutes = divmod(round(seconds / 60), 60)
+    return f"{hours} h {minutes:02d} min" if hours else f"{minutes} min"
+
+
+class ReportFiles:
+    """Where a run's report is kept: a file of its own in `folder`, named
+    for when the loop started and written again as the run goes on, so that
+    a launcher closed in the middle of a loop has left its report as of the
+    last whole turn. The newest `keep` runs are kept."""
+
+    def __init__(self, folder: Path, keep: int = 30):
+        self.folder, self._keep = Path(folder), keep
+
+    def path(self, report: dict) -> Path:
+        return self.folder / time.strftime("run-%Y%m%d-%H%M%S.json", time.localtime(report["started_at"]))
+
+    def __call__(self, report: dict) -> None:
+        self.folder.mkdir(parents=True, exist_ok=True)
+        target = self.path(report)
+        fresh = target.with_suffix(".part")
+        fresh.write_text(json.dumps(report, indent=1), encoding="utf-8")
+        fresh.replace(target)  # whole, or the one before: never half of one
+        for old in sorted(self.folder.glob("run-*.json"))[:-self._keep]:
+            old.unlink(missing_ok=True)
+
+    def latest(self) -> dict | None:
+        """The newest report on the disk, with the file it is in; None if
+        there is none that can be read."""
+        for path in sorted(self.folder.glob("run-*.json"), reverse=True):
+            try:
+                report = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(report, dict):
+                return {**report, "file": path.name}
+        return None
+
+
 class Director:
     """Plays a playlist in a loop until told to stop.
 
@@ -234,6 +284,10 @@ class Director:
       `idle_resume` seconds, because a stand that waits for an answer from
       somebody who has walked away has stopped for the day.
     - Whatever a scene started is stopped when it ends, however it ends.
+    - It keeps count: turns, and for each scene how many times it played,
+      failed or was cut short, and the fastest and slowest it did its work.
+      `report()` says so; `report_to` is given it at the end of every turn
+      and when the loop ends (`ReportFiles` keeps it on the disk).
     """
 
     def __init__(
@@ -247,8 +301,9 @@ class Director:
         poll: float = 0.5,
         busy_wait: float = 75.0,
         keep_awake: tuple[Callable[[], bool], Callable[[], None]] = (awake.hold, awake.release),
+        report_to: Callable[[dict], None] | None = None,
     ):
-        self._call, self._online = call, online
+        self._call, self._online, self._report_to = call, online, report_to
         self._playlist: list[tuple[Entry, ...]] = [self._slot(slot, index) for index, slot in enumerate(playlist)]
         self._idle_resume, self._max_failures, self._poll = idle_resume, max_failures, poll
         # How long a demo that says it is busy is waited for. A page being
@@ -265,6 +320,10 @@ class Director:
         self._resumes_at = 0.0
         self._result: dict | None = None
         self._state: dict = self._fresh()
+        # The run's count, for its report: whole turns, and each scene by id.
+        self._turns = 0
+        self._tally: dict[str, dict] = {}
+        self._ended_at: float | None = None
 
     # ------------------------------------------------------------------ from outside
 
@@ -299,6 +358,39 @@ class Director:
         those it kept by name}`."""
         with self._lock:
             return self._result
+
+    def report(self) -> dict | None:
+        """The run in hand, or the last one since the launcher started, in
+        figures: how long, how many whole turns, and each scene with how
+        many times it played, failed or was cut short (stopped or skipped
+        before its work was done) and the fastest and slowest it did that
+        work, in seconds, the time its result then stays on screen left out.
+        `summary` says it in a sentence. None if no loop was started."""
+        with self._lock:
+            started = self._state["started_at"]
+            if started is None:
+                return None
+            ended = self._ended_at
+            scenes = [
+                {**entry, "fastest": round(entry["fastest"], 1) if entry["fastest"] is not None else None,
+                 "slowest": round(entry["slowest"], 1) if entry["slowest"] is not None else None}
+                for entry in self._tally.values()
+            ]
+            report = {
+                "started_at": started, "ended_at": ended, "seconds": round((ended or time.time()) - started),
+                "turns": self._turns, "stand": self._state["stand"], "scenes": scenes,
+                "played": sum(scene["played"] for scene in scenes), "failed": sum(scene["failed"] for scene in scenes),
+                "cut_short": sum(scene["cut_short"] for scene in scenes),
+                "failures": list(self._state["failures"]), "notice": self._state["notice"],
+            }
+        turns, failed = report["turns"], report["failed"]
+        report["summary"] = (
+            f"{turns} whole turn{'' if turns == 1 else 's'} in {_spoken(report['seconds'])}, "
+            f"{report['played']} scene{'' if report['played'] == 1 else 's'} played, "
+            + (f"{failed} failed" if failed else "none failed")
+            + ("." if ended else ", and still going.")
+        )
+        return report
 
     @staticmethod
     def _slot(slot: Slot, index: int) -> tuple[Entry, ...]:
@@ -361,6 +453,7 @@ class Director:
         with self._lock:
             self._state = {**self._fresh(), "state": CHECKING, "started_at": time.time()}
             self._result = None
+            self._turns, self._tally, self._ended_at = 0, {}, None
         self._thread = threading.Thread(
             target=self._run,
             kwargs={"dgpu": dgpu, "big_screen": big_screen, "lang": lang, "camera": camera, "chosen": chosen},
@@ -425,6 +518,10 @@ class Director:
         discrete = [gpu["id"] for gpu in gpus if "dGPU" in gpu.get("full_name", "")]
         integrated = [gpu["id"] for gpu in gpus if "dGPU" not in gpu.get("full_name", "")]
         cache: dict[str, list[dict]] = {}
+        try:
+            memory = self._call("GET", "/api/system/memory", None, 15) or {}
+        except Exception:
+            memory = {}  # a launcher that cannot tell: no scene is held back for it
 
         def samples(demo: str) -> list[dict]:
             if demo not in cache:
@@ -443,6 +540,8 @@ class Director:
             big_screen=big_screen,
             lang=lang if lang in LANGUAGES else "en",
             samples=samples,
+            memory_gb=memory.get("memory_gb") if isinstance(memory, dict) else None,
+            big_gpu=memory.get("big_discrete_gpu") if isinstance(memory, dict) else None,
         )
 
     @staticmethod
@@ -451,6 +550,7 @@ class Director:
             "npu": stand.npu, "igpu": stand.igpu, "dgpu": stand.dgpu, "cameras": len(stand.cameras),
             "cameras_found": max(stand.cameras_found, len(stand.cameras)),
             "internet": stand.internet, "big_screen": stand.big_screen, "lang": stand.lang,
+            "memory_gb": stand.memory_gb,
         }
 
     @staticmethod
@@ -526,11 +626,41 @@ class Director:
                         f"{entry['title']} ({entry['reason']})" for entry in listing if entry["chosen"]
                     )
                     return
+                if not self._stop.is_set():
+                    with self._lock:
+                        self._turns = loop
+                    self._hand_in_report()
         except Exception as exc:  # the stand could not even be looked at
             notice = f"The Auto Demo could not start: {exc}"
         finally:
             self._release_awake()
+            with self._lock:
+                self._ended_at = time.time()
+                self._state["notice"] = notice
+            # Before the loop says it has ended: whoever sees "idle" finds the report there.
+            self._hand_in_report()
             self._set(state=STOPPED if notice else IDLE, scene=None, paused=None, notice=notice, awake=False)
+
+    def _hand_in_report(self) -> None:
+        if self._report_to is None:
+            return
+        try:
+            self._report_to(self.report())
+        except Exception:
+            pass  # a report that cannot be written does not stop the loop
+
+    def _count(self, scene: Scene, outcome: str, worked: float | None) -> None:
+        """One more time `scene` was played ("played"), failed ("failed") or
+        was ended from outside before its work was done ("cut_short")."""
+        with self._lock:
+            entry = self._tally.setdefault(scene.id, {
+                "id": scene.id, "title": scene.title, "played": 0, "failed": 0, "cut_short": 0,
+                "fastest": None, "slowest": None,
+            })
+            entry[outcome] += 1
+            if outcome == "played" and worked is not None:
+                entry["fastest"] = worked if entry["fastest"] is None else min(entry["fastest"], worked)
+                entry["slowest"] = worked if entry["slowest"] is None else max(entry["slowest"], worked)
 
     def _wait_while_paused(self, between_scenes: bool = False) -> None:
         """Hold here for as long as the loop is paused: until it is resumed,
@@ -569,10 +699,14 @@ class Director:
                     "asked": {}, "missed": [],
                 },
             )
-        deadline = time.monotonic() + scene.at_most
+        began = time.monotonic()
+        deadline = began + scene.at_most
+        worked: float | None = None  # how long its work took, once it is done
+        outcome = "cut_short"
         try:
             for step in scene.steps:
                 self._do(step, scene, deadline)
+            worked, outcome = time.monotonic() - began, "played"
             self._phase("showing", ends_by=time.time() + scene.hold)
             self._pause_for(scene.hold)
             self._wait_while_paused()  # held on its result for as long as the loop is
@@ -580,12 +714,14 @@ class Director:
         except _Interrupted:
             return True
         except Exception as exc:
+            outcome = "failed"
             with self._lock:
                 self._state["failures"] = [
                     *self._state["failures"][-9:], {"scene": scene.id, "title": scene.title, "error": str(exc), "at": time.time()},
                 ]
             return False
         finally:
+            self._count(scene, outcome, worked)
             for path in scene.stop:
                 try:
                     self._call("POST", path, {}, 60)

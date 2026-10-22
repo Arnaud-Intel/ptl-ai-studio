@@ -442,9 +442,22 @@ function wireEngineAndDevice(engineSelect, deviceSelect, data, options = {}) {
   const openvinoDevices = data.openvino_devices || [];
   const openvinoOption = engineSelect.querySelector('option[value="openvino"]');
   const hasOpenvino = openvinoDevices.length > 0;
-  openvinoOption.disabled = !hasOpenvino;
-  if (!hasOpenvino) openvinoOption.textContent = `${openvinoOption.textContent} -- not installed for this brick`;
-  if (hasOpenvino) engineSelect.value = "openvino";
+  // The brick's large model, where this laptop cannot hold it (data.openvino_unfit):
+  // the engine is shown greyed out with why, and the portable one is chosen.
+  const unfit = data.openvino_unfit;
+  // The label as the markup has it: a panel opened again is wired again, and
+  // must not say "not installed" twice.
+  openvinoOption.dataset.label ??= openvinoOption.textContent;
+  const label = openvinoOption.dataset.label;
+  openvinoOption.disabled = !hasOpenvino || Boolean(unfit);
+  openvinoOption.title = unfit || "";
+  openvinoOption.textContent = !hasOpenvino
+    ? `${label} -- not installed for this brick`
+    : unfit
+      ? `${label} -- needs more memory than this laptop has`
+      : label;
+  if (hasOpenvino && !unfit) engineSelect.value = "openvino";
+  else if (engineSelect.querySelector('option[value="portable"]')) engineSelect.value = "portable";
 
   // What the user last chose, per engine. Switching engine rebuilds the
   // list (the two engines offer different devices), and without this a
@@ -1502,7 +1515,13 @@ const PANELS = {
         { value: "", label: "Default microphone" },
         ...(data.microphones || []).map((n) => ({ value: n, label: n })),
       ]);
-      fillSelect(el("va-wake-word"), (data.wake_words || []).map((w) => ({ value: w, label: w.replace(/_/g, " ") })));
+      // No wake word is the default: a question is what is said while the
+      // button is held. The wake words are openWakeWord's models, which are
+      // for non-commercial use, and say so.
+      fillSelect(el("va-wake-word"), [
+        { value: "", label: "None: hold the button to talk" },
+        ...(data.wake_words || []).map((w) => ({ value: w, label: `${w.replace(/_/g, " ")} (non-commercial model)` })),
+      ]);
       wireEngineAndDevice(el("va-engine"), el("va-compute-device"), data);
       wireLanguageModel(el("va-model"), data, { engine: el("va-engine"), device: el("va-compute-device") });
     },
@@ -1512,13 +1531,95 @@ const PANELS = {
         engine: el("va-engine").value,
         compute_device: el("va-compute-device").value,
         llm_model: languageModelOf(el("va-model")),
-        wake_word: el("va-wake-word").value,
+        // Left out when there is none, not sent as null: a launcher started
+        // before the button existed then keeps its wake word and still starts.
+        wake_word: el("va-wake-word").value || undefined,
         speak_replies: el("va-speak").checked,
       };
     },
+    // The button's states: "off" (no run, or a run on a wake word), "loading"
+    // (the models), "ready", "held", and "busy" while an answer is written
+    // and said -- the launcher says when that is over ("idle").
+    talkState: "off",
+    setTalk(state) {
+      this.talkState = state;
+      const button = el("va-talk");
+      el("va-talk-row").hidden = state === "off";
+      button.disabled = !(state === "ready" || state === "held");
+      button.setAttribute("aria-pressed", String(state === "held"));
+      button.textContent = { loading: "Loading…", held: "Listening: release when done", busy: "Answering…" }[state] || "Hold to talk";
+    },
+    // Down and up reach the launcher in the order they happened, whatever
+    // the network between this page and it does.
+    talk(down) {
+      if (down ? this.talkState !== "ready" : this.talkState !== "held") return;
+      this.setTalk(down ? "held" : "busy");
+      this.talkSent = (this.talkSent || Promise.resolve()).then(async () => {
+        let answer = null;
+        try {
+          answer = await postJSON("/api/voice-assistant/talk", { down });
+        } catch (err) { /* the run ended meanwhile: its "stopped" message says so */ }
+        // Released, and the launcher is waiting for a question already: the
+        // press was too quick to be seen, or it stopped listening by itself
+        // (a question has a longest length) and has answered since. Nothing
+        // more will come for this press.
+        if (!down && answer && answer.listening && this.talkState === "busy") this.setTalk("ready");
+      });
+    },
+    wireExtra() {
+      const button = el("va-talk");
+      button.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
+        // Held, the button keeps the pointer: sliding off it is not letting go.
+        try { button.setPointerCapture(event.pointerId); } catch (err) { /* a pointer that cannot be kept */ }
+        this.talk(true);
+      });
+      for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) button.addEventListener(type, () => this.talk(false));
+      // The space bar is the button too, wherever the focus is on this
+      // panel, except in a control that has its own use for it.
+      const isSpace = (event) =>
+        event.key === " " && this.isOpen && this.talkState !== "off" &&
+        (event.target === button || !event.target.closest("input, select, textarea, button, a, [contenteditable]"));
+      document.addEventListener("keydown", (event) => {
+        if (!isSpace(event)) return;
+        event.preventDefault();  // neither a click on the button nor a page that scrolls
+        if (!event.repeat) this.talk(true);
+      });
+      document.addEventListener("keyup", (event) => {
+        if (!isSpace(event)) return;
+        event.preventDefault();
+        this.talk(false);
+      });
+      // A window that loses the focus never sees the button come up.
+      window.addEventListener("blur", () => this.talk(false));
+    },
+    onStarted(data) {
+      this.trigger = data.trigger;
+    },
+    onRunning(isRunning) {
+      if (!isRunning) this.setTalk("off");
+      else if (this.trigger === "button" && this.talkState === "off") this.setTalk("loading");
+    },
+    // A run started on an earlier visit: is it the button's, and is it ready?
+    async rehydrate() {
+      await StreamPanel.prototype.rehydrate.call(this);
+      if (!this.running) return;
+      try {
+        const state = await fetchJSON("/api/voice-assistant/state");
+        this.trigger = state.trigger;
+        this.setTalk(!state.running || state.trigger !== "button" ? "off" : state.listening ? "ready" : "loading");
+      } catch (err) { /* the status line already says what is wrong */ }
+    },
     onMessage(message) {
       const box = el("va-transcript");
-      if (message.type === "wake") appendLine(box, "line-note", "Wake word heard -- listening for your question...");
+      const byButton = this.trigger === "button";
+      if (message.type === "ready" && message.trigger === "button") {
+        this.trigger = "button";
+        this.setTalk("ready");
+      } else if (message.type === "idle" && byButton) {
+        if (this.talkState !== "held") this.setTalk("ready");
+      } else if (message.type === "wake" && !byButton) appendLine(box, "line-note", "Wake word heard -- listening for your question...");
+      else if (message.type === "missed") appendLine(box, "line-note", message.reason);
       else if (message.type === "heard") appendLine(box, "line-question", `You: ${message.text}`);
       else if (message.type === "reply") appendLine(box, "line-answer", `Assistant: ${message.text}`);
     },
@@ -4536,6 +4637,37 @@ async function restorePage(panel, brick) {
 
 // --- Home grid ----------------------------------------------------------------------
 
+// The disclaimer of a demo whose large model a laptop with less memory cannot
+// run (registry.LargeModel.needs_memory_gb); "" for any other. A launcher
+// started before the field existed sends none, and nothing is said.
+function memoryDisclaimer(demo) {
+  const model = demo.large_model;
+  if (!model || !model.needs_memory_gb) return "";
+  if (demo.unfit) {
+    // This laptop is one of them (the launcher says why: GET /api/demos).
+    return (demoHasPortable(demo)
+      ? `The ${model.label} is greyed out on this laptop. ${demo.unfit} The portable engine runs a small model on the CPU instead.`
+      : `This demo cannot run on this laptop. ${demo.unfit}`);
+  }
+  return (
+    `Needs a laptop with ${model.needs_memory_gb} GB of memory or more: its ${model.label} alone takes about ` +
+    `${model.gpu_memory_gb} GB, from the memory the integrated GPU shares, and on a laptop with less it does not work.` +
+    ((demo.engines || []).includes("portable")
+      ? " There, choose the portable engine: it runs a small model on the CPU instead."
+      : "")
+  );
+}
+
+function demoHasPortable(demo) {
+  return (demo.engines || []).includes("portable");
+}
+
+// A demo that cannot run here at all: its only engine needs a model this
+// laptop cannot hold. Greyed out on the grid, like one still to come.
+function demoUnfitHere(demo) {
+  return Boolean(demo.unfit) && !demoHasPortable(demo);
+}
+
 function renderBadges(container, demo) {
   container.innerHTML = "";
   if (demo.large_model) {
@@ -4549,6 +4681,13 @@ function renderBadges(container, demo) {
       (model.discrete_gpu ? `${model.discrete_gpu} ` : "") +
       `Measured on ${model.measured_on}.`;
     container.appendChild(badge);
+    if (model.needs_memory_gb) {
+      const need = document.createElement("span");
+      need.className = "badge badge-memory";
+      need.textContent = `Needs ${model.needs_memory_gb} GB of memory`;
+      need.title = memoryDisclaimer(demo);
+      container.appendChild(need);
+    }
   }
   if (demo.experimental) {
     const badge = document.createElement("span");
@@ -4599,8 +4738,21 @@ function renderCards(demos) {
       node.querySelector(".card-name").textContent = demo.name;
       node.querySelector(".card-tagline").textContent = demo.tagline;
       renderBadges(node.querySelector(".badges"), demo);
+      if (demo.unfit) {
+        const why = document.createElement("p");
+        why.className = "card-unfit";
+        why.textContent = demoHasPortable(demo)
+          ? "Here it runs a small model on the CPU: the coding model needs more memory than this laptop has."
+          : "Not on this laptop: it needs more memory, or an Arc Pro B60.";
+        why.title = demo.unfit;
+        node.querySelector(".card-tagline").after(why);
+      }
       const button = node.querySelector(".launch-btn");
-      if (demo.status === "available" && PANELS[demo.id]) {
+      if (demoUnfitHere(demo)) {
+        card.classList.add("planned", "unfit");
+        card.title = demo.unfit;
+        button.remove();
+      } else if (demo.status === "available" && PANELS[demo.id]) {
         const open = () => {
           lastLaunchButton = button;
           location.hash = `#/brick/${demo.id}`;
@@ -4650,7 +4802,7 @@ function route() {
   setScreen("studio");
   const match = location.hash.match(/^#\/brick\/([\w-]+)$/);
   const demo = match ? demoById(match[1]) : null;
-  if (!demo || demo.status !== "available" || !PANELS[demo.id]) {
+  if (!demo || demo.status !== "available" || !PANELS[demo.id] || demoUnfitHere(demo)) {
     if (match && !demo) console.error(`[panther-lake] no demo called "${match[1]}" -- going back to the grid.`);
     showHome();
     return;
@@ -4669,6 +4821,11 @@ async function showPanel(demo) {
   for (const node of document.querySelectorAll(".brick-panel")) node.hidden = node.id !== `${panel.prefix}-panel`;
   el("panel-title").textContent = demo.name;
   el("panel-description").textContent = demo.description;
+  const requirement = el("panel-requirement");
+  if (requirement) {
+    requirement.textContent = memoryDisclaimer(demo);
+    requirement.hidden = !requirement.textContent;
+  }
   renderBadges(el("panel-badges"), demo);
   document.title = `${demo.name} · Panther Lake AI Studio`;
   renderRunning();
@@ -5409,6 +5566,11 @@ function autodemoStandHtml(stand) {
       ? yes(stand.cameras === 1 ? "A camera" : `${stand.cameras} cameras`)
       : no(stand.cameras_found ? "Camera not used" : "No camera")) +
     (stand.internet ? yes("Internet") : no("No internet")) +
+    (stand.memory_gb
+      ? stand.memory_gb >= 29 || stand.dgpu
+        ? yes(`${stand.memory_gb} GB of memory`)
+        : no(`${stand.memory_gb} GB of memory: the page scene is left out`)
+      : "") +
     `</ul>`
   );
 }
@@ -5477,6 +5639,27 @@ function autodemoRemember() {
   }
 }
 
+// The last run in a sentence, under the stand: how many turns, how long, what
+// failed. The figures of each scene are in the file it names. A launcher that
+// has not run the loop, or one from before the report, has nothing to say.
+async function autodemoLastRun() {
+  let report = null;
+  try {
+    report = await fetchJSON("/api/autodemo/report");
+  } catch (_err) {
+    return;
+  }
+  const box = el("autodemo-last-run");
+  if (!box || !report || !report.summary) return;
+  const when = new Date((report.ended_at || report.started_at) * 1000);
+  const day = when.toLocaleDateString([], { day: "numeric", month: "short" });
+  const hour = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  box.textContent =
+    `${report.ended_at ? `Last run, ended ${day} at ${hour}` : `This run, started ${day} at ${hour}`}: ${report.summary}` +
+    (report.file ? ` Each scene's figures are in logs/autodemo/${report.file}.` : "");
+  box.hidden = false;
+}
+
 async function autodemoCheck() {
   const box = el("autodemo-check");
   const options = AUTODEMO.options;
@@ -5492,6 +5675,7 @@ async function autodemoCheck() {
     const tick = (id, on, text) => `<label><input id="${id}" type="checkbox"${on ? " checked" : ""} /> ${text}</label>`;
     box.innerHTML =
       `<p class="section-label">This stand</p>${autodemoStandHtml(check.stand)}` +
+      `<p id="autodemo-last-run" class="autodemo-last-run" hidden></p>` +
       `<div class="autodemo-options">` +
       `<label>Told in <select id="autodemo-lang">` +
       [["en", "English"], ["fr", "Français"]]
@@ -5513,6 +5697,7 @@ async function autodemoCheck() {
       `</div>` +
       `<p class="section-label">One turn of the loop: tick the demos to play</p><div id="autodemo-playlist"></div>`;
     autodemoDrawPlaylist();
+    autodemoLastRun();
     const wire = (id, change) => {
       const node = el(id);
       if (!node) return;
@@ -6979,7 +7164,8 @@ async function loadModels() {
 function renderModelsFooter() {
   const button = el("models-open");
   if (!MODELS_STATE) return;
-  const missing = MODELS_STATE.total_count - MODELS_STATE.ready_count;
+  // What is left to fetch, not counting what this laptop cannot run (a launcher from before says nothing of that).
+  const missing = MODELS_STATE.missing_count ?? MODELS_STATE.total_count - MODELS_STATE.ready_count;
   if (MODELS_STATE.running) {
     const total = MODELS_STATE.run_total_bytes;
     const percent = total ? Math.min(Math.round((MODELS_STATE.done_bytes / total) * 100), 99) : null;
@@ -7008,6 +7194,7 @@ const COMPILE_WORDS = {
   failed: "failed",
   missing: "the model is not downloaded",
   unkept: "this chip keeps nothing here",
+  unfit: "too little memory on this laptop to run it there",
 };
 
 function shortChip(item) {
@@ -7091,7 +7278,8 @@ function compiledCell(state, key) {
     badge.title =
       `${item.chip_name}: ${COMPILE_WORDS[item.state] || item.state}` +
       (item.state === "ready" && item.seconds ? ` (it took ${item.seconds} s)` : "") +
-      (item.error ? ` -- ${item.error}` : "");
+      (item.error ? ` -- ${item.error}` : "") +
+      (item.unfit ? ` -- ${item.unfit}` : "");
     td.append(badge);
   }
   return td;
@@ -7132,7 +7320,8 @@ function renderModels() {
   renderModelsFooter();
   if (!MODELS_STATE || el("models-modal-overlay").hidden) return;
   const state = MODELS_STATE;
-  const missing = state.models.filter((model) => !model.cached);
+  const missing = state.models.filter((model) => !model.cached && !model.unfit);
+  const unfit = state.models.filter((model) => !model.cached && model.unfit);
   const sizeText = state.sizes_known
     ? formatBytes(state.missing_bytes)
     : state.sizes_pending
@@ -7140,7 +7329,11 @@ function renderModels() {
       : `at least ${formatBytes(state.missing_bytes)}; the Hub did not answer for the rest`;
   el("models-summary").textContent =
     `${state.ready_count} of ${state.total_count} models ready` +
-    (missing.length ? ` · ${missing.length} to download (${sizeText})` : " · nothing to download");
+    (missing.length ? ` · ${missing.length} to download (${sizeText})` : " · nothing to download") +
+    (unfit.length
+      ? ` · ${unfit.length === 1 ? "1 model is" : `${unfit.length} models are`} too big for this laptop's ` +
+        `${state.machine && state.machine.memory_gb ? `${state.machine.memory_gb} GB of ` : ""}memory, and left out`
+      : "");
   el("models-download").hidden = state.running || !missing.length;
   el("models-download").disabled = Boolean(state.compile && state.compile.running);
   el("models-stop").hidden = !state.running;
@@ -7179,6 +7372,14 @@ function renderModels() {
     const size = cell(entry.size_bytes || entry.repo_id ? formatBytes(entry.size_bytes) : "a few MB", "models-size");
     const status = cell(modelStateText(entry), `models-state models-state-${entry.state}`);
     if (entry.error) status.title = entry.error;
+    if (entry.unfit && (entry.cached || entry.state === "missing")) {
+      // Greyed out, and saying why: "Download" leaves it out, and one already
+      // on the disk cannot run here either.
+      row.classList.add("models-unfit");
+      status.textContent = entry.cached ? "On disk, too big to run here" : "Too big for this laptop";
+      status.title = entry.cached ? entry.unfit : `${entry.unfit} Downloading everything leaves it out.`;
+      name.title = entry.unfit;
+    }
     row.append(name, cell(demos, "models-demos"), size, status, compiledCell(state, entry.key));
     rows.append(row);
   }

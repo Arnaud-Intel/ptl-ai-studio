@@ -64,6 +64,7 @@
           <div id="panel-badges" class="badges"></div>
         </div>
         <p id="panel-description" class="panel-description"></p>
+        <p id="panel-requirement" class="panel-requirement" role="note" hidden></p>
       </header>
 
       <!-- live-translation -->
@@ -502,7 +503,7 @@
           </label>
           <label class="field">
             <span>Wake word</span>
-            <select id="va-wake-word"></select>
+            <select id="va-wake-word" title="None: a question is what you say while the button is held. A wake word listens all the time instead; its models are openWakeWord's, for non-commercial use (CC BY-NC-SA 4.0)."></select>
           </label>
           <label class="field">
             <span>Engine</span>
@@ -526,8 +527,12 @@
           <label class="check"><input id="va-speak" type="checkbox" checked /><span>Speak replies out loud</span></label>
           <span id="va-status" class="run-status" role="status" aria-live="polite">Idle</span>
         </div>
+        <div id="va-talk-row" class="run-row" hidden>
+          <button id="va-talk" class="btn btn-primary btn-talk" type="button" aria-pressed="false" disabled>Hold to talk</button>
+          <span class="talk-hint">Hold the button, or the space bar, for as long as you speak.</span>
+        </div>
         <div id="va-transcript" class="output">
-          <p class="placeholder">Press Start, then say the wake word to begin.</p>
+          <p class="placeholder">Press Start, then hold the button and ask.</p>
         </div>
       </section>
 
@@ -985,6 +990,7 @@
         <button id="landing-auto" class="landing-choice" type="button">
           <span class="choice-title">Auto Demo</span>
           <span class="choice-text">The studio presents itself: one demo after another, each told as it runs. For a stand, or a screen nobody is driving.</span>
+          <span class="choice-need">Its page scene needs 32 GB of memory or an Arc Pro B60; with less, the other scenes play.</span>
         </button>
         <a id="landing-manual" class="landing-choice" href="#/demos">
           <span class="choice-title">Manual demo</span>
@@ -1095,6 +1101,11 @@
           The studio presents itself in a loop: one demo on screen at a time, told as a short story -- what is
           happening, on which chip and why. A click or a key brings up a choice: keep playing, pause or stop. Left
           unanswered, it carries on. The machine is kept awake while it runs.
+        </p>
+        <p class="modal-requirement" role="note">
+          The page scene needs 32 GB of memory or more, or an Arc Pro B60: its 30-billion-parameter coding model
+          alone takes about 17 GB of the memory the integrated GPU shares. On a laptop with less, that scene is
+          left out and the other scenes play.
         </p>
         <div id="autodemo-check"><p class="placeholder">Looking at what this stand has...</p></div>
         <div class="run-row">

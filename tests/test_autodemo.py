@@ -164,7 +164,7 @@ def test_the_scene_in_hand_comes_with_its_story_and_what_its_view_needs():
     }]
     assert state["stand"] == {
         "npu": True, "igpu": "GPU.0", "dgpu": "GPU.1", "cameras": 1, "cameras_found": 1, "internet": False,
-        "big_screen": True, "lang": "fr",
+        "big_screen": True, "lang": "fr", "memory_gb": None,
     }
     assert state["awake"] is True
     # The answer is kept for the page to draw, and stays on screen for the scene's hold.
@@ -605,6 +605,7 @@ def test_the_other_scenes_fit_the_stand_or_say_why_they_cannot_play():
     assert start.body["folder"] == "C:/receipts/scanned"  # the worn ones: receipts that look like receipts
     assert (start.body["ocr_compute_device"], start.body["llm_compute_device"]) == ("GPU.0", "NPU")
     assert receipts.stop == ("/api/expense-extract/stop", "/api/expense-extract/report/close")
+    assert start.body["keep_report"] is False  # one a turn: the loop takes its own away when it closes them
     assert any(isinstance(step, Until) and step.key == "running" for step in receipts.steps)
     # The stage shows the receipts before they are read: their pictures come with the scene.
     assert receipts.view == "receipts" and receipts.props["receipts"] == [
@@ -752,16 +753,102 @@ def test_every_scene_tells_its_story_a_sentence_or_two_at_a_time_in_both_languag
                 assert len(chip.label) <= 60 and puce.label != chip.label and puce.chip == chip.chip
 
 
+# --- the report ---------------------------------------------------------------------------
+
+
+def test_the_loop_keeps_count_and_hands_in_a_report_at_every_turn_and_at_the_end():
+    """What a morning left alone had to be read out of the activity log by a
+    script for (2026-10-13): turns, each scene's count, its fastest and
+    slowest, what failed."""
+    stage = Stage()
+    stage.fail["/c/start"] = "the camera is in use"
+    handed: list[dict] = []
+    director = _director(stage, [
+        lambda stand, loop: _scene("first", Start("/a/start"), Wait(0.15)),
+        lambda stand, loop: _scene("second", Ask("/b/ask")),
+        lambda stand, loop: _scene("third", Start("/c/start")),
+    ], report_to=handed.append)
+    assert director.report() is None  # no loop was started: nothing to report
+    director.start()
+    assert _until(lambda: len(handed) >= 2)  # one at the end of each whole turn
+    during = handed[1]
+    assert during["turns"] == 2 and during["ended_at"] is None and during["summary"].endswith("still going.")
+    director.stop()
+    report = handed[-1]
+    assert report == director.report() and report["ended_at"] >= report["started_at"]
+    assert report["turns"] >= 2 and report["stand"]["igpu"] == "GPU.0" and report["notice"] == ""
+    first, second, third = report["scenes"]  # in the order they were first played
+    assert (first["id"], first["title"], second["id"], third["id"]) == ("first", "First", "second", "third")
+    assert first["played"] >= 2 and first["failed"] == 0
+    assert 0.1 <= first["fastest"] <= first["slowest"] < 2  # the time its work took, a wait of 0.15 s in it
+    assert third["played"] == 0 and third["failed"] >= 2 and third["fastest"] is None and third["slowest"] is None
+    assert report["played"] == first["played"] + second["played"] and report["failed"] == third["failed"]
+    assert report["failures"][-1]["error"].endswith("the camera is in use")
+    assert report["summary"].startswith(f"{report['turns']} whole turns in ") and report["summary"].endswith(
+        f"{report['played']} scenes played, {report['failed']} failed.")
+
+
+def test_a_scene_stopped_before_its_work_is_done_is_counted_as_cut_short_not_as_played():
+    stage = Stage()
+    stage.slow["/page/build"] = threading.Event()
+    stage.cancels["/page/cancel"] = "/page/build"
+    handed: list[dict] = []
+    director = _director(stage, [lambda stand, loop: _scene("page", Ask("/page/build", cancel="/page/cancel"))],
+                         report_to=handed.append)
+    director.start()
+    assert _until(lambda: (director.snapshot()["scene"] or {}).get("phase") == "working")
+    director.stop()
+    assert len(handed) == 1  # no whole turn: the one report is the one of the end
+    page = handed[0]["scenes"][0]
+    assert (page["played"], page["cut_short"], page["failed"], page["fastest"]) == (0, 1, 0, None)
+    assert handed[0]["turns"] == 0 and handed[0]["summary"] == f"0 whole turns in {handed[0]['seconds']} s, 0 scenes played, none failed."
+
+
+def test_a_loop_that_stops_itself_reports_why_and_a_report_that_cannot_be_written_stops_nothing():
+    stage = Stage()
+    stage.fail["/a/start"] = "no such device"
+
+    def cannot(report: dict) -> None:
+        cannot.asked += 1
+        raise OSError("the disk is full")
+
+    cannot.asked = 0
+    director = _director(stage, [lambda stand, loop: _scene("first", Start("/a/start"))], report_to=cannot)
+    director.start()
+    assert _until(lambda: director.snapshot()["state"] == autodemo.STOPPED)
+    assert cannot.asked >= 1 and director.running is False
+    report = director.report()
+    assert report["failed"] == 3 and "3 scenes failed one after the other" in report["notice"]
+
+
+def test_a_runs_report_is_a_file_of_its_own_and_the_newest_are_kept(tmp_path):
+    files = autodemo.ReportFiles(tmp_path / "autodemo", keep=2)
+    assert files.latest() is None  # no folder yet, and nothing made by asking
+    began = time.mktime((2026, 10, 13, 10, 7, 0, 0, 0, -1))
+    files({"started_at": began, "turns": 1, "summary": "1 whole turn"})
+    files({"started_at": began, "turns": 2, "summary": "2 whole turns"})  # the same run, a turn later: the same file
+    assert [path.name for path in (tmp_path / "autodemo").iterdir()] == ["run-20261013-100700.json"]
+    assert files.latest() == {"started_at": began, "turns": 2, "summary": "2 whole turns", "file": "run-20261013-100700.json"}
+    files({"started_at": began + 3600, "turns": 5})
+    files({"started_at": began + 7200, "turns": 9})
+    assert sorted(path.name for path in (tmp_path / "autodemo").iterdir()) == ["run-20261013-110700.json", "run-20261013-120700.json"]
+    (tmp_path / "autodemo" / "run-20261013-130700.json").write_text("{half of", encoding="utf-8")
+    assert files.latest()["turns"] == 9  # a file that cannot be read is passed over
+
+
 # --- the routes -------------------------------------------------------------------------
 
 
 @pytest.fixture
-def client(monkeypatch):
+def client(monkeypatch, tmp_path):
     stage = Stage()
     stage.slow["/page/build"] = threading.Event()
     stage.cancels["/page/cancel"] = "/page/build"
-    director = _director(stage, [lambda stand, loop: _scene("page", Ask("/page/build", cancel="/page/cancel"))])
+    reports = autodemo.ReportFiles(tmp_path / "autodemo")
+    director = _director(stage, [lambda stand, loop: _scene("page", Ask("/page/build", cancel="/page/cancel"))],
+                         report_to=reports)
     monkeypatch.setattr(launcher_app, "autodemo_director", director)
+    monkeypatch.setattr(launcher_app, "autodemo_reports", reports)
     yield TestClient(launcher_app.app), stage, director
     director.stop()
 
@@ -775,6 +862,7 @@ def test_the_loop_is_checked_started_followed_and_stopped_through_the_api(client
     assert check["playlist"][0]["key"] == "scene-1"
     assert web.get("/api/autodemo/check?camera=off").json()["stand"]["cameras"] == 0
     assert web.get("/api/autodemo/result").status_code == 404
+    assert web.get("/api/autodemo/report").status_code == 404  # never run: nothing to report
 
     assert web.post("/api/autodemo/start", json={"lang": "de"}).status_code == 400
     refused = web.post("/api/autodemo/start", json={"scenes": ["nothing-of-the-kind"]})
@@ -792,4 +880,13 @@ def test_the_loop_is_checked_started_followed_and_stopped_through_the_api(client
     assert web.post("/api/autodemo/resume").json()["paused"] is None
     assert web.post("/api/autodemo/skip").status_code == 200
     assert web.post("/api/autodemo/stop").json()["state"] == "idle" and director.running is False
+    # What the run came to, and the file it is kept in: there after a restart too.
+    report = web.get("/api/autodemo/report").json()
+    assert report["ended_at"] and report["scenes"][0]["id"] == "page" and report["file"].startswith("run-")
+    assert (director._report_to.folder / report["file"]).is_file()
+    launcher_app.autodemo_director = Director(stage, [])  # a launcher started since: it has run nothing itself
+    try:
+        assert web.get("/api/autodemo/report").json()["file"] == report["file"]
+    finally:
+        launcher_app.autodemo_director = director
     assert "Auto Demo" not in launcher_app._busy_demos()

@@ -525,6 +525,16 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
   opacity: 0.6;
 }
 
+/* A demo whose large model this laptop cannot hold: greyed, and saying why. */
+.card-unfit {
+  margin: 0;
+  color: var(--warning);
+  font-size: 12.5px;
+  line-height: 1.45;
+  cursor: help;
+}
+.card.unfit .card-unfit { color: var(--text-dim); }
+
 .card.is-running { border-color: rgba(74, 222, 128, 0.45); }
 .card.is-loading { border-color: rgba(245, 166, 35, 0.45); }
 
@@ -605,6 +615,29 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
 
 .badge-planned { color: var(--text-faint); }
 
+/* What a laptop needs for the demo to work at all: a disclaimer, said on its
+   card, its panel and the Auto Demo's start screen. */
+.badge-memory {
+  border-color: var(--warning);
+  color: var(--warning);
+  font-weight: 600;
+  cursor: help;
+}
+.panel-requirement,
+.modal-requirement {
+  margin: 10px 0 0;
+  max-width: 80ch;
+  padding: 8px 12px;
+  border-left: 3px solid var(--warning);
+  border-radius: 4px;
+  background: var(--warning-soft);
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.modal-requirement { margin: 0 0 14px; font-size: 13px; }
+.landing-choice .choice-need { font-size: clamp(12.5px, 0.95vw, 17px); font-weight: 600; color: var(--warning); }
+
 /* A brick that works and may change: said on its card and its panel. */
 .badge-experimental {
   border-color: var(--warning);
@@ -672,6 +705,10 @@ body.chip-panel-collapsed .chip-section[data-count]:not([data-count="0"])::after
 .btn-secondary:disabled { color: var(--text-faint); }
 /* A button that is a switch: lit while what it turned on is on. */
 .btn-toggle[aria-pressed="true"] { border-color: var(--accent-hover); background: var(--accent-soft); color: var(--text); }
+/* The Voice Assistant's button, held for as long as a question is asked. */
+.btn-talk { min-width: 230px; padding: 14px 22px; font-size: 15px; touch-action: none; user-select: none; }
+.btn-talk[aria-pressed="true"] { background: var(--accent-strong); box-shadow: 0 0 0 4px var(--accent-soft); }
+.talk-hint { color: var(--text-faint); font-size: 13px; }
 
 .btn-danger {
   background: transparent;
@@ -1291,6 +1328,7 @@ body.stage-big .stage { --beat: clamp(22px, 2.25vw, 46px); }
 .autodemo-stand li { padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; }
 .autodemo-stand li.found { color: var(--success); border-color: var(--success); }
 .autodemo-stand li.missing { color: var(--text-faint); }
+.autodemo-last-run { margin: -4px 0 12px; font-size: 13px; color: var(--text-faint); }
 .autodemo-options { display: grid; gap: 6px; margin: 0 0 14px; font-size: 13.5px; }
 .autodemo-options select { margin-left: 6px; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--bg-input); color: var(--text); font: inherit; }
 .autodemo-playlist { margin: 0 0 14px; padding: 0; list-style: none; font-size: 13.5px; }
@@ -2031,6 +2069,10 @@ body:has(.modal-overlay:not([hidden])) { overflow: hidden; }
 .models-chip-pending { color: var(--text-dim); }
 .models-chip-failed { color: var(--danger); border-color: var(--danger); }
 .models-chip-unkept, .models-chip-missing { border-style: dashed; }
+.models-chip-unfit { border-style: dashed; color: var(--text-faint); }
+/* A model too big for this laptop: greyed, and left out of "download everything". */
+.models-unfit td { color: var(--text-faint); }
+.models-unfit .models-state { color: var(--warning); cursor: help; }
 
 /* --- sound tags (voice-clone-studio) ------------------------------------ */
 

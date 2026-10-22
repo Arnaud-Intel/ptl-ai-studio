@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from pantherlake_ai_core import models
+
 
 @dataclass(frozen=True)
 class LargeModel:
@@ -20,14 +22,22 @@ class LargeModel:
     # How a discrete GPU compared, when one was measured -- a measured
     # claim about speed, never a requirement.
     discrete_gpu: str | None = None
+    # The memory a laptop needs for it, said on the card and the panel as a
+    # disclaimer, and on the Auto Demo's start screen when one of its scenes
+    # runs it. None: the badge says enough.
+    needs_memory_gb: int | None = None
 
 
 _MEASURED_ON = "a Dell XPS 14 (Core Ultra X7 358H, Arc B390 iGPU) on 2026-09-11"
+# The coder alone takes 17 GB of the memory the integrated GPU shares: under
+# 32 GB it does not work (the user's word, 2026-10-15). The figure is the
+# model's own (core's models.py), which the machine module checks.
 _CODER_30B = LargeModel(
     label="30B model",
     gpu_memory_gb=17,
     measured_on=_MEASURED_ON,
     discrete_gpu="An Arc Pro B60 streams it faster, about 65 tokens/s against 38, but starts no sooner.",
+    needs_memory_gb=models.BY_KEY["coder-30b-ov"].needs_memory_gb,
 )
 _OCR_VLM_7B = LargeModel(
     label="7B vision model",
@@ -81,9 +91,9 @@ REGISTRY: list[Demo] = [
         id="voice-assistant",
         name="Local Voice Assistant",
         category="Speech",
-        tagline="Wake word, local LLM, local text-to-speech -- no cloud round trip.",
+        tagline="Hold a button and ask: local speech, local LLM, local voice -- no cloud round trip.",
         description=(
-            "A hands-free assistant that listens, reasons with a small local "
+            "An assistant that listens while you hold its button, reasons with a small local "
             "LLM, and talks back, entirely on-device."
         ),
         engines=["portable", "openvino"],

@@ -79,6 +79,12 @@ class ExpenseReports:
             db.execute("DELETE FROM reports")
         return count
 
+    def delete(self, report_id: str) -> bool:
+        """Delete one report and its expenses; False if it was not there."""
+        with self._connect() as db:
+            db.execute("DELETE FROM expenses WHERE report = ?", (report_id,))
+            return db.execute("DELETE FROM reports WHERE id = ?", (report_id,)).rowcount > 0
+
     def update(self, report_id: str, item_id: str, values: dict, revision: int, validate: bool) -> dict:
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")

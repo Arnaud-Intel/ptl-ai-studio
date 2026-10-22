@@ -15,7 +15,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 
-from . import models
+from . import machine, models
 from .models import MODELS, ModelSpec
 
 _SAMPLE_SECONDS = 0.5
@@ -36,6 +36,9 @@ class ModelStatus:
     size_bytes: int | None = None  # what a full download costs, asked of the Hub
     state: str = "missing"  # ready | missing | pending | downloading | failed
     error: str | None = None
+    # Why this laptop cannot run it (too little memory, no discrete GPU to
+    # hold it), or None. Such a model is not part of "everything missing".
+    unfit: str | None = None
 
 
 @dataclass
@@ -89,9 +92,12 @@ class Prefetcher:
                     size_bytes=sizes.get(spec.key),
                     state=states.get(spec.key) or ("ready" if cached else "missing"),
                     error=(run.errors.get(spec.key) if run else None),
+                    unfit=models.unfit(spec),
                 )
             )
-        missing_bytes = sum(entry.size_bytes or 0 for entry in entries if not entry.cached)
+        # What there is still to fetch: not what this laptop cannot run.
+        wanted = [entry for entry in entries if not entry.cached and not entry.unfit]
+        missing_bytes = sum(entry.size_bytes or 0 for entry in wanted)
         running = self.running
         # Sizes can arrive after a run starts, so the total is worked out
         # again here rather than frozen at the moment Download was pressed.
@@ -102,6 +108,9 @@ class Prefetcher:
             "models": [asdict(entry) for entry in entries],
             "ready_count": sum(1 for entry in entries if entry.cached),
             "total_count": len(entries),
+            "missing_count": len(wanted),
+            "unfit_count": sum(1 for entry in entries if entry.unfit and not entry.cached),
+            "machine": machine.describe(),
             "missing_bytes": missing_bytes,
             "sizes_known": all(entry.size_bytes is not None for entry in entries if entry.repo_id),
             # Still being asked, as against asked and unanswerable (no network).
@@ -152,15 +161,20 @@ class Prefetcher:
 
     # --- doing the work ------------------------------------------------------
     def start(self, keys: list[str] | None = None) -> list[str]:
-        """Download `keys`, or everything missing. Returns what it will fetch."""
+        """Download `keys`, or everything missing that this laptop can run
+        (`models.unfit`): a model named by its key is fetched all the same.
+        Returns what it will fetch."""
         if self.running:
             raise RuntimeError("A download is already running.")
         unknown = [key for key in keys or [] if key not in models.BY_KEY]
         if unknown:
             raise ValueError(f"Unknown model(s): {', '.join(unknown)}.")
-        chosen = [models.BY_KEY[key] for key in keys] if keys else [s for s in MODELS if not models.is_cached(s)]
+        chosen = (
+            [models.BY_KEY[key] for key in keys] if keys
+            else [s for s in MODELS if not models.is_cached(s) and not models.unfit(s)]
+        )
         if not chosen:
-            raise RuntimeError("Every model is already downloaded.")
+            raise RuntimeError("Every model this laptop can run is already downloaded.")
         self._stop.clear()
         self._finished.clear()
         self._cached.clear()
@@ -307,11 +321,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(f"{'model':40s} {'size':>10s}  {'state':8s} used by")
     for entry in wanted:
+        state = "ready" if entry["cached"] else "too big" if entry["unfit"] else "missing"
         print(
             f"{entry['label'][:40]:40s} {humanize_bytes(entry['size_bytes']):>10s}  "
-            f"{'ready' if entry['cached'] else 'missing':8s} {', '.join(entry['demos'])}"
+            f"{state:8s} {', '.join(entry['demos'])}"
         )
-    missing = [entry for entry in wanted if not entry["cached"]]
+    # Left out unless named: a model this laptop cannot run.
+    missing = [entry for entry in wanted if not entry["cached"] and (args.keys or not entry["unfit"])]
+    for entry in wanted:
+        if not entry["cached"] and entry["unfit"] and not args.keys:
+            print(f"\nLeft out: {entry['label']}. {entry['unfit']} Name it ({entry['key']}) to fetch it anyway.")
     unknown = sum(1 for entry in missing if entry["repo_id"] and entry["size_bytes"] is None)
     known = humanize_bytes(sum(entry["size_bytes"] or 0 for entry in missing))
     print(

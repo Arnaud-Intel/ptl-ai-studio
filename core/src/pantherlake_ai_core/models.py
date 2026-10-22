@@ -50,7 +50,21 @@ class ModelSpec:
     # repository that is not Intel's or the model's own publisher's: what is
     # fetched is that, not whatever it holds on the day.
     revision: str | None = None
+    # The licence its publisher puts on what is fetched, as an SPDX name, and
+    # the model it was made from when the build is somebody else's work on
+    # it. docs/MODEL_LICENCES.md has where each was read and, for a licence
+    # that is not in PERMISSIVE, what was decided about it (BACKLOG R17).
+    licence: str = ""
+    made_from: str = ""
+    # The laptop memory it needs to run, when that is more than most have:
+    # under it, and with no discrete GPU to hold it, it is greyed out
+    # wherever it is offered (`unfit`, the machine module).
+    needs_memory_gb: int | None = None
 
+
+# Licences that ask for a notice to be kept and nothing else. Anything else on
+# a model here needs a decision written down before it is shown for a company.
+PERMISSIVE = ("Apache-2.0", "MIT")
 
 _SPEECH = ("live-translation", "meeting-notes", "voice-assistant")
 _TEXT = ("doc-qa", "meeting-notes", "voice-assistant", "expense-extract", "smart-recall")
@@ -86,60 +100,75 @@ def _street_videos_spec() -> ModelSpec:
              "published them. See sample-data/videos/README.md for licences and credits.",
         fetch=_fetch_street_videos, present=sample_videos.all_present, on_disk=sample_videos.bytes_on_disk,
         weighs=sample_videos.total_bytes(),
+        licence="CC0-1.0, CC-BY-3.0, CC-BY-4.0, CC-BY-SA-4.0 and public domain, a clip each",
     )
 
 
 MODELS: tuple[ModelSpec, ...] = (
     ModelSpec("whisper-medium-ov", "Whisper medium (speech translation)", ("live-translation", "meeting-notes"), OPENVINO,
-              "OpenVINO/whisper-medium-fp16-ov",
+              "OpenVINO/whisper-medium-fp16-ov", licence="Apache-2.0", made_from="openai/whisper-medium",
               note="The default size for translating speech on the OpenVINO engine; the other sizes download on demand."),
     ModelSpec("whisper-base-ov", "Whisper base (speech)", ("voice-assistant",), OPENVINO, "OpenVINO/whisper-base-fp16-ov",
-              note="What the voice assistant listens with."),
-    ModelSpec("whisper-small-portable", "faster-whisper small (speech)", _SPEECH, PORTABLE, "Systran/faster-whisper-small"),
+              licence="Apache-2.0", made_from="openai/whisper-base", note="What the voice assistant listens with."),
+    ModelSpec("whisper-small-portable", "faster-whisper small (speech)", _SPEECH, PORTABLE, "Systran/faster-whisper-small",
+              licence="MIT", made_from="openai/whisper-small"),
     # Meeting notes are written by a larger model on this engine (below).
     ModelSpec("llm-1.5b-ov", "Qwen2.5 1.5B (text)",
               (*(demo for demo in _TEXT if demo != "meeting-notes"), "video-commentary"), OPENVINO,
-              "OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov"),
+              "OpenVINO/Qwen2.5-1.5B-Instruct-int4-ov", licence="Apache-2.0", made_from="Qwen/Qwen2.5-1.5B-Instruct"),
     ModelSpec("notes-8b-ov", "Qwen3 8B (meeting notes, page plans)", ("meeting-notes", "page-agent"), OPENVINO,
-              "OpenVINO/Qwen3-8B-int4-ov",
+              "OpenVINO/Qwen3-8B-int4-ov", licence="Apache-2.0", made_from="Qwen/Qwen3-8B",
               note="For the page agent, only when its plan is not written on the NPU. Document Q&A answers with it "
                    "too when it is here, and three other demos can be told to."),
     ModelSpec("notes-8b-npu-ov", "Qwen3 8B, NPU build (meeting notes, page plans)", ("meeting-notes", "page-agent"),
-              OPENVINO, "OpenVINO/Qwen3-8B-int4-cw-ov",
+              OPENVINO, "OpenVINO/Qwen3-8B-int4-cw-ov", licence="Apache-2.0", made_from="Qwen/Qwen3-8B",
               note="What writes notes and page plans on the NPU. Document Q&A answers with it too when it is here, "
                    "and three other demos can be told to."),
     ModelSpec("flux2-klein-ov", "FLUX.2 klein 4B (draws pictures, redraws a portrait)", ("page-agent", "portrait-studio"), OPENVINO,
               "rupeshs/flux2-klein-4b-int4-ov", revision="2adc62976ad32ca941fc783e2599c45c9d0c3f5a",
+              licence="Apache-2.0", made_from="black-forest-labs/FLUX.2-klein-4B",
               note="About 4.6 GB, and as much again the first time it is used: the build is not Intel's, and a copy "
                    "is made that the app can open."),
     ModelSpec("llm-1.5b-portable", "Qwen2.5 1.5B GGUF (text)", _TEXT, PORTABLE, "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
-              ("*q4_k_m.gguf",)),
-    ModelSpec("embed-ov", "Qwen3 embeddings", ("doc-qa", "smart-recall"), OPENVINO, "OpenVINO/Qwen3-Embedding-0.6B-int8-ov"),
+              ("*q4_k_m.gguf",), licence="Apache-2.0"),
+    ModelSpec("embed-ov", "Qwen3 embeddings", ("doc-qa", "smart-recall"), OPENVINO, "OpenVINO/Qwen3-Embedding-0.6B-int8-ov",
+              licence="Apache-2.0", made_from="Qwen/Qwen3-Embedding-0.6B"),
     ModelSpec("embed-portable", "nomic embeddings GGUF", ("doc-qa", "smart-recall"), PORTABLE,
-              "nomic-ai/nomic-embed-text-v1.5-GGUF", ("*Q4_K_M.gguf",)),
+              "nomic-ai/nomic-embed-text-v1.5-GGUF", ("*Q4_K_M.gguf",), licence="Apache-2.0"),
     ModelSpec("vlm-7b-ov", "Qwen2.5-VL 7B (reads images)", (*_OCR, "video-commentary"), OPENVINO,
-              "OpenVINO/Qwen2.5-VL-7B-Instruct-int4-ov"),
+              "OpenVINO/Qwen2.5-VL-7B-Instruct-int4-ov", licence="Apache-2.0", made_from="Qwen/Qwen2.5-VL-7B-Instruct"),
     ModelSpec("yolo11s-ov", "YOLO11s (detection)", _DETECTION, OPENVINO, "OpenVINO/YOLO11s-int8-ov",
-              ("yolo11s.xml", "yolo11s.bin")),
+              ("yolo11s.xml", "yolo11s.bin"), licence="AGPL-3.0", made_from="Ultralytics/YOLO11"),
     ModelSpec("detr-portable", "DETR ResNet-50 (detection)", _DETECTION, PORTABLE, "Xenova/detr-resnet-50",
-              ("onnx/model_quantized.onnx",)),
+              ("onnx/model_quantized.onnx",), licence="Apache-2.0", made_from="facebook/detr-resnet-50",
+              note="The build's own page names no licence; Apache-2.0 is that of the model it was made from."),
     ModelSpec("selfie-segmentation", "Selfie segmentation (background)", ("webcam-effects",), PORTABLE,
-              "onnx-community/mediapipe_selfie_segmentation", ("onnx/model_quantized.onnx",)),
+              "onnx-community/mediapipe_selfie_segmentation", ("onnx/model_quantized.onnx",), licence="Apache-2.0",
+              made_from="Google's MediaPipe selfie segmentation"),
     ModelSpec("coder-30b-ov", "Qwen3-Coder 30B (code, HTML)", (*_CODING, "page-agent"), OPENVINO,
-              "OpenVINO/Qwen3-Coder-30B-A3B-Instruct-int4-ov", note="The big one: about 17 GB."),
+              "OpenVINO/Qwen3-Coder-30B-A3B-Instruct-int4-ov", licence="Apache-2.0",
+              made_from="Qwen/Qwen3-Coder-30B-A3B-Instruct", needs_memory_gb=32,
+              note="The big one: about 17 GB, so 32 GB of memory, or a discrete GPU such as the Arc Pro B60, to run."),
     ModelSpec("coder-1.5b-portable", "Qwen2.5-Coder 1.5B GGUF", _CODING, PORTABLE,
-              "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", ("*q4_k_m.gguf",)),
+              "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", ("*q4_k_m.gguf",), licence="Apache-2.0"),
     ModelSpec("openvoice", "OpenVoice (voice cloning)", ("voice-clone-studio",), PORTABLE, "myshell-ai/OpenVoice",
               ("checkpoints/base_speakers/EN/config.json", "checkpoints/base_speakers/EN/checkpoint.pth",
                "checkpoints/base_speakers/EN/en_default_se.pth", "checkpoints/converter/config.json",
-               "checkpoints/converter/checkpoint.pth")),
+               "checkpoints/converter/checkpoint.pth"), licence="MIT"),
+    ModelSpec("wavmark", "WavMark (marks a cloned voice)", ("voice-clone-studio",), PORTABLE, "M4869/WavMark",
+              ("step59000_*.model.pkl",), licence="MIT",
+              note="10 MB. OpenVoice's converter marks what it says with it, and the wavmark package fetches it "
+                   "the first time a voice is cloned with that model."),
     ModelSpec("chatterbox", "Chatterbox Turbo (voice cloning)", ("voice-clone-studio",), PORTABLE,
               "ResembleAI/chatterbox-turbo-ONNX",
-              ("onnx/*_q4f16.onnx", "onnx/*_q4f16.onnx_data", "tokenizer.json"),
+              ("onnx/*_q4f16.onnx", "onnx/*_q4f16.onnx_data", "tokenizer.json"), licence="MIT",
+              made_from="ResembleAI/chatterbox-turbo",
               note="The q4f16 graphs, which is the variant this brick loads."),
-    ModelSpec("wake-word", "Wake word 'hey jarvis'", ("voice-assistant",), PORTABLE,
-              note="A few MB, fetched by openwakeword itself.", fetch=_fetch_wake_word),
-    ModelSpec("silero-vad", "Silero voice detection", ("voice-clone-studio",), PORTABLE,
+    ModelSpec("wake-word", "Wake word 'hey jarvis'", ("voice-assistant",), PORTABLE, licence="CC-BY-NC-SA-4.0",
+              note="Only for who chooses a wake word over the button: openwakeword's models are for "
+                   "non-commercial use. A few MB, fetched by the package itself.",
+              fetch=_fetch_wake_word),
+    ModelSpec("silero-vad", "Silero voice detection", ("voice-clone-studio",), PORTABLE, licence="MIT",
               note="A few MB, fetched through torch.hub.", fetch=_fetch_silero_vad),
     _street_videos_spec(),
 )
@@ -290,6 +319,13 @@ def download(spec: ModelSpec, on_progress: Callable[[int], None] | None = None) 
         spec.repo_id, revision=spec.revision, allow_patterns=list(spec.patterns) or None,
         ignore_patterns=list(IGNORED_PATTERNS), **extra
     )
+
+
+def unfit(spec: ModelSpec) -> str | None:
+    """Why this model cannot run on this laptop, or None (machine.unfit_reason)."""
+    from .machine import unfit_reason
+
+    return unfit_reason(spec.needs_memory_gb)
 
 
 def for_demo(demo_id: str) -> list[ModelSpec]:

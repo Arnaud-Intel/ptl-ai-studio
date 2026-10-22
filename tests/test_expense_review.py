@@ -201,3 +201,76 @@ def test_extraction_runner_saves_each_receipt_before_notifying(tmp_path, monkeyp
         await asyncio.to_thread(runner._thread.join, 5)
 
     asyncio.run(run())
+
+
+def test_one_report_is_deleted_and_the_others_stay(report):
+    store, rid, _ = report
+    other = store.create(".")
+    assert store.delete(rid) is True
+    assert [saved["id"] for saved in store.snapshot()["reports"]] == [other]
+    with store._connect() as db:
+        assert db.execute("SELECT COUNT(*) FROM expenses").fetchone()[0] == 0  # its expenses went with it
+    assert store.delete(rid) is False  # gone already: nothing to complain about
+
+
+def test_a_report_started_not_to_be_kept_goes_when_the_workspace_lets_go_of_it(tmp_path, monkeypatch):
+    """The Auto Demo reads the same five receipts at every turn of its loop:
+    seventy-five reports had piled up by 2026-10-13. Its batches are started
+    with `keep_report` false; a person's are kept, as before."""
+    import asyncio
+    from launcher.expense_extract_runner import ExpenseExtractRunner
+    from launcher import expense_extract_runner as module
+    from pantherlake_ai_core.engine import Engine
+
+    runner = ExpenseExtractRunner()
+    runner.reports = ExpenseReports(tmp_path / "reports.sqlite3")
+    monkeypatch.setattr(module.pipeline, "list_receipt_images", lambda folder: [tmp_path / "receipt.png"])
+    line = ExpenseLine("receipt.png", "Cafe", "2026-09-14", Decimal("12.50"), "Meals", "EUR 12.50", currency="EUR")
+
+    def fake_run(**kwargs):
+        kwargs["on_structured"](line)
+        return [line]
+
+    monkeypatch.setattr(module.pipeline, "run", fake_run)
+
+    def saved() -> list[str]:
+        return [report["id"] for report in runner.reports.snapshot()["reports"]]
+
+    async def batch(**more) -> str:
+        runner.start(loop=asyncio.get_running_loop(), queue=asyncio.Queue(), folder=str(tmp_path),
+                     ocr_engine=Engine.PORTABLE, ocr_device="cpu", llm_engine=Engine.PORTABLE, llm_device="cpu", **more)
+        await asyncio.to_thread(runner._thread.join, 5)
+        return runner.report_id
+
+    async def run():
+        mine = await batch()  # a person's: kept
+        runner.close_report()
+        assert saved() == [mine] and runner.report_id is None
+
+        first = await batch(keep_report=False)  # the loop's
+        assert len(runner.reports.snapshot(first)["items"]) == 1  # there to be shown while the scene holds on it
+        runner.close_report()
+        assert saved() == [mine]
+
+        # A turn whose batch was still stopping when the scene closed it: the
+        # next batch lets go of it instead.
+        second = await batch(keep_report=False)
+        third = await batch(keep_report=False)
+        assert second not in saved() and third in saved() and mine in saved()
+        kept = await batch()  # a person's batch after it takes its place, and stays
+        runner.close_report()
+        assert sorted(saved()) == sorted([mine, kept])
+
+    asyncio.run(run())
+
+
+def test_the_route_passes_on_whether_the_report_is_to_be_kept(report, monkeypatch):
+    store, _, _ = report
+    client, runner = _expense_client(store, monkeypatch)
+    asked = []
+    monkeypatch.setattr(runner, "start", lambda **options: asked.append(options["keep_report"]))
+    monkeypatch.setattr(client.app.state, "expense_extract_queue", object(), raising=False)  # the lifespan's, not started here
+    body = {"folder": "x", "ocr_engine": "portable", "llm_engine": "portable"}
+    assert client.post("/api/expense-extract/start", json=body).status_code == 200
+    assert client.post("/api/expense-extract/start", json={**body, "keep_report": False}).status_code == 200
+    assert asked == [True, False]  # a person's batch is kept unless it says otherwise; the Auto Demo's says so

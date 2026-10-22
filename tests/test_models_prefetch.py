@@ -95,6 +95,44 @@ def test_the_voice_cloning_files_are_covered():
     for path in voice_model._CHECKPOINT_FILES.values():
         assert _covers(openvoice, path), f"{path} would not be prefetched"
 
+    # OpenVoice's converter marks what it says, with a model the wavmark
+    # package fetches by itself the first time: no brick names it.
+    import inspect
+    import re
+
+    wavmark = pytest.importorskip("wavmark")
+    fetched = inspect.getsource(wavmark.load_model)
+    repo = re.search(r'repo_id="([^"]+)"', fetched).group(1)
+    assert "voice-clone-studio" in _spec(repo).demos
+    assert _covers(_spec(repo), re.search(r'filename="([^"]+)"', fetched).group(1))
+
+
+# --- licences (BACKLOG R17) ----------------------------------------------------------
+
+
+def _licence_page():
+    from pathlib import Path
+
+    return (Path(__file__).resolve().parents[1] / "docs" / "MODEL_LICENCES.md").read_text(encoding="utf-8")
+
+
+def test_every_model_says_its_licence_and_the_page_names_it():
+    page = _licence_page()
+    for spec in models.MODELS:
+        assert spec.licence, f"{spec.key} has no licence: read its publisher's and add it (docs/MODEL_LICENCES.md)"
+        assert f"`{spec.key}`" in page, f"{spec.key} is not in docs/MODEL_LICENCES.md"
+        if spec.repo_id:
+            assert spec.repo_id in page, f"{spec.repo_id} is not in docs/MODEL_LICENCES.md"
+        if spec.revision:
+            assert spec.revision[:12] in page, f"{spec.key} is held at a revision the page does not give"
+
+
+def test_a_licence_that_is_not_permissive_has_its_decision_written_down():
+    decisions = _licence_page().split("## Decisions", 1)[1].split("\n## ", 1)[0]
+    restricted = [spec for spec in models.MODELS if spec.engine != models.SAMPLES and spec.licence not in models.PERMISSIVE]
+    for spec in restricted:
+        assert f"### `{spec.key}`" in decisions, f"{spec.key} ({spec.licence}) has no decision in docs/MODEL_LICENCES.md"
+
 
 # --- the prefetcher ------------------------------------------------------------------
 

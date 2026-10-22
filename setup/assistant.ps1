@@ -131,9 +131,9 @@ function Get-SystemFacts {
         $checks += (New-Check 'windows' 'Windows' ("{0} (build {1})" -f $os.Caption.Trim(), $build) $state $help)
         $ram = [math]::Round($os.TotalVisibleMemorySize / 1MB, 0)
         if ($ram -ge 30) {
-            $checks += (New-Check 'memory' 'Memory' "$ram GB" 'ok' 'Enough for every demo, including the three that use the 30B coding model (about 17 GB for it).')
+            $checks += (New-Check 'memory' 'Memory' "$ram GB" 'ok' 'Enough for every demo, including the three that use the 30B coding model (about 17 GB for it, and 32 GB of memory to run).')
         } elseif ($ram -ge 15) {
-            $checks += (New-Check 'memory' 'Memory' "$ram GB" 'info' 'Enough for most demos. The three that use the 30B coding model (HTML Creator, Code Review, Page Agent) need about 17 GB for it and may not fit.')
+            $checks += (New-Check 'memory' 'Memory' "$ram GB" 'info' 'Enough for most demos. The 30B coding model needs 32 GB, or an Arc Pro B60 plugged in: without one it is left out of the downloads, the Page Agent and the Auto Demo''s page scene are greyed out, and Code Review and HTML Creator run a small model on the CPU.')
         } else {
             $checks += (New-Check 'memory' 'Memory' "$ram GB" 'warn' 'Little memory for AI models: keep to the small demos (speech, object detection, document Q&A).')
         }

@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Callable
 
 from pantherlake_ai_core import engine, models, npu
+from pantherlake_ai_core import machine as fit
 
 from .errors import Conflict
 
@@ -116,7 +117,8 @@ def _note(key: str, kind: str, seconds: float) -> None:
 def plan(is_cached: Callable[[models.ModelSpec], bool] | None = None) -> list[dict]:
     """Every model on every chip it could be compiled for here, in the
     inventory's order, the NPU first: what is done, what is to do, and what
-    cannot be (the model is not downloaded, or the chip keeps nothing).
+    cannot be (the model is not downloaded, the chip keeps nothing, or this
+    laptop has too little memory to run it there).
     `is_cached` answers "is this model downloaded" for a caller that has
     asked already; `models.is_cached` otherwise."""
     is_cached = is_cached or models.is_cached
@@ -129,8 +131,11 @@ def plan(is_cached: Callable[[models.ModelSpec], bool] | None = None) -> list[di
                 if chip.kind != kind:
                     continue
                 record = done.get(f"{spec.key}@{kind}")
+                unfit = fit.unfit_reason(spec.needs_memory_gb, chip.device)
                 if record:
                     state = "ready"
+                elif unfit:
+                    state = "unfit"  # a compile of it would not fit in memory either
                 elif not chip.keeps:
                     state = "unkept"
                 elif not is_cached(spec):
@@ -140,6 +145,7 @@ def plan(is_cached: Callable[[models.ModelSpec], bool] | None = None) -> list[di
                 items.append({
                     "key": spec.key, "label": spec.label, "chip": kind, "chip_name": chip.name, "device": chip.device,
                     "state": state, "seconds": (record or {}).get("seconds"), "error": None,
+                    "unfit": unfit if state == "unfit" else None,
                 })
     return items
 
