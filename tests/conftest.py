@@ -27,3 +27,7 @@ def _a_laptop_with_memory_to_spare(monkeypatch):
     from pantherlake_ai_core import machine
 
     monkeypatch.setenv(machine.MEMORY_SWITCH, "64")
+    # And 75% of it for the integrated GPU, which a 64 GB laptop left at
+    # Intel's default (57%, 36 GB) would also have enough of: what a test
+    # sees does not depend on the slider of the laptop that runs it.
+    monkeypatch.setenv(machine.GPU_SHARE_SWITCH, "48")

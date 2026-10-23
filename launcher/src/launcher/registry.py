@@ -26,6 +26,8 @@ class LargeModel:
     # disclaimer, and on the Auto Demo's start screen when one of its scenes
     # runs it. None: the badge says enough.
     needs_memory_gb: int | None = None
+    # What the integrated GPU must be allowed of it (machine.share_reason).
+    needs_gpu_gb: float | None = None
 
 
 _MEASURED_ON = "a Dell XPS 14 (Core Ultra X7 358H, Arc B390 iGPU) on 2026-09-11"
@@ -38,6 +40,7 @@ _CODER_30B = LargeModel(
     measured_on=_MEASURED_ON,
     discrete_gpu="An Arc Pro B60 streams it faster, about 65 tokens/s against 38, but starts no sooner.",
     needs_memory_gb=models.BY_KEY["coder-30b-ov"].needs_memory_gb,
+    needs_gpu_gb=models.BY_KEY["coder-30b-ov"].needs_gpu_gb,
 )
 _OCR_VLM_7B = LargeModel(
     label="7B vision model",

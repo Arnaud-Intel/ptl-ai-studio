@@ -50,6 +50,20 @@ Lake. One launcher, no cloud.**
   is left out of the downloads, in the Studio and in the setup assistant.
   `PTL_MEMORY_GB=16` makes a larger laptop behave like a 16 GB one, to
   rehearse.
+- **On 32 GB, give the integrated GPU 75% of the memory.** Windows lets the
+  integrated GPU use 57% of the memory unless told otherwise, which is
+  18 GB on a 32 GB laptop. The coding model needs about 20 GB there while
+  it writes a page. In Intel Graphics Software, under Graphics > General,
+  turn on "Shared GPU/NPU Memory Override", set its Memory Limit to 75% and
+  restart the laptop ([how, with a screenshot](docs/GPU_MEMORY.md)). Until
+  then the Studio greys out the same things as above, says what to change
+  and links to the same steps. It cannot
+  change the setting itself: Intel's app is the only published way. On a
+  laptop of less than 48 GB the Studio also unloads the models a demo
+  left loaded as soon as another demo starts, so the two never need the
+  memory at once. The Studio reads the percentage where the slider writes
+  it, so `PTL_MEMORY_GB=32` plays a 32 GB laptop at this one's setting, and
+  `PTL_GPU_SHARE_GB=18` sets the GPU's share directly.
 - **What was measured where.** Every figure and screenshot on this page
   comes from a Panther Lake laptop (Dell XPS 14, Core Ultra X7 358H, 64 GB).
   A Lunar Lake laptop runs the same build on the same three chips, at its

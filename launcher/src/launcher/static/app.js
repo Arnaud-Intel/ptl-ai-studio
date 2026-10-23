@@ -4640,9 +4640,42 @@ async function restorePage(panel, brick) {
 // The disclaimer of a demo whose large model a laptop with less memory cannot
 // run (registry.LargeModel.needs_memory_gb); "" for any other. A launcher
 // started before the field existed sends none, and nothing is said.
+// The page that shows where Intel's GPU memory limit is set
+// (pantherlake_ai_core.machine.SHARE_HELP), opened beside the Studio.
+const GPU_MEMORY_HELP = "/static/gpu-memory.html";
+
+function gpuMemoryHelpLink(text = "How to change it") {
+  const link = document.createElement("a");
+  link.href = GPU_MEMORY_HELP;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.className = "help-link";
+  link.textContent = text;
+  // Inside a card that opens its demo when clicked: the link opens only itself.
+  link.addEventListener("click", (event) => event.stopPropagation());
+  return link;
+}
+
+function gpuMemoryHelpHtml(text = "How to change it") {
+  return `<a class="help-link" href="${GPU_MEMORY_HELP}" target="_blank" rel="noopener">${escapeHtml(text)}</a>`;
+}
+
+// Whether what greys the coding model out is the laptop's memory itself
+// (under 32 GB, no discrete GPU to hold it), not a setting.
+function memoryShortHere() {
+  const agent = (DEMOS || []).find((demo) => demo.id === "page-agent");
+  return Boolean(agent && agent.unfit && !agent.unfit_fixable);
+}
+
 function memoryDisclaimer(demo) {
   const model = demo.large_model;
   if (!model || !model.needs_memory_gb) return "";
+  if (demo.unfit && demo.unfit_fixable) {
+    // The memory is there; Windows lets the integrated GPU use too little of it.
+    return (demoHasPortable(demo)
+      ? `The ${model.label} is greyed out until the integrated GPU may use more memory. ${demo.unfit} Meanwhile the portable engine runs a small model on the CPU.`
+      : `This demo is greyed out until the integrated GPU may use more memory. ${demo.unfit}`);
+  }
   if (demo.unfit) {
     // This laptop is one of them (the launcher says why: GET /api/demos).
     return (demoHasPortable(demo)
@@ -4652,6 +4685,9 @@ function memoryDisclaimer(demo) {
   return (
     `Needs a laptop with ${model.needs_memory_gb} GB of memory or more: its ${model.label} alone takes about ` +
     `${model.gpu_memory_gb} GB, from the memory the integrated GPU shares, and on a laptop with less it does not work.` +
+    (model.needs_gpu_gb
+      ? ` On a ${model.needs_memory_gb} GB laptop the integrated GPU must also be allowed 75% of it, in Intel Graphics Software.`
+      : "") +
     ((demo.engines || []).includes("portable")
       ? " There, choose the portable engine: it runs a small model on the CPU instead."
       : "")
@@ -4681,7 +4717,12 @@ function renderBadges(container, demo) {
       (model.discrete_gpu ? `${model.discrete_gpu} ` : "") +
       `Measured on ${model.measured_on}.`;
     container.appendChild(badge);
-    if (model.needs_memory_gb) {
+    if (model.needs_memory_gb && demo.unfit && demo.unfit_fixable) {
+      const need = gpuMemoryHelpLink("GPU memory limit too low");
+      need.className = "badge badge-memory badge-link";
+      need.title = `${memoryDisclaimer(demo)} Click for how to change it.`;
+      container.appendChild(need);
+    } else if (model.needs_memory_gb) {
       const need = document.createElement("span");
       need.className = "badge badge-memory";
       need.textContent = `Needs ${model.needs_memory_gb} GB of memory`;
@@ -4741,9 +4782,14 @@ function renderCards(demos) {
       if (demo.unfit) {
         const why = document.createElement("p");
         why.className = "card-unfit";
-        why.textContent = demoHasPortable(demo)
-          ? "Here it runs a small model on the CPU: the coding model needs more memory than this laptop has."
-          : "Not on this laptop: it needs more memory, or an Arc Pro B60.";
+        why.textContent = demo.unfit_fixable
+          ? demoHasPortable(demo)
+            ? "Here it runs a small model on the CPU until the integrated GPU may use more memory. "
+            : "Greyed out until the integrated GPU may use more memory: a setting. "
+          : demoHasPortable(demo)
+            ? "Here it runs a small model on the CPU: the coding model needs more memory than this laptop has."
+            : "Not on this laptop: it needs more memory, or an Arc Pro B60.";
+        if (demo.unfit_fixable) why.appendChild(gpuMemoryHelpLink());
         why.title = demo.unfit;
         node.querySelector(".card-tagline").after(why);
       }
@@ -4825,6 +4871,10 @@ async function showPanel(demo) {
   if (requirement) {
     requirement.textContent = memoryDisclaimer(demo);
     requirement.hidden = !requirement.textContent;
+    // Wherever the GPU's limit is what to change -- not where the memory is missing.
+    if (requirement.textContent && demo.large_model.needs_gpu_gb && !(demo.unfit && !demo.unfit_fixable)) {
+      requirement.append(" ", gpuMemoryHelpLink(demo.unfit ? "How to change it" : "How to set the GPU memory limit"));
+    }
   }
   renderBadges(el("panel-badges"), demo);
   document.title = `${demo.name} · Panther Lake AI Studio`;
@@ -5568,7 +5618,10 @@ function autodemoStandHtml(stand) {
     (stand.internet ? yes("Internet") : no("No internet")) +
     (stand.memory_gb
       ? stand.memory_gb >= 29 || stand.dgpu
-        ? yes(`${stand.memory_gb} GB of memory`)
+        ? stand.gpu_share_short
+          ? `<li class="missing">${escapeHtml(`${stand.memory_gb} GB of memory, ${Math.round(stand.gpu_share_gb)} GB of it for the integrated GPU: too little for the page scene`)} ${gpuMemoryHelpHtml()}</li>`
+          : yes(`${stand.memory_gb} GB of memory` +
+              (stand.gpu_share_gb != null ? `, ${Math.round(stand.gpu_share_gb)} GB of it for the integrated GPU` : ""))
         : no(`${stand.memory_gb} GB of memory: the page scene is left out`)
       : "") +
     `</ul>`
@@ -5591,7 +5644,7 @@ function autodemoPlaylistHtml(playlist, leftOut) {
         // Scenes that share a place in the loop take turns in it.
         const partners = (entry.turns_with || []).filter(playing).map((key) => playlist.find((other) => other.key === key).title);
         const note = !entry.playable
-          ? `cannot play here: ${escapeHtml(entry.reason)}`
+          ? `cannot play here: ${escapeHtml(entry.reason)}` + (entry.help ? ` ${gpuMemoryHelpHtml()}` : "")
           : !on
             ? "left out"
             : partners.length
@@ -7469,9 +7522,34 @@ async function loadVersion() {
   }
 }
 
+// What to change when Windows lets the integrated GPU use too little of the
+// laptop's memory for the coding model (machine.share_reason): said above
+// the demos and on the start screen, since the studio cannot change it.
+function showShareNotice(demos) {
+  const held = demos.filter((demo) => demo.unfit && demo.unfit_fixable);
+  const text = held.length
+    ? `The 30B coding model is greyed out for now (${held.map((demo) => demo.name).join(", ")}). ${held[0].unfit}`
+    : "";
+  for (const id of ["gpu-share-notice", "landing-share-notice"]) {
+    const note = el(id);
+    if (!note) continue;
+    note.hidden = !text;
+    note.textContent = text;
+    if (text) note.append(" ", gpuMemoryHelpLink());
+  }
+  // "Needs 32 GB" on the start screen and the Auto Demo's dialog: said on a
+  // laptop that has less, and nowhere else -- on one with 32 GB it read as
+  // the reason the page scene was off when the reason was the GPU's limit.
+  for (const id of ["landing-auto-need", "autodemo-requirement"]) {
+    const note = el(id);
+    if (note) note.hidden = !memoryShortHere();
+  }
+}
+
 async function init() {
   DEMOS = await fetchJSON("/api/demos");
   renderCards(DEMOS);
+  showShareNotice(DEMOS);
   loadVersion();
   showUpgradeResult().then((shown) => loadUpdateStatus({ prompt: !shown }));
   loadModels();

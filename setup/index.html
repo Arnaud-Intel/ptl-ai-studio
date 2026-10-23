@@ -125,6 +125,17 @@
   .modellist .ready { color: var(--success); }
   .modellist .failed { color: var(--danger); }
 
+  /* the GPU memory step: Intel's app, with where to click marked */
+  ol.howto { margin: 0 0 16px; padding-left: 22px; color: var(--text-dim); }
+  ol.howto li { margin: 6px 0; }
+  ol.howto b { color: var(--text); }
+  .num { display: inline-grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: var(--warning); color: #000; font-size: 12.5px; font-weight: 700; margin-right: 4px; }
+  .shot { position: relative; margin: 0 0 8px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .shot img { display: block; width: 100%; height: auto; }
+  .shot .spot { position: absolute; border: 3px solid var(--warning); border-radius: 8px; }
+  .shot .spot .num { position: absolute; top: -12px; left: -12px; margin: 0; }
+  .caption { margin: 0 0 16px; font-size: 13px; color: var(--text-faint); }
+
   footer { padding: 12px clamp(16px, 4vw, 48px) 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 20px; color: var(--text-faint); font-size: 12.5px; }
   .banner { margin: 0 auto 10px; width: min(1180px, calc(100% - 32px)); padding: 12px 16px; border: 1px solid rgba(226, 96, 79, 0.7); border-radius: 10px; background: rgba(226, 96, 79, 0.12); }
 </style>
@@ -152,8 +163,15 @@ const STEPS = [
   { id: "environment", title: "The Studio", sub: "Python and the AI runtimes" },
   { id: "chips", title: "The chips", sub: "CPU, GPU and NPU, as the Studio sees them" },
   { id: "models", title: "The models", sub: "Choose what to download" },
+  // Only on a 32 GB laptop: the assistant leaves it out of its steps elsewhere.
+  { id: "gpu", title: "GPU memory", sub: "One setting, for the largest model" },
   { id: "ready", title: "Ready", sub: "Open the Studio" },
 ];
+// What the 30B coding model needs on the integrated GPU (core's models.py,
+// _CODER_GPU_GB; a test checks they agree), and the share that gives it on
+// a 32 GB laptop.
+const CODER_GPU_GB = 20;
+const ADVISED_PERCENT = 75;
 // The sets of models offered, by the keys of the Studio's own catalogue
 // (core's models.py; a test checks that every key and demo here exists).
 const SETS = [
@@ -184,6 +202,7 @@ let lost = 0;              // looks at the script that went unanswered
 let finished = false;
 let drawn = "";            // what the panel was last drawn from
 let models = null;         // the Studio's model inventory, once it is up
+let gpuMemory = null;      // what the Studio says the integrated GPU may use (the GPU memory step)
 let chosenSet = "small";
 let chosenDemos = new Set(["doc-qa", "object-detection"]);
 let shortcut = true;
@@ -195,6 +214,7 @@ const esc = (text) => String(text === null || text === undefined ? "" : text).re
 const MARK = { ok: "✓", warn: "!", error: "✕", info: "i", skipped: "–", running: "" };
 const step = (id) => state.steps.find((entry) => entry.id === id);
 const settled = (id) => ["ok", "warn", "skipped"].includes(step(id).state);
+const shown = () => STEPS.filter((entry) => state.steps.some((told) => told.id === entry.id));
 
 function gb(bytes) {
   if (bytes === null || bytes === undefined) return "?";
@@ -256,12 +276,12 @@ async function look() {
 
 // The first step that is not settled: where somebody coming back picks up.
 function firstOpen() {
-  for (const entry of STEPS) if (!settled(entry.id) || entry.id === "ready") return entry.id;
+  for (const entry of shown()) if (!settled(entry.id) || entry.id === "ready") return entry.id;
   return "ready";
 }
 function reachable(id) {
-  const index = STEPS.findIndex((entry) => entry.id === id);
-  return visited.has(id) || STEPS.slice(0, index).every((entry) => settled(entry.id));
+  const index = shown().findIndex((entry) => entry.id === id);
+  return visited.has(id) || shown().slice(0, index).every((entry) => settled(entry.id));
 }
 function go(id) {
   if (!reachable(id)) return;
@@ -270,8 +290,8 @@ function go(id) {
   autopilot();
 }
 function next() {
-  const index = STEPS.findIndex((entry) => entry.id === view);
-  if (index < STEPS.length - 1) go(STEPS[index + 1].id);
+  const index = shown().findIndex((entry) => entry.id === view);
+  if (index < shown().length - 1) go(shown()[index + 1].id);
 }
 
 // What needs no permission is done without being asked: looking at the chips
@@ -286,7 +306,7 @@ function autopilot() {
   }
   // Asked again if it was closed meanwhile, but not in a loop: a Studio
   // that will not start says so, and waits for a click.
-  if ((view === "models" || view === "ready") && settled("chips") && state.studio.state === "stopped" && !running && Date.now() - asked.studio > 20000) {
+  if (["models", "gpu", "ready"].includes(view) && settled("chips") && state.studio.state === "stopped" && !running && Date.now() - asked.studio > 20000) {
     asked.studio = Date.now();
     models = null;
     act("studio-start");
@@ -299,7 +319,7 @@ function draw(force) {
   if (!state) return;
   visited.add(view);
   $("foot-left").textContent = (state.version ? "Version " + state.version + " · " : "") + state.root;
-  $("steps").innerHTML = STEPS.map((entry, index) => {
+  $("steps").innerHTML = shown().map((entry, index) => {
     const current = step(entry.id);
     const mark = current.state === "pending" ? String(index + 1) : MARK[current.state] || String(index + 1);
     return `<button type="button" class="step ${esc(current.state)}${entry.id === view ? " current" : ""}" data-go="${entry.id}"${reachable(entry.id) ? "" : " disabled"}>` +
@@ -316,8 +336,9 @@ function draw(force) {
   if (fresh && pinned) fresh.scrollTop = fresh.scrollHeight;
 }
 
-function head(index, title, lead) {
-  return `<p class="kicker">Step ${index} of ${STEPS.length}</p><h1>${esc(title)}</h1><p class="lead">${lead}</p>`;
+function head(id, title, lead) {
+  const index = shown().findIndex((entry) => entry.id === id) + 1;
+  return `<p class="kicker">Step ${index} of ${shown().length}</p><h1>${esc(title)}</h1><p class="lead">${lead}</p>`;
 }
 // A piece of advice, with the addresses it names made into links: on a laptop
 // with nothing, what is missing is one click away rather than to be typed.
@@ -359,7 +380,7 @@ const PANELS = {
       : `<div class="hosts">` + hosts.map((host) =>
           `<div class="host${host.ok ? "" : " bad"}"><b><span class="mark ${host.ok ? "ok" : "error"}">${host.ok ? MARK.ok : MARK.error}</span> ${esc(host.name)}</b>` +
           `<span>${esc(host.ok ? "For " + host.what : "Not reachable: needed for " + host.what + (host.detail ? ". " + host.detail : ""))}</span></div>`).join("") + `</div>`;
-    return head(1, "This laptop", "Nothing has been installed yet. This is what the Studio will find, and what could get in its way.") +
+    return head("system", "This laptop", "Nothing has been installed yet. This is what the Studio will find, and what could get in its way.") +
       `<div class="rows">${checks.map(row).join("")}</div>` +
       `<p class="kicker">The internet, for the downloads</p>${net}` +
       (drivers ? `<p class="note">Drivers: the <a href="${DRIVERS}" target="_blank" rel="noopener">Intel Driver &amp; Support Assistant</a> updates the graphics and NPU drivers. Restart the laptop afterwards, then start first_launch.bat again.</p>` : "") +
@@ -371,9 +392,9 @@ const PANELS = {
   tools() {
     const job = jobOf("tools");
     const intro = "uv is a small, open-source tool that installs Python and the Studio's packages, into this folder. It is the only thing the Studio needs to be there before it.";
-    if (job && job.running) return head(2, "The installer", intro) + working(job, job.action === "uv-winget" ? "Installing uv with winget" : "Downloading uv");
+    if (job && job.running) return head("tools", "The installer", intro) + working(job, job.action === "uv-winget" ? "Installing uv with winget" : "Downloading uv");
     if (state.uv.path) {
-      return head(2, "The installer", intro) +
+      return head("tools", "The installer", intro) +
         `<div class="card good"><h2>uv is here</h2><p>${esc(state.uv.version)} · ${esc(state.uv.path)}</p></div>` +
         `<div class="actions"><button class="btn primary" data-next>Continue</button></div>`;
     }
@@ -384,7 +405,7 @@ const PANELS = {
     const ways = state.uv.winget
       ? "With winget, Windows' own installer, uv is installed for your account like any program. Downloaded into this folder instead, it stays inside the project (a .tools subfolder) and is removed with it. Either way no administrator right is needed."
       : "It is fetched from uv's own releases on GitHub, checked against its published checksum, and kept inside the project (a .tools subfolder): nothing is installed elsewhere, and no administrator right is needed.";
-    return head(2, "The installer", intro) +
+    return head("tools", "The installer", intro) +
       (job && job.exit !== null && job.exit !== 0 && !job.running ? failed(job, () => buttons) :
         `<div class="card"><h2>uv is not on this laptop yet</h2><p>${ways}</p></div><div class="actions">${buttons}</div>`) +
       (step("tools").message && !job ? `<p class="note">${esc(step("tools").message)}</p>` : "");
@@ -394,19 +415,19 @@ const PANELS = {
     const job = jobOf("environment");
     const current = step("environment");
     const intro = "Python and the AI runtimes (OpenVINO among them) are installed into this folder: about 2 GB on the disk. It takes from two minutes on a fast connection to a quarter of an hour on a slow one, most of it downloading.";
-    if (!state.uv.path) return head(3, "The Studio", intro) + `<div class="card"><h2>The installer comes first</h2><p>Step 2 gets it.</p></div><div class="actions"><button class="btn primary" data-go="tools">Go to step 2</button></div>`;
-    if (job && job.running) return head(3, "The Studio", intro) + working(job, "Installing") + `<p class="note">A line that does not move for a minute is a large file coming down. Keep the laptop plugged in and awake.</p>`;
+    if (!state.uv.path) return head("environment", "The Studio", intro) + `<div class="card"><h2>The installer comes first</h2><p>Step 2 gets it.</p></div><div class="actions"><button class="btn primary" data-go="tools">Go to step 2</button></div>`;
+    if (job && job.running) return head("environment", "The Studio", intro) + working(job, "Installing") + `<p class="note">A line that does not move for a minute is a large file coming down. Keep the laptop plugged in and awake.</p>`;
     if (current.state === "ok") {
-      return head(3, "The Studio", intro) + `<div class="card good"><h2>Installed</h2><p>${esc(current.message || "The environment is in place.")}</p></div>` +
+      return head("environment", "The Studio", intro) + `<div class="card good"><h2>Installed</h2><p>${esc(current.message || "The environment is in place.")}</p></div>` +
         `<div class="actions"><button class="btn primary" data-next>Continue</button><button class="btn" data-act="sync">Install again</button></div>`;
     }
     if (job && job.exit !== null && job.exit !== 0) {
-      return head(3, "The Studio", intro) + failed(job, (hint) =>
+      return head("environment", "The Studio", intro) + failed(job, (hint) =>
         `<button class="btn primary" data-act="sync">Try again</button>` +
         (hint.option === "certs" ? `<button class="btn" data-act="sync" data-option="certs">Try again with Windows' certificates (company network)</button>` : ""));
     }
     const again = state.environment.present;
-    return head(3, "The Studio", intro) +
+    return head("environment", "The Studio", intro) +
       (again ? `<div class="card"><h2>An installation is already here</h2><p>Installing again brings it up to date with this version of the project. It only fetches what changed.</p></div>` : "") +
       `<div class="actions"><button class="btn primary" data-act="sync">${again ? "Bring it up to date" : "Install"}</button></div>` +
       (current.message && !again ? `<p class="note">${esc(current.message)}</p>` : "") +
@@ -417,12 +438,12 @@ const PANELS = {
     const job = jobOf("chips");
     const intro = "The AI runtime that was just installed is asked which chips it can really use. This is the check that counts: a chip it does not list cannot run a demo.";
     if (step("environment").state !== "ok" && !state.probe) {
-      return head(4, "The chips", intro) + `<div class="card"><h2>The Studio comes first</h2><p>Step 3 installs it.</p></div><div class="actions"><button class="btn primary" data-go="environment">Go to step 3</button></div>`;
+      return head("chips", "The chips", intro) + `<div class="card"><h2>The Studio comes first</h2><p>Step 3 installs it.</p></div><div class="actions"><button class="btn primary" data-go="environment">Go to step 3</button></div>`;
     }
-    if (job && job.running) return head(4, "The chips", intro) + working(job, "Asking the AI runtime") + `<p class="note">The first time, this takes about a minute: every package is opened once.</p>`;
+    if (job && job.running) return head("chips", "The chips", intro) + working(job, "Asking the AI runtime") + `<p class="note">The first time, this takes about a minute: every package is opened once.</p>`;
     const probe = state.probe;
     if (!probe) {
-      return head(4, "The chips", intro) + (job && job.exit ? failed(job, () => `<button class="btn primary" data-act="probe">Check again</button>`) :
+      return head("chips", "The chips", intro) + (job && job.exit ? failed(job, () => `<button class="btn primary" data-act="probe">Check again</button>`) :
         `<div class="actions"><button class="btn primary" data-act="probe">Check the chips</button></div>`);
     }
     const missing = probe.chips.filter((chip) => !chip.found);
@@ -430,7 +451,7 @@ const PANELS = {
       `<div class="chip${chip.found ? " found" : ""}"><strong>${esc(chip.name)}<span>${chip.found ? MARK.ok : "!"}</span></strong><p>${esc(chip.detail)}</p></div>`).join("") + `</div>`;
     const errors = probe.errors.map((error) =>
       `<div class="card problem"><h2>${esc(error.name)} does not load</h2><p>${told(error.help)}</p></div><pre class="log">${esc(error.error)}</pre>`).join("");
-    return head(4, "The chips", intro) + chips + errors +
+    return head("chips", "The chips", intro) + chips + errors +
       (missing.length && !probe.errors.length ? `<div class="card"><h2>A chip is missing</h2><p>The Studio works without it: its demos use another chip, and the option is greyed out. To get it, update the driver with the <a href="${DRIVERS}" target="_blank" rel="noopener">Intel Driver &amp; Support Assistant</a>, restart, and start first_launch.bat again.</p></div>` : "") +
       `<p class="facts"><span>Python <b>${esc(probe.python)}</b></span>` + probe.packages.filter((p) => ["openvino", "torch", "onnxruntime"].includes(p.name)).map((p) => `<span>${esc(p.name)} <b>${esc(p.version.split("-")[0])}</b></span>`).join("") + `</p>` +
       `<div class="actions"><button class="btn primary" data-next ${probe.errors.length ? "disabled" : ""}>Continue</button><button class="btn" data-act="probe">Check again</button></div>`;
@@ -439,13 +460,13 @@ const PANELS = {
   models() {
     const intro = "A demo needs its model on the disk before it can run. Fetch them now, on a good connection, rather than in front of an audience. They are kept outside the project, in your profile, and found again by any later version.";
     const studio = state.studio;
-    if (!settled("chips")) return head(5, "The models", intro) + `<div class="card"><h2>The chips come first</h2><p>Step 4 checks them.</p></div><div class="actions"><button class="btn primary" data-go="chips">Go to step 4</button></div>`;
+    if (!settled("chips")) return head("models", "The models", intro) + `<div class="card"><h2>The chips come first</h2><p>Step 4 checks them.</p></div><div class="actions"><button class="btn primary" data-go="chips">Go to step 4</button></div>`;
     if (studio.state === "failed") {
-      return head(5, "The models", intro) + `<div class="card problem"><h2>The Studio did not start</h2><p>${esc(studio.message)}</p></div>` +
+      return head("models", "The models", intro) + `<div class="card problem"><h2>The Studio did not start</h2><p>${esc(studio.message)}</p></div>` +
         `<div class="actions"><button class="btn primary" data-act="studio-start">Try again</button><button class="btn" data-skip>Skip the models for now</button></div>`;
     }
     if (studio.state !== "running" || !models) {
-      return head(5, "The models", intro) + `<p class="working"><span class="spinner"></span>Starting the Studio, which does the downloading. Its very first start takes up to two minutes...</p>` +
+      return head("models", "The models", intro) + `<p class="working"><span class="spinner"></span>Starting the Studio, which does the downloading. Its very first start takes up to two minutes...</p>` +
         `<div class="actions"><button class="btn" data-skip>Skip the models for now</button></div>`;
     }
     const all = models.models;
@@ -461,7 +482,7 @@ const PANELS = {
       const total = models.run_total_bytes || 0;
       const share = total ? Math.min(100, (models.done_bytes / total) * 100) : 0;
       const current = all.find((model) => model.key === models.current);
-      return head(5, "The models", intro) +
+      return head("models", "The models", intro) +
         `<p class="working"><span class="spinner"></span>Downloading ${esc(current ? current.label : "the models")}</p>` +
         `<div class="bar"><i style="width:${share.toFixed(1)}%"></i></div>` +
         `<p class="progress-line"><span>${gb(models.done_bytes)} of ${gb(total)}</span><span>${gb(models.bytes_per_second)}/s</span><span>${models.eta_seconds ? clock(models.eta_seconds) + " left" : ""}</span></p>` +
@@ -490,7 +511,7 @@ const PANELS = {
       return `<label><input type="checkbox" data-demo="${id}"${chosenDemos.has(id) ? " checked" : ""} /> ${esc(name)}${cpu}<span>${left(keys)}</span></label>`;
     }).join("") + `</div>`;
     const tight = free !== null && free !== undefined && need / 1e9 > free - 2;
-    return head(5, "The models", intro) +
+    return head("models", "The models", intro) +
       (errors.length ? `<div class="card problem"><h2>${errors.length === 1 ? "One model" : errors.length + " models"} did not come down</h2><p>${esc(errors.map(([key, why]) => (all.find((m) => m.key === key) || { label: key }).label + ": " + why).join(" · "))} Downloading again takes up where it stopped.</p></div>` : "") +
       `<div class="sets">${sets}</div>${demos}` +
       `<p class="facts"><span>To download: <b>${need ? gb(need) : missing ? "a few MB" : wanted.length ? "nothing, it is all here" : "nothing chosen"}</b></span>` +
@@ -502,6 +523,43 @@ const PANELS = {
       `<p class="note">Sizes are what is still to download; a size the model's host could not give counts as nothing. A demo whose model is missing fetches it the first time it is started, and says so.</p>`;
   },
 
+  gpu() {
+    const intro = `This laptop has the memory for the 30B coding model behind the Page Agent, Code Review and HTML Creator. ` +
+      `It runs on the integrated GPU, which borrows the laptop's memory, and needs about ${CODER_GPU_GB} GB of it while it writes. ` +
+      `Windows lets the integrated GPU use 57% of the memory unless told otherwise: on a 32 GB laptop that is 18 GB, too little. ` +
+      `At ${ADVISED_PERCENT}% it is 24 GB. The setup cannot change it for you: Intel's app is the only way.`;
+    const studio = state.studio;
+    if (studio.state !== "running" || !gpuMemory) {
+      return head("gpu", "GPU memory", intro) + (studio.state === "failed"
+        ? `<div class="card problem"><h2>The Studio did not start</h2><p>It is what reads the setting. ${esc(studio.message)} The steps below work without it.</p></div>`
+        : `<p class="working"><span class="spinner"></span>Asking the Studio what this laptop allows the GPU...</p>`) +
+        gpuHowTo() + `<div class="actions"><button class="btn primary" data-gpu="skipped">Continue</button></div>`;
+    }
+    const share = gpuMemory.gpu_share_gb;
+    const percent = gpuMemory.gpu_share_percent;
+    const enough = gpuMemory.big_discrete_gpu || (share !== null && share + 0.5 >= CODER_GPU_GB);
+    const facts = `<div class="rows">` +
+      row({ state: "info", label: "Memory", value: `${gpuMemory.memory_gb} GB`, help: "As Windows reports it." }) +
+      row({ state: enough ? "ok" : "warn", label: "For the GPU", value: share === null ? "unknown" : `${share} GB (${percent}%)`,
+        help: gpuMemory.big_discrete_gpu ? `An Arc Pro B60 (${gpuMemory.big_discrete_gpu}) holds the model by itself.` :
+          enough ? `Enough: the model needs about ${CODER_GPU_GB} GB.` : `Too little: the model needs about ${CODER_GPU_GB} GB.` }) +
+      `</div>`;
+    if (gpuMemory.gpu_share_pending) {
+      return head("gpu", "GPU memory", intro) + facts +
+        `<div class="card"><h2>Changed: it applies once the laptop restarts</h2><p>Finish the setup first and open the Studio: everything but the 30B model works now. ` +
+        `Restart the laptop before showing the Page Agent, then start the Studio with its desktop shortcut or start_launcher.bat.</p></div>` +
+        `<div class="actions"><button class="btn primary" data-gpu="warn">Continue</button><button class="btn" data-gpu-look>Check again</button></div>`;
+    }
+    if (enough) {
+      return head("gpu", "GPU memory", intro) + facts +
+        `<div class="card good"><h2>Nothing to change</h2><p>The integrated GPU may already use enough of the memory for the coding model.</p></div>` +
+        `<div class="actions"><button class="btn primary" data-gpu="ok">Continue</button></div>`;
+    }
+    return head("gpu", "GPU memory", intro) + facts + gpuHowTo() +
+      `<div class="actions"><button class="btn primary" data-gpu-look>I changed it: check again</button><button class="btn" data-gpu="skipped">Continue without it</button></div>` +
+      `<p class="note">Without it the Studio works all the same: the Page Agent is greyed out, Code Review and HTML Creator run a small model on the CPU, and the Studio links to these steps.</p>`;
+  },
+
   ready() {
     const studio = state.studio;
     const probe = state.probe;
@@ -511,13 +569,14 @@ const PANELS = {
       return `<p class="kicker">Done</p><h1>The Studio is open</h1><p class="lead">It opened in another tab. This page has done its work and can be closed. The black window is the Studio now: closing it stops the Studio.</p>` +
         `<div class="actions"><a class="btn primary" style="text-decoration:none;display:inline-block" href="${esc(studio.url)}">Go to the Studio</a></div>`;
     }
-    if (!settled("chips")) return head(6, "Ready", intro) + `<div class="card"><h2>Not quite</h2><p>The earlier steps are not finished.</p></div><div class="actions"><button class="btn primary" data-go="${firstOpen()}">Take up where it stopped</button></div>`;
+    if (!settled("chips")) return head("ready", "Ready", intro) + `<div class="card"><h2>Not quite</h2><p>The earlier steps are not finished.</p></div><div class="actions"><button class="btn primary" data-go="${firstOpen()}">Take up where it stopped</button></div>`;
     const waiting = studio.state !== "running";
-    return head(6, "Ready", intro) +
+    return head("ready", "Ready", intro) +
       `<div class="rows">` +
       row({ state: "ok", label: "Chips", value: chips || "CPU", help: "Each demo lets you pick one, and the panel on the right of the Studio shows which is working." }) +
       row({ state: models && models.ready_count ? "ok" : "info", label: "Models", value: models ? models.ready_count + " of " + models.total_count + " on this laptop" : "none fetched yet",
         help: "More can be fetched at any time with Prepare models, at the bottom of the Studio." }) +
+      (state.steps.some((told) => told.id === "gpu") ? gpuRow() : "") +
       row({ state: "info", label: "First thing to try", value: "Auto Demo", help: "On the start screen: the Studio plays its demos by itself and says what each chip is doing. Manual demo opens every demo with its settings." }) +
       `</div>` +
       (studio.state === "failed" ? `<div class="card problem"><h2>The Studio did not start</h2><p>${esc(studio.message)}</p></div>` : "") +
@@ -527,6 +586,39 @@ const PANELS = {
       `<p class="note">Next time: double-click start_launcher.bat in the project folder (or the desktop shortcut). To update or repair the installation, run first_launch.bat again.</p>`;
   },
 };
+
+// ---------------------------------------------------------------- the GPU's memory limit
+
+// Where to set it, on the user's screenshot of Intel Graphics Software
+// (the Studio's static folder; the marks as on its gpu-memory.html).
+function gpuHowTo() {
+  return `<ol class="howto">` +
+    `<li>Open <b>Intel Graphics Software</b>: press the Windows key and type its name.</li>` +
+    `<li><span class="num">1</span> Click <b>Graphics</b> on the left.</li>` +
+    `<li><span class="num">2</span> Under <b>General</b>, turn on <b>Shared GPU/NPU Memory Override</b>.</li>` +
+    `<li><span class="num">3</span> Set <b>Memory Limit</b> to <b>${ADVISED_PERCENT}</b>: type it in the box, or drag the slider.</li>` +
+    `<li>Come back here and check again. It applies once the laptop restarts: restart when the setup is done.</li></ol>` +
+    `<div class="shot"><img src="/static/intel-gpu-memory-setting.webp" width="2000" height="1124" alt="Intel Graphics Software, Graphics, General: the Shared GPU/NPU Memory Override switch, and under it the Memory Limit slider and box, at 57%." />` +
+    `<span class="spot" style="left:0.4%;top:15.9%;width:19.3%;height:5.2%"><span class="num">1</span></span>` +
+    `<span class="spot" style="left:22.1%;top:47.2%;width:75.6%;height:10.1%"><span class="num">2</span></span>` +
+    `<span class="spot" style="left:89.4%;top:59.6%;width:6.5%;height:5.2%"><span class="num">3</span></span></div>` +
+    `<p class="caption">On a 64 GB laptop still at the default: 57% is 36.2 GB there. On a 32 GB laptop, ${ADVISED_PERCENT}% shows about 24 GB.</p>`;
+}
+function gpuRow() {
+  const done = step("gpu").state;
+  if (done === "ok") return row({ state: "ok", label: "GPU memory", value: "Enough for the 30B model", help: "Every demo can run." });
+  if (done === "warn") return row({ state: "warn", label: "GPU memory", value: "Restart the laptop", help: "The new limit applies after a restart. Everything else works now; restart before showing the Page Agent." });
+  return row({ state: "info", label: "GPU memory", value: "Not raised", help: "The Page Agent stays greyed out until the integrated GPU may use more memory. The GPU memory step, and the Studio itself, show how." });
+}
+async function lookAtGpu() {
+  if (finished || !state || state.studio.state !== "running" || !["gpu", "ready"].includes(view) || !state.steps.some((told) => told.id === "gpu")) return;
+  try {
+    gpuMemory = await call("/studio/api/system/memory");
+    draw(false);
+  } catch (error) {
+    // The Studio is busy starting, or was closed: the next look will tell.
+  }
+}
 
 // ---------------------------------------------------------------- the models
 
@@ -616,6 +708,9 @@ document.addEventListener("click", async (event) => {
   const modelOrder = target.closest("[data-models]");
   if (modelOrder) return modelsOrder(modelOrder.dataset.models);
   if (target.closest("[data-skip]")) { await act("mark", { step: "models", state: "skipped" }); return next(); }
+  const gpuOrder = target.closest("[data-gpu]");
+  if (gpuOrder) { await act("mark", { step: "gpu", state: gpuOrder.dataset.gpu }); return next(); }
+  if (target.closest("[data-gpu-look]")) { gpuMemory = null; draw(true); return lookAtGpu(); }
   if (target.closest("[data-open]")) {
     if (shortcut) await act("shortcut");
     await act("open-studio");
@@ -634,6 +729,7 @@ document.addEventListener("change", (event) => {
 
 setInterval(look, 800);
 setInterval(lookAtModels, 1000);
+setInterval(lookAtGpu, 3000);
 look();
 </script>
 </body>

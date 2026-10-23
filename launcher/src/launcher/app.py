@@ -378,10 +378,21 @@ def index() -> HTMLResponse:
 def large_model_unfit(demo_id: str, device: str | None = None) -> str | None:
     """Why this demo's large model cannot run on this laptop -- on `device`,
     or wherever the app would put it -- or None. Only a model whose memory
-    need is stated (registry.LargeModel.needs_memory_gb) is asked about."""
-    demo = registry.get(demo_id)
-    needs = demo.large_model.needs_memory_gb if demo and demo.large_model else None
-    return machine_fit.unfit_reason(needs, device)
+    need is stated (registry.LargeModel.needs_memory_gb) is asked about: the
+    laptop's memory, then what of it the integrated GPU is allowed."""
+    model = demo.large_model if (demo := registry.get(demo_id)) else None
+    if model is None:
+        return None
+    return machine_fit.blocked_reason(model.needs_memory_gb, model.needs_gpu_gb, device)
+
+
+def large_model_fixable(demo_id: str) -> bool:
+    """Whether what stops it is a setting (the integrated GPU's share of
+    memory), not the laptop: the page says what to change, not "not here"."""
+    model = demo.large_model if (demo := registry.get(demo_id)) else None
+    return bool(model) and not machine_fit.unfit_reason(model.needs_memory_gb) and bool(
+        machine_fit.share_reason(model.needs_gpu_gb)
+    )
 
 
 def _refuse_if_unfit(demo_id: str, device: str, *, portable: bool) -> None:
@@ -395,8 +406,11 @@ def _refuse_if_unfit(demo_id: str, device: str, *, portable: bool) -> None:
 @app.get("/api/demos")
 def list_demos() -> JSONResponse:
     """Every demo, with `unfit`: why its large model cannot run on this
-    laptop, or None."""
-    return JSONResponse([{**asdict(d), "unfit": large_model_unfit(d.id)} for d in registry.REGISTRY])
+    laptop, or None -- and `unfit_fixable` when a setting is what stops it."""
+    return JSONResponse([
+        {**asdict(d), "unfit": large_model_unfit(d.id), "unfit_fixable": large_model_fixable(d.id)}
+        for d in registry.REGISTRY
+    ])
 
 
 @app.get("/api/version")
@@ -467,6 +481,16 @@ _UNLOADABLE = {
     "page-agent": page_agent_runner,
     "portrait-studio": portrait_studio_runner,
 }
+
+
+def _make_room(demo_id: str) -> None:
+    """On a laptop short of memory, a demo that starts gets the memory the
+    others left loaded and are not using (loaded.make_room)."""
+    if machine_fit.memory_tight():
+        loaded.make_room(demo_id, _UNLOADABLE)
+
+
+events.on_start(_make_room)
 
 
 @app.post("/api/bricks/{demo_id}/stop")
@@ -622,8 +646,10 @@ def demo_devices(demo_id: str) -> JSONResponse:
         if whole:
             payload["openvino_unfit"] = whole
         short = f"needs {needs} GB of memory on this laptop"
+        allowed = "needs more memory allowed to the integrated GPU (Intel Graphics Software)"
         payload["openvino_unsupported"] = {
-            device: short for device in payload["openvino_devices"] if large_model_unfit(demo_id, device)
+            device: short if machine_fit.unfit_reason(needs, device) else allowed
+            for device in payload["openvino_devices"] if large_model_unfit(demo_id, device)
         }
     choice = _language_models(demo_id)
     if choice is not None:

@@ -17,6 +17,7 @@ import math
 from collections import deque
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Callable
 
 # launcher/src/launcher/events.py -> repo root is 3 levels up.
 LOG_FILE = Path(__file__).resolve().parents[3] / "logs" / "events.log"
@@ -27,6 +28,9 @@ _recent: deque[dict] = deque(maxlen=200)
 MAX_LOG_BYTES = 1_048_576
 LOG_BACKUPS = 3
 _history_file: Path | None = None
+# Told, outside the lock, each time a demo starts loading or running
+# (`on_start`): how the launcher lets go of what other demos left loaded.
+_starting: list[Callable[[str], None]] = []
 
 
 def _load_history() -> None:
@@ -82,6 +86,27 @@ def set_phase(demo_id: str, phase: str, message: str = "", *, stage: str | None 
     with _lock:
         _load_history()
         _status[key] = entry
+        _recent.append(entry)
+        _append_to_file(entry)
+    if phase in ("loading", "running"):
+        for listener in list(_starting):
+            try:
+                listener(demo_id)
+            except Exception:
+                pass  # making room is a courtesy: it never fails the demo that starts
+
+
+def on_start(listener: Callable[[str], None]) -> None:
+    """Call `listener(demo_id)` whenever a demo starts loading or running."""
+    _starting.append(listener)
+
+
+def note(demo_id: str, phase: str, message: str) -> None:
+    """Log something that happened to a demo without changing its phase:
+    the activity log has it, /api/status does not."""
+    entry = {"demo_id": demo_id[:200], "phase": phase, "message": message[:4000], "at": time.time()}
+    with _lock:
+        _load_history()
         _recent.append(entry)
         _append_to_file(entry)
 

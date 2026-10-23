@@ -51,6 +51,7 @@
 
   <main id="app" class="app">
     <section id="view-home" class="view">
+      <p id="gpu-share-notice" class="landing-notice share-notice" role="status" hidden></p>
       <div id="categories"></div>
     </section>
 
@@ -990,7 +991,7 @@
         <button id="landing-auto" class="landing-choice" type="button">
           <span class="choice-title">Auto Demo</span>
           <span class="choice-text">The studio presents itself: one demo after another, each told as it runs. For a stand, or a screen nobody is driving.</span>
-          <span class="choice-need">Its page scene needs 32 GB of memory or an Arc Pro B60; with less, the other scenes play.</span>
+          <span id="landing-auto-need" class="choice-need" hidden>Its page scene needs 32 GB of memory or an Arc Pro B60; with less, the other scenes play.</span>
         </button>
         <a id="landing-manual" class="landing-choice" href="#/demos">
           <span class="choice-title">Manual demo</span>
@@ -998,6 +999,7 @@
         </a>
       </div>
       <p id="landing-notice" class="landing-notice" role="status" hidden></p>
+      <p id="landing-share-notice" class="landing-notice" role="status" hidden></p>
     </div>
     <div class="landing-bottom">
       <img class="landing-chip" src="/static/intel-core-ultra.png" alt="Intel Core Ultra" />
@@ -1102,7 +1104,7 @@
           happening, on which chip and why. A click or a key brings up a choice: keep playing, pause or stop. Left
           unanswered, it carries on. The machine is kept awake while it runs.
         </p>
-        <p class="modal-requirement" role="note">
+        <p id="autodemo-requirement" class="modal-requirement" role="note" hidden>
           The page scene needs 32 GB of memory or more, or an Arc Pro B60: its 30-billion-parameter coding model
           alone takes about 17 GB of the memory the integrated GPU shares. On a laptop with less, that scene is
           left out and the other scenes play.

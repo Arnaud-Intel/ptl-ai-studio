@@ -1016,6 +1016,24 @@ body.screen-stage > .modal-overlay { display: none !important; }
   font-size: 13.5px;
   line-height: 1.5;
 }
+
+/* The same warning above the demos: what to change for the coding model. */
+.share-notice {
+  margin: 0 0 18px;
+}
+
+/* "How to change it": the page on Intel's GPU memory limit (gpu-memory.html). */
+.help-link {
+  color: var(--accent-hover);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.badge.badge-link {
+  text-decoration: none;
+  cursor: pointer;
+}
+.badge.badge-link:hover { text-decoration: underline; }
+
 .landing-bottom { display: flex; justify-content: center; }
 .landing-chip { height: clamp(56px, 11vh, 120px); width: auto; border-radius: 8px; }
 @media (max-width: 700px) { .landing-choices { grid-template-columns: 1fr; } }

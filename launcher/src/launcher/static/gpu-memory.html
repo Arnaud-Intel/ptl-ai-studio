@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GPU memory limit · Panther Lake AI Studio</title>
+  <!-- How to let the integrated GPU use more of the laptop's memory, for the
+       30B coding model (pantherlake_ai_core.machine.share_reason links here).
+       Self-contained like the rest of the launcher: nothing from the web. -->
+  <style>
+    :root {
+      --bg: #000000;
+      --bg-card: #111317;
+      --border: #262a33;
+      --text: #f4f6fa;
+      --text-dim: #b3bccb;
+      --text-faint: #8b95a7;
+      --accent: #3fa9f5;
+      --success: #4ade80;
+      --warning: #f5a623;
+      --warning-soft: rgba(245, 166, 35, 0.12);
+      --mark: #f5a623;
+      --radius: 12px;
+      color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+    main { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; }
+    a { color: var(--accent); }
+    .back { font-size: 14px; }
+    h1 { font-size: 30px; line-height: 1.2; margin: 18px 0 10px; }
+    h2 { font-size: 19px; margin: 36px 0 10px; }
+    p, li { color: var(--text-dim); max-width: 72ch; }
+    strong { color: var(--text); }
+    .status {
+      margin: 22px 0 8px;
+      padding: 12px 16px;
+      border-left: 3px solid var(--text-faint);
+      background: var(--bg-card);
+      border-radius: 0 var(--radius) var(--radius) 0;
+      color: var(--text);
+    }
+    .status.short, .status.pending { border-left-color: var(--warning); background: var(--warning-soft); }
+    .status.enough { border-left-color: var(--success); }
+    .figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 16px 0; }
+    .figure { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+    .figure b { display: block; font-size: 22px; color: var(--text); font-variant-numeric: tabular-nums; }
+    .figure span { font-size: 13.5px; color: var(--text-faint); }
+    ol.steps { padding-left: 22px; }
+    ol.steps li { margin: 8px 0; }
+    .num {
+      display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+      background: var(--mark); color: #000; font-size: 13px; font-weight: 700; margin-right: 4px;
+    }
+    figure { margin: 18px 0 6px; }
+    .shot { position: relative; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .shot img { display: block; width: 100%; height: auto; }
+    /* Where to click, as fractions of the 2000 x 1124 screenshot. */
+    .mark { position: absolute; border: 3px solid var(--mark); border-radius: 8px; }
+    .mark .num { position: absolute; top: -13px; left: -13px; margin: 0; }
+    figcaption { font-size: 13.5px; color: var(--text-faint); margin-top: 8px; }
+    table { border-collapse: collapse; margin: 8px 0; font-variant-numeric: tabular-nums; }
+    th, td { text-align: left; padding: 6px 18px 6px 0; border-bottom: 1px solid var(--border); color: var(--text-dim); }
+    th { color: var(--text); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back" href="/">← Back to the Studio</a>
+    <h1>Let the integrated GPU use more memory</h1>
+    <p>
+      The 30-billion-parameter coding model behind the <strong>Page Agent</strong>, <strong>Code Review</strong> and
+      <strong>HTML Creator</strong> runs on the integrated GPU, which has no memory of its own: it borrows the
+      laptop's. While it writes a page the model needs about <strong id="needs">20 GB</strong> of it. Windows lets
+      the integrated GPU use only 57% of the memory unless told otherwise: on a 32 GB laptop that is 18 GB, too
+      little, and the Studio greys the model out. At 75% it is 24 GB, which is enough.
+    </p>
+
+    <div id="status" class="status" role="status">Looking at this laptop...</div>
+    <div class="figures" id="figures" hidden>
+      <div class="figure"><b id="f-memory">–</b><span>memory in this laptop</span></div>
+      <div class="figure"><b id="f-share">–</b><span>of it the integrated GPU may use</span></div>
+      <div class="figure"><b id="f-needs">–</b><span>what the coding model needs there</span></div>
+    </div>
+
+    <h2>Change it in Intel Graphics Software</h2>
+    <ol class="steps">
+      <li>Open <strong>Intel Graphics Software</strong>: press the Windows key and type its name. It comes with
+        Intel's graphics driver.</li>
+      <li><span class="num">1</span> Click <strong>Graphics</strong> in the menu on the left.</li>
+      <li><span class="num">2</span> Under <strong>General</strong>, turn on <strong>Shared GPU/NPU Memory
+        Override</strong>.</li>
+      <li><span class="num">3</span> Under it, set <strong>Memory Limit</strong> to <strong id="advised">75</strong>:
+        type it in the box on the right, or drag the slider. The figure on the left of the slider shows what that
+        is in GB.</li>
+      <li><strong>Restart the laptop.</strong> The new limit applies only after a restart. Until then the Studio
+        says that the limit was changed and keeps the model greyed out.</li>
+      <li>Open the Studio again: the notice is gone and the Page Agent opens.</li>
+    </ol>
+
+    <figure>
+      <div class="shot">
+        <img src="/static/intel-gpu-memory-setting.webp" width="2000" height="1124"
+             alt="Intel Graphics Software, Graphics page, General section: the Shared GPU/NPU Memory Override switch turned on, and under it Memory Limit with a slider from 7% to 93% and a box showing 57, which is 36.2 GB on this laptop." />
+        <span class="mark" style="left:0.4%; top:15.9%; width:19.3%; height:5.2%"><span class="num">1</span></span>
+        <span class="mark" style="left:22.1%; top:47.2%; width:75.6%; height:10.1%"><span class="num">2</span></span>
+        <span class="mark" style="left:89.4%; top:59.6%; width:6.5%; height:5.2%"><span class="num">3</span></span>
+      </div>
+      <figcaption>
+        Intel Graphics Software with driver 32.0.101.8860, on a 64 GB laptop still at the default: 57% is 36.2 GB
+        there. On a 32 GB laptop, 75% shows about 24 GB.
+      </figcaption>
+    </figure>
+
+    <h2>What the setting does</h2>
+    <p>
+      It is a ceiling, not a reservation: memory the GPU is not using stays free for Windows and every other app.
+      At 75% a 32 GB laptop keeps at least 8 GB for the rest. Going much higher leaves Windows short when a large
+      model is loaded, so 75% is the setting to use.
+    </p>
+    <table>
+      <tr><th>Laptop</th><th>At 57% (default)</th><th>At 75%</th></tr>
+      <tr><td>32 GB</td><td>18 GB: too little</td><td>24 GB: enough</td></tr>
+      <tr><td>64 GB</td><td>36 GB: enough</td><td>48 GB: enough</td></tr>
+    </table>
+    <p>
+      On a laptop with less than 48 GB the Studio also lets go of the models a demo left loaded as soon as another
+      demo starts, so that two of them never need that memory at once. Bringing one back takes a few seconds.
+    </p>
+
+    <h2>If it is not there</h2>
+    <ul>
+      <li>The setting needs an Intel Core Ultra processor of Series 2 or later, and a recent Intel graphics driver
+        (32.0.101.6974 or later) with its Intel Graphics Software. Older versions call it "Shared GPU Memory
+        Override"; it is in the same place.</li>
+      <li>Intel says a limit under 50% is not saved.</li>
+      <li>To undo it, turn the switch off, or set 57 again, and restart.</li>
+      <li>The Studio cannot change the setting for you: Intel's app is the only published way, and it takes a
+        restart.</li>
+    </ul>
+  </main>
+  <script>
+    // What this laptop has now, from the launcher (GET /api/system/memory),
+    // and what the coding model needs (its registry entry, GET /api/demos).
+    (async () => {
+      const status = document.getElementById("status");
+      try {
+        const [memory, demos] = await Promise.all([
+          fetch("/api/system/memory").then((r) => r.json()),
+          fetch("/api/demos").then((r) => r.json()),
+        ]);
+        const agent = demos.find((demo) => demo.id === "page-agent") || {};
+        const needs = (agent.large_model && agent.large_model.needs_gpu_gb) || 20;
+        const advised = memory.memory_gb ? Math.max(75, Math.min(90, Math.ceil((100 * needs) / memory.memory_gb / 5) * 5)) : 75;
+        document.getElementById("needs").textContent = `${needs} GB`;
+        document.getElementById("advised").textContent = String(advised);
+        if (memory.memory_gb != null && memory.gpu_share_gb != null) {
+          document.getElementById("f-memory").textContent = `${memory.memory_gb} GB`;
+          document.getElementById("f-share").textContent =
+            `${memory.gpu_share_gb} GB` + (memory.gpu_share_percent != null ? ` (${memory.gpu_share_percent}%)` : "");
+          document.getElementById("f-needs").textContent = `${needs} GB`;
+          document.getElementById("figures").hidden = false;
+        }
+        if (memory.big_discrete_gpu) {
+          status.textContent = `This laptop has a discrete GPU (${memory.big_discrete_gpu}) that holds the coding model by itself: nothing to change.`;
+          status.className = "status enough";
+        } else if (agent.unfit && !agent.unfit_fixable) {
+          status.textContent = `${agent.unfit} Raising the GPU's limit does not make up for that.`;
+          status.className = "status short";
+        } else if (agent.unfit && memory.gpu_share_pending) {
+          status.textContent = agent.unfit;
+          status.className = "status pending";
+        } else if (agent.unfit) {
+          status.textContent = `This laptop is short: the integrated GPU may use ${memory.gpu_share_gb} GB and the model needs ${needs}. Set the Memory Limit to ${advised}% as below, then restart.`;
+          status.className = "status short";
+        } else if (memory.gpu_share_gb != null) {
+          status.textContent = `This laptop is fine as it is: the integrated GPU may use ${memory.gpu_share_gb} GB, and the model needs ${needs}.`;
+          status.className = "status enough";
+        } else {
+          status.textContent = "The Studio could not read this laptop's setting: check it in Intel Graphics Software as below.";
+        }
+        if (memory.simulated) status.textContent += " (The launcher is playing another laptop: PTL_MEMORY_GB or PTL_GPU_SHARE_GB is set.)";
+      } catch {
+        status.textContent = "The Studio could not be asked about this laptop: check the setting in Intel Graphics Software as below.";
+      }
+    })();
+  </script>
+</body>
+</html>

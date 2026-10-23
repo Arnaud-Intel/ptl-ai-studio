@@ -159,12 +159,12 @@ def test_the_scene_in_hand_comes_with_its_story_and_what_its_view_needs():
     assert scene["chips"] == [{"chip": "NPU", "label": "Plans · a small model", "demo": "page", "stages": ("plan",)}]
     assert scene["props"] == {"request": "page"} and scene["result_ready"] is False and director.result() is None
     assert state["playlist"] == [{
-        "key": "scene-1", "id": "page", "title": "Page", "playable": True, "demo": "page", "reason": "",
+        "key": "scene-1", "id": "page", "title": "Page", "playable": True, "demo": "page", "reason": "", "help": "",
         "chosen": True, "plays": True, "turns_with": [],
     }]
     assert state["stand"] == {
         "npu": True, "igpu": "GPU.0", "dgpu": "GPU.1", "cameras": 1, "cameras_found": 1, "internet": False,
-        "big_screen": True, "lang": "fr", "memory_gb": None,
+        "big_screen": True, "lang": "fr", "memory_gb": None, "gpu_share_gb": None, "gpu_share_short": False,
     }
     assert state["awake"] is True
     # The answer is kept for the page to draw, and stays on screen for the scene's hold.

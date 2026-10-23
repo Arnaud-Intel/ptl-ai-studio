@@ -101,6 +101,24 @@ function Get-ModelCachePath {
     return (Join-Path $env:USERPROFILE '.cache\huggingface\hub')
 }
 
+function Get-RamGb {
+    # The laptop's memory in whole GB, as Windows reports it: a plan's
+    # 'memory-gb', or PTL_MEMORY_GB as the Studio reads it, to rehearse.
+    $planned = Get-Override 'memory-gb'
+    if ($null -ne $planned) { return [double]$planned }
+    if ($env:PTL_MEMORY_GB) { try { return [double]$env:PTL_MEMORY_GB } catch { } }
+    try { return [math]::Round((Get-CimInstance Win32_OperatingSystem).TotalVisibleMemorySize / 1MB, 0) } catch { return $null }
+}
+
+function Test-GpuMemoryStep {
+    # A 32 GB laptop: enough memory for the 30B coding model, and too little
+    # of it for the integrated GPU unless Intel's limit is raised (the Studio's
+    # machine.share_reason). Smaller ones cannot run the model at all; larger
+    # ones have enough at Intel's default. Only there is the step shown.
+    $ram = Get-RamGb
+    return ($null -ne $ram -and $ram -ge 30 -and $ram -lt 48)
+}
+
 function Get-SystemFacts {
     # What can be known of the laptop before anything is installed.
     $planned = Get-Override 'checks'
@@ -129,9 +147,11 @@ function Get-SystemFacts {
         $help = 'Windows 11 is what the hardware panel and the system-sound capture are made for.'
         if ($build -lt 22000) { $state = 'warn'; $help = 'This is older than Windows 11. The demos run; the chip gauges and system-sound capture may not.' }
         $checks += (New-Check 'windows' 'Windows' ("{0} (build {1})" -f $os.Caption.Trim(), $build) $state $help)
-        $ram = [math]::Round($os.TotalVisibleMemorySize / 1MB, 0)
-        if ($ram -ge 30) {
+        $ram = Get-RamGb
+        if ($ram -ge 48) {
             $checks += (New-Check 'memory' 'Memory' "$ram GB" 'ok' 'Enough for every demo, including the three that use the 30B coding model (about 17 GB for it, and 32 GB of memory to run).')
+        } elseif ($ram -ge 30) {
+            $checks += (New-Check 'memory' 'Memory' "$ram GB" 'ok' 'Enough for every demo, including the three that use the 30B coding model, once the integrated GPU is allowed 75% of it: one setting in Intel Graphics Software, shown in the GPU memory step before the end.')
         } elseif ($ram -ge 15) {
             $checks += (New-Check 'memory' 'Memory' "$ram GB" 'info' 'Enough for most demos. The 30B coding model needs 32 GB, or an Arc Pro B60 plugged in: without one it is left out of the downloads, the Page Agent and the Auto Demo''s page scene are greyed out, and Code Review and HTML Creator run a small model on the CPU.')
         } else {
@@ -631,7 +651,11 @@ function Get-State {
             log = $script:Job.log.Substring($script:Root.Length + 1) }
     }
     $steps = @()
-    foreach ($id in $script:StepOrder) { $steps += @{ id = $id; state = $script:Steps[$id].state; message = $script:Steps[$id].message } }
+    $gpuStep = Test-GpuMemoryStep
+    foreach ($id in $script:StepOrder) {
+        if ($id -eq 'gpu' -and -not $gpuStep) { continue }
+        $steps += @{ id = $id; state = $script:Steps[$id].state; message = $script:Steps[$id].message }
+    }
     $versionFile = Join-Path $script:Root 'VERSION'
     $version = ''
     if (Test-Path $versionFile) { $version = (Get-Content -Raw $versionFile).Trim() }
@@ -704,6 +728,11 @@ function Invoke-Action($Name, $Option) {
             if ($Option.step -eq 'models' -and @('ok', 'skipped', 'pending') -contains $Option.state) {
                 $script:Steps['models'].state = $Option.state
             }
+            # And the GPU's memory limit, which the page reads from the Studio:
+            # warn is "changed, waiting for a restart".
+            if ($Option.step -eq 'gpu' -and @('ok', 'warn', 'skipped', 'pending') -contains $Option.state) {
+                $script:Steps['gpu'].state = $Option.state
+            }
         }
         'shortcut' { $script:Shortcut = New-DesktopShortcut }
         'open-studio' {
@@ -763,13 +792,16 @@ function Invoke-Request($Context) {
     if ($method -eq 'GET' -and $path -like '/static/*') {
         $name = [IO.Path]::GetFileName($path)
         $file = Join-Path $script:Root ("launcher\src\launcher\static\{0}" -f $name)
-        if ($name -match '^[\w.-]+\.png$' -and (Test-Path $file)) { Send-File $Context $file 'image/png' } else { Send-Json $Context @{ error = 'Not found.' } 404 }
+        if ($name -match '^[\w.-]+\.png$' -and (Test-Path $file)) { Send-File $Context $file 'image/png' }
+        elseif ($name -match '^[\w.-]+\.webp$' -and (Test-Path $file)) { Send-File $Context $file 'image/webp' }
+        else { Send-Json $Context @{ error = 'Not found.' } 404 }
         return
     }
     if ($method -eq 'GET' -and $path -eq '/api/state') { Send-Json $Context (Get-State) 200; return }
 
     if (-not (Test-Trusted $Context)) { Send-Json $Context @{ error = 'This request did not come from the setup page.' } 403; return }
-    if ($path -like '/studio/api/models*' -and ($method -eq 'GET' -or $method -eq 'POST')) {
+    # The models, and what this laptop allows the integrated GPU (the GPU memory step).
+    if (($path -like '/studio/api/models*' -and ($method -eq 'GET' -or $method -eq 'POST')) -or ($path -eq '/studio/api/system/memory' -and $method -eq 'GET')) {
         Invoke-StudioProxy $Context $path.Substring('/studio'.Length)
         return
     }
@@ -797,7 +829,8 @@ function Initialize-AssistantState($ListenOn, $StudioOn) {
     $random = New-Object byte[] 24
     (New-Object Security.Cryptography.RNGCryptoServiceProvider).GetBytes($random)
     $script:Token = ([BitConverter]::ToString($random)).Replace('-', '').ToLowerInvariant()
-    $script:StepOrder = @('system', 'tools', 'environment', 'chips', 'models', 'ready')
+    # 'gpu' is told to the page only on a 32 GB laptop (Test-GpuMemoryStep).
+    $script:StepOrder = @('system', 'tools', 'environment', 'chips', 'models', 'gpu', 'ready')
     $script:Steps = @{}
     foreach ($id in $script:StepOrder) { $script:Steps[$id] = @{ state = 'pending'; message = '' } }
     $script:Checks = @()

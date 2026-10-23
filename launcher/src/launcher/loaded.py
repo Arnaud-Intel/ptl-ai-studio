@@ -6,6 +6,13 @@ close button calls `unload`.
 
 The five runners this covers share a shape -- `_session`, `_engine`,
 `_device`, `_lock` -- so the rule lives here once instead of five times.
+
+On a laptop short of memory (machine.memory_tight: 32 GB) a model left
+loaded is what makes the next demo fail: on 2026-10-23 the Page Agent's
+coder stayed in the integrated GPU's share while another demo started, and
+that one could not load. There `make_room` lets go of every model another
+demo holds idle, as soon as a demo starts. With the GPU's compiled-model
+cache, getting one back costs seconds (the coder 5.3 s, R11).
 """
 from __future__ import annotations
 
@@ -46,3 +53,20 @@ def unload(runner, demo_id: str) -> bool:
     metrics.clear(demo_id)
     events.clear_phase(demo_id)
     return had_model
+
+
+def make_room(for_demo: str, runners: dict) -> list[str]:
+    """Unload the models other demos are holding and not using, for
+    `for_demo`, which is starting. A demo in the middle of a request keeps
+    its model. Returns the demos that let theirs go."""
+    released = []
+    for demo_id, runner in runners.items():
+        if demo_id == for_demo or getattr(runner, "_session", None) is None:
+            continue
+        try:
+            if unload(runner, demo_id):
+                released.append(demo_id)
+                events.note(demo_id, "unloaded", f"Model unloaded to free memory for {for_demo}.")
+        except Conflict:
+            pass  # at work: it is not idle, and its model is not ours to take
+    return released

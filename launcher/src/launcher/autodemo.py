@@ -154,9 +154,22 @@ class Skip:
 
     title: str
     reason: str
+    # A page that says how to make it playable, when a setting is all it takes.
+    help: str = ""
 
 
 LANGUAGES = ("en", "fr")
+
+
+def gpu_share_short(stand: Stand) -> bool:
+    """Whether Windows lets this stand's integrated GPU use too little memory
+    for the coding model (machine.share_reason), with no discrete GPU to
+    hold it instead: the page scene cannot play until the setting is raised."""
+    from pantherlake_ai_core import models
+
+    needs = models.BY_KEY["coder-30b-ov"].needs_gpu_gb
+    held = stand.dgpu is not None and stand.dgpu == stand.big_gpu
+    return bool(needs) and not held and stand.gpu_share_gb is not None and stand.gpu_share_gb + 0.5 < needs
 
 
 @dataclass
@@ -177,6 +190,9 @@ class Stand:
     # than the laptop has, with no such GPU in use, cannot play.
     memory_gb: float | None = None
     big_gpu: str | None = None
+    # What of that memory Windows lets the integrated GPU use: under what
+    # the model needs there, the scene cannot play on it either.
+    gpu_share_gb: float | None = None
     # A demo's bundled samples, by demo id, fetched when a scene asks.
     samples: Callable[[str], list[dict]] = lambda demo: []
 
@@ -542,6 +558,7 @@ class Director:
             samples=samples,
             memory_gb=memory.get("memory_gb") if isinstance(memory, dict) else None,
             big_gpu=memory.get("big_discrete_gpu") if isinstance(memory, dict) else None,
+            gpu_share_gb=memory.get("gpu_share_gb") if isinstance(memory, dict) else None,
         )
 
     @staticmethod
@@ -550,7 +567,8 @@ class Director:
             "npu": stand.npu, "igpu": stand.igpu, "dgpu": stand.dgpu, "cameras": len(stand.cameras),
             "cameras_found": max(stand.cameras_found, len(stand.cameras)),
             "internet": stand.internet, "big_screen": stand.big_screen, "lang": stand.lang,
-            "memory_gb": stand.memory_gb,
+            "memory_gb": stand.memory_gb, "gpu_share_gb": stand.gpu_share_gb,
+            "gpu_share_short": gpu_share_short(stand),
         }
 
     @staticmethod
@@ -589,6 +607,7 @@ class Director:
                 listing.append({
                     "key": entry.key, "id": scene.id if playable else "", "title": scene.title, "playable": playable,
                     "demo": scene.demo if playable else "", "reason": "" if playable else scene.reason,
+                    "help": "" if playable else scene.help,
                     "chosen": chosen is None or entry.key in chosen, "plays": entry is mine,
                     "turns_with": [other.key for other in slot if other is not entry],
                 })

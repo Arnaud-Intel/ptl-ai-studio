@@ -60,6 +60,9 @@ class ModelSpec:
     # under it, and with no discrete GPU to hold it, it is greyed out
     # wherever it is offered (`unfit`, the machine module).
     needs_memory_gb: int | None = None
+    # What of that memory the integrated GPU must be allowed for it while it
+    # works (machine.share_reason): loaded, and with a page's context.
+    needs_gpu_gb: float | None = None
 
 
 # Licences that ask for a notice to be kept and nothing else. Anything else on
@@ -69,6 +72,14 @@ PERMISSIVE = ("Apache-2.0", "MIT")
 _SPEECH = ("live-translation", "meeting-notes", "voice-assistant")
 _TEXT = ("doc-qa", "meeting-notes", "voice-assistant", "expense-extract", "smart-recall")
 _CODING = ("code-review-assist", "html-creator")
+# What the integrated GPU must be allowed for the 30B coder. Measured on the
+# XPS 14 on 2026-10-23 (GPU Adapter Memory, shared usage): 15.1 GB loaded,
+# 15.9 GB at the end of a 7,000-token answer to a 400-token request -- a page
+# is about that. The desktop and the browser showing the studio held 2.5 GB
+# of the same share before it loaded, and a Teams call takes more: 20 GB in
+# all. A 32 GB laptop gives its GPU 18 at Intel's default of 57%, and 23.6
+# at the 75% the user found to work.
+_CODER_GPU_GB = 20
 _OCR = ("screen-ocr", "expense-extract", "smart-recall")
 _DETECTION = ("object-detection", "smart-city-monitor")
 
@@ -147,7 +158,7 @@ MODELS: tuple[ModelSpec, ...] = (
               made_from="Google's MediaPipe selfie segmentation"),
     ModelSpec("coder-30b-ov", "Qwen3-Coder 30B (code, HTML)", (*_CODING, "page-agent"), OPENVINO,
               "OpenVINO/Qwen3-Coder-30B-A3B-Instruct-int4-ov", licence="Apache-2.0",
-              made_from="Qwen/Qwen3-Coder-30B-A3B-Instruct", needs_memory_gb=32,
+              made_from="Qwen/Qwen3-Coder-30B-A3B-Instruct", needs_memory_gb=32, needs_gpu_gb=_CODER_GPU_GB,
               note="The big one: about 17 GB, so 32 GB of memory, or a discrete GPU such as the Arc Pro B60, to run."),
     ModelSpec("coder-1.5b-portable", "Qwen2.5-Coder 1.5B GGUF", _CODING, PORTABLE,
               "Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF", ("*q4_k_m.gguf",), licence="Apache-2.0"),

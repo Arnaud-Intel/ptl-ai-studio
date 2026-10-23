@@ -38,7 +38,7 @@ import re
 from html_creator import revise
 from pantherlake_ai_core import machine, models
 
-from .autodemo import Ask, Beat, Chip, Entry, Scene, Skip, Slot, Stand, Start, Until, Wait
+from .autodemo import Ask, Beat, Chip, Entry, Scene, Skip, Slot, Stand, Start, Until, Wait, gpu_share_short
 
 # Scenes that are written but not to be played yet, by their key, and why.
 HELD_BACK: dict[str, str] = {}
@@ -124,11 +124,18 @@ def page_agent(stand: Stand, loop: int) -> Scene | Skip:
         return Skip(title, "needs a GPU for the image model and the coding model")
     # The coding model alone takes 17 GB: on the integrated GPU, from the
     # laptop's own memory. A discrete GPU that holds it makes up for that.
-    needs = models.BY_KEY["coder-30b-ov"].needs_memory_gb
+    coder = models.BY_KEY["coder-30b-ov"]
+    needs = coder.needs_memory_gb
     held = stand.dgpu is not None and stand.dgpu == stand.big_gpu
     if needs and not held and machine.short_of(needs, stand.memory_gb):
         return Skip(title, f"needs {needs} GB of memory or an Arc Pro B60 for its coding model: "
                            f"this laptop has {stand.memory_gb:.0f} GB")
+    # The memory is there and Windows lets the integrated GPU use too little of it.
+    if gpu_share_short(stand):
+        percent = machine.advised_share_percent(coder.needs_gpu_gb, stand.memory_gb) if stand.memory_gb else 75
+        return Skip(title, f"its coding model needs about {coder.needs_gpu_gb:g} GB on the integrated GPU, which "
+                           f"Windows lets use {stand.gpu_share_gb:.0f} GB: set its Memory Limit to {percent}% in "
+                           "Intel Graphics Software (Graphics > General), then restart", help=machine.SHARE_HELP)
     sample = _sample(stand, "page-agent", loop - 1)
     if sample is None:
         return Skip(title, "its sample requests could not be read")

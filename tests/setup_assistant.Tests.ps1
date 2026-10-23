@@ -129,6 +129,24 @@ try {
     Assert ($script:Studio.state -eq 'running' -and -not $script:Studio.owned) "This folder's Studio, already running, is used as it is."
     $script:Overrides = $null
 
+    # ---- the GPU memory step: on a 32 GB laptop only (2026-10-23)
+    $savedMemory = $env:PTL_MEMORY_GB
+    $env:PTL_MEMORY_GB = ''
+    foreach ($case in @(@(16, $false), @(32, $true), @(31, $true), @(64, $false))) {
+        $script:Overrides = [pscustomobject]@{ 'memory-gb' = $case[0] }
+        $ids = @((Get-State).steps | ForEach-Object { $_.id })
+        Assert (($ids -contains 'gpu') -eq $case[1]) "A $($case[0]) GB laptop: the GPU memory step shown is $($case[1]) ($($ids -join ', '))."
+        if ($case[1]) { Assert ($ids[-2] -eq 'gpu' -and $ids[-1] -eq 'ready') 'The GPU memory step comes just before Ready.' }
+    }
+    $script:Overrides = $null
+    $env:PTL_MEMORY_GB = '32'
+    Assert (Test-GpuMemoryStep) 'PTL_MEMORY_GB plays a 32 GB laptop for the assistant as for the Studio.'
+    $env:PTL_MEMORY_GB = $savedMemory
+    Invoke-Action 'mark' ([pscustomobject]@{ step = 'gpu'; state = 'warn' })
+    Assert ($script:Steps['gpu'].state -eq 'warn') 'The page may say the limit was changed and waits for a restart.'
+    Invoke-Action 'mark' ([pscustomobject]@{ step = 'gpu'; state = 'running' })
+    Assert ($script:Steps['gpu'].state -eq 'warn') 'Only the states the page drives may be set.'
+
     Write-Host 'Setup assistant tests passed.' -ForegroundColor Green
 } finally {
     Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue

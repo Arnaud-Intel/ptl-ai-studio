@@ -1523,6 +1523,18 @@ installs (R46), and the runtime's faults (R47).
   model shared between bricks", after the 30B coder. Letting a model go costs
   less than it did: with the GPU's compiled-model cache (v1.0.4) the coder
   comes back in 5.3 s instead of 22.5, the 8B in 2.9 instead of 10.0.
+  *2026-10-23:* on a 32 GB laptop the Page Agent's coder stayed loaded while
+  the next demo started, and that one failed (the user's report). On a laptop
+  under 48 GB (`machine.memory_tight`) a demo that starts now has every model
+  the others hold idle unloaded first (`loaded.make_room`, logged as
+  "unloaded"); one in the middle of a request keeps its own. Not covered: a
+  brick with a loop that is left running holds its model until stopped. Same
+  day: the coder needs about 20 GB of the integrated GPU's share (15.1 GB
+  loaded, 15.9 GB after a 7,000-token answer, plus what the desktop holds),
+  which Windows caps at 57% unless Intel Graphics Software is told otherwise:
+  under it the model is greyed out with what to change (`machine.share_reason`).
+  The share is read from `SystemPartitionCommitLimitPercentage`, which the
+  slider writes; DXGI's SharedSystemMemory said 75% at 57% on the XPS 14.
 
 - [ ] **R12 · P2 · Profile before optimizing video and screen history.**
   Covers the original smart-city throughput report. Instrument capture, infer,
