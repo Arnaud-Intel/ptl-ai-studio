@@ -32,6 +32,13 @@ What the format has taught (Qwen3-8B on the NPU, 2026-10-08):
   as its answer (once in nine). The conductor has it take the most likely
   word instead; what still slips through is dropped here, and each picture
   keeps the place its label gave it instead of sliding into the gap.
+- What each photograph is for is said on its line, from what looked wrong on
+  a page (2026-10-25): the last one was a close-up "detail" until it was
+  seen enlarged behind the closing band (a frame tube, a bean); it is a wide
+  view of the place with nobody in it. The story's people were lined up
+  facing the camera; they are now at work, in a place the line names. A
+  page about software got five tablets and dashboards, all taken out as
+  writing; the people it serves are photographed instead.
 - A request in French had its pictures described in French whatever the
   prompt said, which the image model reads less well. The one French request
   tried since the changes above came back with English photographs; one is
@@ -69,7 +76,7 @@ _EXAMPLE_PICTURES = (
     "A catamaran flying one hull across open water, seen from a chase boat, hard midday light",
     "A wooden keelboat heeling under full sail near a rocky headland, late afternoon",
     "An instructor coiling a rope on the pontoon beside a rack of masts, overcast light",
-    "A close-up of wet hands tying a knot around a steel cleat, shallow focus",
+    "The bay at dusk seen from the end of the pontoon, boats at their moorings, still water and open sky",
 )
 _EXAMPLE_THINGS = ("Dinghy course for children", "Catamaran course", "Keelboat cruising")
 _EXAMPLE = (
@@ -84,7 +91,7 @@ _EXAMPLE = (
         for line in (f"THING {number}: {thing}", f"PHOTO {number}: {_EXAMPLE_PICTURES[number]}")
     ),
     "STORY PHOTO: " + _EXAMPLE_PICTURES[4],
-    "DETAIL PHOTO: " + _EXAMPLE_PICTURES[5],
+    "CLOSING PHOTO: " + _EXAMPLE_PICTURES[5],
 )
 
 SYSTEM_PROMPT = (
@@ -96,24 +103,31 @@ SYSTEM_PROMPT = (
     "HEADLINE: the big line at the top of the page, six words at most\n"
     "STYLE: the mood, three or four colours by name, the feel of the type\n"
     "SECTIONS: the page's sections in order, separated by \" | \"\n"
-    "HERO PHOTO: the wide photograph at the top of the page\n"
+    "HERO PHOTO: the wide photograph at the top of the page: the place, with the thing or the people in it\n"
     "THING 1: the first of the three main things the page presents, in a few words\n"
     "PHOTO 1: a photograph of THING 1\n"
     "THING 2: the second of them\n"
     "PHOTO 2: a photograph of THING 2\n"
     "THING 3: the third of them\n"
     "PHOTO 3: a photograph of THING 3\n"
-    "STORY PHOTO: a photograph of the people or the place behind it all, at work\n"
-    "DETAIL PHOTO: a close-up photograph of a detail that sets the mood\n\n"
+    "STORY PHOTO: the people behind it all at work in their own place -- a workshop, a kitchen, a studio, a roof -- "
+    "busy with their hands\n"
+    "CLOSING PHOTO: a wide, calm view of the place or the landscape it belongs to, with open sky or space in it and "
+    "nobody in it\n\n"
     "Keep what the request decides: its name, its headline, its colours, the things it lists. Invent what it leaves "
     "open, a name included. The three things are what the page is there to show -- three products, services, "
     "places or people, in the order the request gives them. Write NAME, HEADLINE, STYLE, SECTIONS and the THING "
     "lines in the language of the request.\n\n"
     "The six PHOTO lines are for the photographer, who has not read the request and only reads English. Each is "
-    "one English sentence that says what is in front of the camera: the subject, where it is, the light. Six "
-    "different subjects, never the same sentence twice. A photograph has no writing in it: never mention a name, a "
-    "price, a date, a number, a sign, a banner, a map, a label, a ticket, a card, a screen, a logo, a quote, or the "
-    "colours and the type of the page.\n\n"
+    "one English sentence that says what is in front of the camera: the subject, where it is, the light. Name the "
+    "subject as exactly as the request does -- a mountain bike, a home battery on a garage wall, a cup of filter "
+    "coffee -- never just a frame, a unit or a bean. People are doing something, never lined up facing the camera. "
+    "Six different subjects and six different shots, wide or at middle distance, in more than one kind of light, "
+    "never the same sentence twice. When the page is about software, an app, data or a service, photograph the "
+    "people it serves at their work and the places they work in: what is on a screen cannot be photographed. A "
+    "photograph has no writing in it: never mention a name, a price, a date, a number, a sign, a banner, a map, a "
+    "label, a ticket, a screen, a tablet, a phone, a laptop, a logo, a quote, or the colours and the type of the "
+    "page.\n\n"
     "An example of the form, for a sailing school -- copy the form, never its content:\n"
     + "\n".join(_EXAMPLE)
 )
@@ -126,17 +140,22 @@ _STYLE = re.compile(_START + "STYLE" + _VALUE, re.IGNORECASE)
 _SECTIONS = re.compile(_START + "SECTIONS?" + _VALUE, re.IGNORECASE)
 _OFFERS = re.compile(_START + "OFFERS?" + _VALUE, re.IGNORECASE)
 _THING = re.compile(_START + r"THING\b([^:]{0,20}):\s*\**\s*<?(.+?)>?\s*\**\s*$", re.IGNORECASE)
-# HERO PHOTO, PHOTO 2, STORY PHOTO, and what a model writes instead (PICTURE 2, IMAGE 3, "Picture two"): the first
-# word and any number before the colon say which picture it is.
+# HERO PHOTO, PHOTO 2, STORY PHOTO, CLOSING PHOTO (DETAIL PHOTO before 2026-10-25), and what a model writes instead
+# (PICTURE 2, IMAGE 3, "Picture two"): the first word and any number before the colon say which picture it is.
 _PICTURE = re.compile(
-    _START + r"(HERO|STORY|TEAM|DETAIL|PHOTO|PICTURE|IMAGE)\b([^:]{0,40}):\s*\**\s*<?(.+?)>?\s*\**\s*$", re.IGNORECASE
+    _START + r"(HERO|STORY|TEAM|CLOSING|DETAIL|PHOTO|PICTURE|IMAGE)\b([^:]{0,40}):\s*\**\s*<?(.+?)>?\s*\**\s*$", re.IGNORECASE
 )
+# A photograph's label the planner on the NPU garbled -- "PH美O 3", "PH-Thing 3", "PH研究" for PHOTO 3, three plans in
+# nine on 2026-10-25 -- read as the photograph of the THING line just before it.
+_GARBLED_PHOTO = re.compile(_START + r"PH[^:]{0,20}:\s*\**\s*<?(.+?)>?\s*\**\s*$", re.IGNORECASE)
 _THINKING = re.compile(r"<think>.*?(</think>|$)", re.DOTALL)
 
 # What an image model draws as gibberish: writing, and the things that carry it.
 _WRITING = re.compile(
     r"\b(?:text|typography|lettering|letters|words?|large type|quotes?|captions?|headline|signs?|signage|banners?|posters?|"
-    r"labels?|labell?ed|logos?|maps?|tickets?|cards?|menus?|screens?|tablets?|laptops?|charts?|prices?|calendars?|"
+    # A card is writing, but for the one a computer takes (2026-10-25: "a double-wide PCIe card" was dropped).
+    r"labels?|labell?ed|logos?|maps?|tickets?|(?<!graphics )(?<!gpu )(?<!pcie )(?<!accelerator )(?<!expansion )cards?|"
+    r"menus?|screens?|tablets?|laptops?|phones?|dashboards?|charts?|prices?|calendars?|"
     r"stickers?|chalkboards?|blackboards?|clocks?)\b",
     re.IGNORECASE,
 )
@@ -189,8 +208,14 @@ class PagePlan:
             added += [f"- {section}" for section in self.sections]
         if added:
             lines += ["", "THE STUDIO'S NOTES -- where the request above says otherwise, the request wins:"] + added
-        lines += ["", art_direction.for_plan(self.pictures, self.offers)]
+        lines += ["", art_direction.for_plan(self.pictures, self.offers, self.look())]
         return "\n".join(lines)
+
+    def look(self) -> str:
+        """What is said of the page's look -- the request first, which wins,
+        then the plan's STYLE -- for the type it asks for."""
+        said = art_direction.face(self.request)
+        return said if said else self.style
 
     def closing(self) -> str:
         """The last line of the request, after the list of pictures -- where
@@ -224,6 +249,7 @@ def _is_the_form(prompt: str) -> bool:
     return said.startswith((
         "one sentence", "a photograph of the", "a photograph of thing", "a close-up photograph of a detail",
         "the wide photograph", "the first of the three", "the second of them", "the third of them",
+        "the people behind it all", "a wide, calm view of the place",
     ))
 
 
@@ -246,14 +272,48 @@ def without_writing(prompt: str) -> str:
     return kept.strip(" ,")
 
 
+# A detail the planner gives three pictures or more is kept in the first of them only.
+_REPEATED = 3
+
+
+def without_repeats(prompts: dict[int, str]) -> dict[int, str]:
+    """`prompts` with each detail that comes back in several of them kept in
+    the first only. The planner holds on to a phrase once written: "a family
+    of four smiling in the yard" in five of a solar installer's six
+    pictures, "a trailmarker in the distance" in five of a bike shop's
+    (2026-10-25), which the image model draws each time. A description's
+    first part is its subject and is never taken out."""
+    def said(clause: str) -> str:  # ", with a family" is "a family"
+        return re.sub(r"^(?:with|beside|next to)\s+", "", clause.lower().strip(" ,."))
+
+    split = {slot: _CLAUSE.split(prompt) for slot, prompt in prompts.items()}
+    counts: dict[str, int] = {}
+    for parts in split.values():
+        for clause in {said(clause) for clause in parts[2::2]} | {said(parts[0])}:
+            counts[clause] = counts.get(clause, 0) + 1
+    seen: set[str] = set()
+    kept = {}
+    for slot in sorted(split):
+        parts = split[slot]
+        text = parts[0]
+        for joint, clause in zip(parts[1::2], parts[2::2]):
+            if counts.get(said(clause), 0) >= _REPEATED and said(clause) in seen:
+                continue
+            seen.add(said(clause))
+            text += joint + clause
+        seen.add(said(parts[0]))
+        kept[slot] = text.strip(" ,")
+    return kept
+
+
 def _slot(word: str, label: str, last: int) -> int:
     """Which picture a line is. HERO PHOTO is the first, PHOTO 1 to 3 show
-    the three things, STORY PHOTO and DETAIL PHOTO are the last two; a model
+    the three things, STORY PHOTO and CLOSING PHOTO are the last two; a model
     that numbers its pictures instead means the fifth by "PICTURE 5"; and a
     label that says nothing ("Picture two", a number the model garbled) is
     the one after the line before."""
     word, number = word.upper(), re.search(r"\d+", label)
-    named = {"HERO": 0, "STORY": 4, "TEAM": 4, "DETAIL": 5}
+    named = {"HERO": 0, "STORY": 4, "TEAM": 4, "CLOSING": 5, "DETAIL": 5}
     if word in named:
         return named[word]
     if number and word == "PHOTO" and 1 <= int(number.group()) <= 3:
@@ -269,6 +329,7 @@ def parse(request: str, answer: str) -> PagePlan:
     prompts: dict[int, str] = {}
     things: list[str] = []
     unwritable, copied, slot = 0, 0, -1
+    after_thing = 0  # the number of the THING line just read, whose photograph comes next
     for line in _THINKING.sub("", answer or "").splitlines():
         if not line.strip():
             continue
@@ -279,11 +340,18 @@ def parse(request: str, answer: str) -> PagePlan:
                 copied += 1
             elif not _is_the_form(named) and named.lower() not in (t.lower() for t in things):
                 things.append(named)
+            number = re.search(r"[1-3]", thing.group(1))
+            after_thing = int(number.group()) if number else len(things)
             continue
         picture = _PICTURE.match(line)
-        if picture:
-            slot = _slot(picture.group(1), picture.group(2), slot)
-            prompt = picture.group(3).strip()
+        garbled = None if picture or not after_thing else _GARBLED_PHOTO.match(line)
+        if picture or garbled:
+            if picture:
+                slot = _slot(picture.group(1), picture.group(2), slot)
+                prompt = picture.group(3).strip()
+            else:
+                slot, prompt = after_thing, garbled.group(1).strip()
+            after_thing = 0
             # The same sentence twice is one picture, and a line still
             # holding the instruction is none. Either leaves its place empty.
             if not prompt or prompt.lower() in (p.lower() for p in prompts.values()) or _is_the_form(prompt):
@@ -312,6 +380,7 @@ def parse(request: str, answer: str) -> PagePlan:
                     setattr(plan, attribute, [part.strip(" -") for part in parts if len(part.strip(" -")) > 1])
 
     plan.offers = (things or plan.offers)[:3]
+    prompts = without_repeats(prompts)
     # A card of the offer whose picture could not be used is given one made
     # from the offer's own words, so that the three cards stay alike.
     if len(plan.offers) == 3 and 0 < sum(slot in prompts for slot in _OFFER_SLOTS) < 3:

@@ -56,7 +56,7 @@ soon as it is drawn, and the page as it is written.
 
 ### The samples
 
-Six are briefs a studio could work from -- a fictional name, a look in a
+Eight are briefs a studio could work from -- a fictional name, a look in a
 palette and a kind of type, a headline, key figures, three things on offer
 with their prices, a story, and one or two parts that give the page its
 shape (opening hours as a table, trails with difficulty tags, a savings
@@ -67,8 +67,23 @@ planner invents the rest and the page is built the same way.
 Bakery, bike rental, solar installer, architecture studio, coffee roaster,
 lake festival: they were chosen to look unlike one another (cream and
 serif, glacier blue and sans, espresso-black, midnight blue), and for
-subjects an image model draws well. A page for an app would need
-screenshots, which it cannot draw.
+subjects an image model draws well.
+
+The two added on 2026-10-25 are the ones an image model is least suited to,
+and say how a brief gets round it:
+
+- **SaaS for field teams** (Itinera, invented): software cannot be
+  photographed, and a screenshot cannot be drawn. The three things the page
+  presents are the three trades the app plans for -- heating engineers,
+  electricians, lift mechanics -- which can be; the app itself is a week's
+  schedule the coding model builds in HTML and CSS.
+- **Intel GPU D270** (Crescent Island): a real product, from Intel's
+  published specifications (as reported on 2026-10-12: Xe3P, 32 Xe cores,
+  160 GB LPDDR5X, 1.5 TB/s, 1.3 PFLOPS FP8, 350 W, air-cooled, sampling). The
+  brief has the page say it is a demo written on an AI PC and not an Intel
+  page, and asks for no customer quote, which would be invented. The
+  pictures are of servers and of people working on them; a GPU card a
+  picture shows is not Intel's.
 
 ## The plan
 
@@ -79,7 +94,7 @@ Thirteen labelled lines, which the planner fills in and plain code reads
 NAME, HEADLINE, STYLE, SECTIONS
 HERO PHOTO
 THING 1 / PHOTO 1, THING 2 / PHOTO 2, THING 3 / PHOTO 3
-STORY PHOTO, DETAIL PHOTO
+STORY PHOTO, CLOSING PHOTO
 ```
 
 Each of the six photographs has a place on the page, and a size to suit it:
@@ -87,6 +102,20 @@ the first behind the headline (1024x576), three on the cards of what is on
 offer (768x512), one beside the story (640x768), one behind the last call to
 action (1024x576). The three things are named on the line just above their
 photograph, which is what makes the card about a hardtail show a hardtail.
+
+What each line asks for comes from the pictures that looked wrong on a page
+(2026-10-25). The last one was a "close-up of a detail that sets the mood"
+until it was seen behind the closing band, dimmed and enlarged: a bike's
+frame tube filling the screen, a bean in a cup. It is now a wide, calm view
+of the place with nobody in it. The story's photograph was three hikers
+lined up holding bike frames for a workshop's story: its line now names the
+kinds of place it means (a workshop, a kitchen, a studio, a roof) and the
+planner is told that people are doing something, never facing the camera.
+A subject is to be named as the request names it -- "a single bike frame"
+was drawn as a road bike for a mountain-bike shop. And for a page about
+software, the people it serves are photographed at their work: the SaaS
+brief's first plan asked for five tablets and dashboards, all of which were
+taken out as writing.
 
 Code tidies the plan before anything is drawn: the parts of a description
 that ask for writing are taken out (a banner "reading 'Les Heures Bleues'",
@@ -101,15 +130,19 @@ and asked for again.
 Left to itself the coding model answers every request with the same page: a
 dimmed picture under a centred headline, then section after section of a
 centred heading over three equal cards. `art_direction.py` is what changed
-that, in two parts.
+that, in four parts.
 
 **What every request is given**, after the user's words and the plan: the
-palette as seven CSS variables, two font stacks, and the page from top to
+palette as seven CSS variables, the headings' face, and the page from top to
 bottom as a numbered list -- navigation, hero, key figures, the three cards
 with their pictures named, the story beside its picture, the request's other
 parts each in the form that suits it (steps, a table, price cards, tags),
-a quote, questions, a closing band, a footer. Advice ("give every section
-its own layout") changed nothing; a specification was built as written.
+a quote, questions, a closing band, a footer -- with one section written out
+as the HTML it is. Advice ("give every section its own layout") changed
+nothing; a specification was built as written. The headings' face is decided
+by code from the words of the request (or the plan's STYLE): offered a serif
+or a sans, the model took the serif for "a tight modern sans" three times
+out of three.
 
 **The layout rules every page gets.** Some twenty CSS rules -- the grid, the
 split, the figures row, the card, the button, the dark band, the hero and
@@ -122,6 +155,28 @@ thirteen were still missing one. The model is shown the rules and told they are
 there. Everything else is its own: the colours, the type, the navigation,
 every component, the copy, the scripts -- and its rules come after these, so
 it can overrule any of them.
+
+**A few rules after the page's own**, where they hold whatever it wrote:
+on a phone the navigation's links are hidden and grids go to one column
+(five pages of five scrolled sideways at 380 px before, 2026-10-25: the
+page's own `nav .links { display: flex }` brought the links back, a grid had
+three fixed columns, a mock app window was 840 px wide).
+
+**The studio's script**, at the end of the body: the reveals as sections come
+into view, the key figures counted up, and a last look at the colours.
+These were the model's to write, and went wrong in ways a reader sees: "1.5
+TB/s" written 1500 so that it could be counted as a whole number, a figure
+left at "0" in the HTML for a counter that stepped by one every 20 ms (25 s
+to reach 1,240), a counter of its own that kept the digits only and made
+99.95% into 9,995. The script counts each figure up from its own text,
+decimals and separators kept, and puts it back if another script changes
+it. The colours: the bands' white text was a rule on every element inside
+them, and reached the white cards and the estimator the model put in a dark
+band -- white on white, on two pages of five. That rule now sets the band's
+colour for its text to inherit, the bands are told to hold nothing light,
+and the script gives any text that is still too close to its background
+(under 2.5:1, not over a picture) the page's ink or white, whichever reads
+-- which also darkens the text of a sun-yellow button.
 
 ## Who works where
 
@@ -380,14 +435,43 @@ machine was not measured again; the morning's shorter pages took 206 to
 - **Two pictures with one description need two seeds**, or they are the same
   picture; each takes its seed from its file name, so a request also draws
   the same pictures again.
+- **Look at the page, not only at the checks** (2026-10-25). Every page of
+  the first round passed all seven checks, and five of five had something a
+  reader would see at once: white text on white cards, a figure turned into
+  another, a section squeezed into one narrow column, a bike's frame tube
+  blown up behind the last button, a page that scrolled sideways on a phone.
+  They were found by building each sample, opening it in headless Edge,
+  scrolling it through, and measuring the contrast of every text against
+  what is behind it.
+- **An example in the direction is content to a request that has none.**
+  Told to write figures "exactly as the request gives it (1,240 -- 1.5 TB/s
+  -- 68%)", the florist's page, whose one line gives no figure, showed 1,240,
+  1.5 TB/s and 68%. The direction now says what to keep (decimals,
+  separator, unit) and gives no number.
+- **The model copies the rules it is shown.** Told the layout rules are
+  already in the page, it writes them out again all the same -- so a rule
+  shown wrong is wrong twice, and correcting the brick's copy does not
+  correct a page until the model is shown the correction.
+- **The planner on the NPU now and then garbles a label**: "PH美O 3",
+  "PH-Thing 3", "PH研究" for PHOTO 3, in three plans of nine on 2026-10-25.
+  A line whose label starts with PH, just after a THING line, is read as
+  that thing's photograph; before, the card's picture was made from the
+  thing's name alone, and "Brioche du dimanche" came back lettered "BKO
+  DIMACHIE".
+- **The planner repeats itself** and nothing in the prompt stopped it: "a
+  family of four smiling in the yard" in five of a solar installer's six
+  descriptions. A detail given in three or more is kept in the first only
+  (`plan.without_repeats`); a description's subject is never taken out.
 
 ## Known limits
 
 - The planner is the weakest model in the chain. Its photographs are plain
   ("a single coffee bean on a wooden tray" for the top of a launch page) and
   now and then beside the point (a clerk at a desk for a bike workshop).
-  Nobody checks a picture against its description: what the image model drew
-  is what the page gets.
+  It holds on to a phrase once written: "a single bean" for three of the
+  coffee page's six pictures, "a trailmarker in the distance" for five of the
+  bike page's, with the prompt saying otherwise. Nobody checks a picture
+  against its description: what the image model drew is what the page gets.
 - The planner reads a brief's wording closely. "A launch page for Kivu
   Nightfall, the new coffee of the roaster Braise & Co." with three coffees
   listed got "Roasted after dark, How to Brew, Subscription" as its three

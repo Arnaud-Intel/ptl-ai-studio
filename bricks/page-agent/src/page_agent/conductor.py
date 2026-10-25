@@ -501,9 +501,11 @@ class PageAgent:
 
 
 def _finished(page, plan: planning.PagePlan) -> tuple[str, list[str]]:
-    """The page as the model wrote it, with the studio's layout rules at the
-    top of its stylesheet, and the planned pictures it shows."""
-    written = art_direction.with_stylesheet(page.html_source or page.html, plan.pictures)
+    """The page as the model wrote it, with the studio's layout rules in its
+    stylesheet and the studio's script in its body, and the planned
+    pictures it shows."""
+    written = art_direction.with_stylesheet(page.html_source or page.html, plan.pictures, plan.look())
+    written = art_direction.with_script(written)
     return written, picture_kit.referenced(written, [spec.name for spec in plan.pictures])
 
 

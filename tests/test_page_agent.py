@@ -39,7 +39,7 @@ PHOTO 2: A full-suspension bike with mud on the chain, midday sun
 THING 3: Electric mountain bike
 PHOTO 3: An electric mountain bike among pine trees and wildflowers, late afternoon light
 STORY PHOTO: A mechanic truing a wheel at a workbench, seen from the side
-DETAIL PHOTO: A close-up of a helmet strap being fastened, shallow focus"""
+CLOSING PHOTO: The valley at dusk from a high trail, open sky over the ridges"""
 
 # An older and shorter form, which still has to be read: three pictures, none of them for a card.
 _ANSWER = """TITLE: Baked with Care
@@ -61,6 +61,9 @@ def test_a_plan_names_the_page_and_gives_every_picture_a_place():
         ("picture-5.jpg", "story", 640, 768), ("picture-6.jpg", "closing", 1024, 576),
     ]
     assert plan.pictures[2].prompt.startswith("A full-suspension bike") and plan.notes == [] and plan.copied == 0
+    # The last picture's line was DETAIL PHOTO, a close-up, until its place behind the closing band asked for a view.
+    older = planning.parse("x", _BRIEF.replace("CLOSING PHOTO: The valley", "DETAIL PHOTO: The valley"))
+    assert [(p.name, p.role) for p in older.pictures][-1] == ("picture-6.jpg", "closing")
 
 
 def test_the_coder_is_told_the_request_first_then_the_plan_then_how_the_studio_builds_a_page():
@@ -76,10 +79,32 @@ def test_the_coder_is_told_the_request_first_then_the_plan_then_how_the_studio_b
     # said to be in the page already. The two pictures that sit behind text are placed by the rule that names them.
     assert "these rules are in the page already" in prompt and "Do not write them again" in prompt
     assert ".figures { display: grid;" in prompt and ".split { display: grid;" in prompt
-    assert 'url("hero.jpg") center / cover; }' in prompt and ".dark *, .hero *, .closing * { color: #fff; }" in prompt
+    assert 'url("hero.jpg") center / cover; }' in prompt and ".dark, .hero, .closing { color: #fff; }" in prompt
     assert '.closing { text-align: center; background: linear-gradient(rgba(6,10,18,.72), rgba(6,10,18,.72)), url("picture-6.jpg")' in prompt
-    assert "document.documentElement.classList.add('js')" in prompt  # nothing stays hidden if the script does not run
+    # A light thing in a dark band was white text on white (2026-10-25): the bands are told to hold none.
+    assert "no .card, no price card, no form, no tool to try" in prompt
+    # Every section is shown once, as the HTML it is: the grid inside the .wrap, never on the <section>.
+    assert '<section id="..."><div class="wrap"><span class="eyebrow">' in prompt and "never on the <section>" in prompt
+    # The motion is the studio's script; the figures are written as the request gives them, never made whole.
+    assert "Write no script for either" in prompt and "exactly as the request gives it -- its decimals" in prompt
+    # ...and with no example figures in the direction: a one-line request once got the example's as its own.
+    direction = prompt.split("HOW THE STUDIO BUILDS IT")[1]
+    assert not any(figure in direction for figure in ("1,240", "1.5 TB/s", "68%"))
+    assert "the request's own headline, word for word" in prompt
+    # "a tight modern sans": the headings' face is decided, not offered.
+    assert 'h1, h2, h3, .figures strong { font-family: "Segoe UI"' in prompt and "Georgia" not in prompt
     assert planning.parse("x", _BRIEF).closing().endswith("Start your reply with <!DOCTYPE html>.")
+
+
+def test_the_type_asked_for_decides_the_headings_face():
+    assert art_direction.face("Warm: cream, crust brown, an elegant serif for headings") == "serif"
+    assert art_direction.face("glacier blue, spruce green, a tight modern sans") == "sans"
+    assert art_direction.face("large serif headings, a clean sans for the text") == "serif"
+    assert art_direction.face("Helvetica, sans-serif") == "sans" and art_direction.face("big rounded headings") == ""
+    # The request wins over the plan's STYLE, which the planner may have reworded.
+    plan = planning.parse("A page. An elegant serif.", _BRIEF)
+    assert plan.look() == "serif" and "h1, h2, h3, .figures strong { font-family: Georgia" in plan.page_prompt()
+    assert planning.parse("A florist.", _BRIEF).look().endswith("a tight modern sans")
 
 
 def test_the_direction_only_asks_for_pictures_the_page_was_given():
@@ -104,6 +129,8 @@ def test_the_studios_layout_rules_go_into_every_page_ahead_of_its_own():
     styled = art_direction.with_stylesheet(page, plan.pictures)
     ours, theirs = styled.index(".figures { display: grid;"), styled.index("h2 { color: red; }")
     assert styled.index("<style>") < ours < theirs  # the page's own rules come after, and so may overrule
+    # ...but for the few that keep it readable on a phone, which come after its own and before </style>.
+    assert theirs < styled.index("@media (max-width: 720px) {\nnav .links { display: none; }") < styled.index("</style>")
     assert styled.index("--accent: #c2410c") < styled.index("--accent: #f60")  # as its colours overrule the defaults
     assert 'url("hero.jpg") center / cover' in styled and 'url("picture-6.jpg") center / cover' in styled
     assert art_direction.with_stylesheet(styled, plan.pictures) == styled  # once
@@ -114,6 +141,18 @@ def test_the_studios_layout_rules_go_into_every_page_ahead_of_its_own():
     bare = art_direction.with_stylesheet("<html><head><title>x</title></head><body><p>hello</p></body></html>", [])
     assert bare.index("<style>") < bare.index("</head>") and ".wrap { max-width: 1120px;" in bare
     assert art_direction.with_stylesheet("<p>hello</p>", []).startswith("<style>")
+
+
+def test_the_studios_script_goes_at_the_end_of_every_page_once():
+    page = "<html><body><p>hi</p><script>mine()</script></body></html>"
+    scripted = art_direction.with_script(page)
+    assert scripted.index("mine()") < scripted.index("the studio's script") < scripted.index("</body>")
+    assert art_direction.with_script(scripted) == scripted
+    assert "classList.add('js')" in scripted and ".figures strong" in scripted  # the reveals and the figures
+    assert art_direction.with_script("<p>no body</p>").endswith("</script>\n")
+    # A figure left at 0 for the page's own counter to fill in is written out: 1,240 roofs, not 0, without a script.
+    counted = art_direction.with_script('<strong><span class="count" data-to="1240">0</span></strong> <b data-to="1.5"> 0 </b>')
+    assert '<span class="count" data-to="1240">1,240</span>' in counted and '<b data-to="1.5">1.5</b>' in counted
 
 
 def test_a_small_models_liberties_with_the_format_are_tolerated():
@@ -147,6 +186,41 @@ def test_what_an_image_model_cannot_write_is_taken_out_of_a_picture():
     assert clean("A potter's workshop at dawn, light through the bakers' window") == "A potter's workshop at dawn, light through the bakers' window"
     # A picture *of* writing leaves nothing to photograph.
     assert clean("A close-up of a ticket with the festival's dates") == "" and clean("A tablet with a savings estimator") == ""
+    # A card is writing, but for the one a computer takes.
+    assert clean("A double-wide PCIe card on an anti-static mat") == "A double-wide PCIe card on an anti-static mat"
+    assert clean("A GPU card in a server, a greeting card on top") == "A GPU card in a server"
+
+
+def test_a_photographs_label_the_planner_garbled_is_read_from_the_thing_before_it():
+    garbled = (
+        _BRIEF.replace("PHOTO 3: An electric", "PH美O 3: An electric")
+        .replace("PHOTO 1: A hardtail", "PH-Thing 1: A hardtail")
+        .replace("PHOTO 2: A full-suspension", "PH研究: A full-suspension")
+    )
+    plan = planning.parse("a bike rental page", garbled)
+    assert [p.prompt.split(" ")[1] for p in plan.pictures[1:4]] == ["hardtail", "full-suspension", "electric"]
+    assert [p.role for p in plan.pictures] == ["hero", "offer", "offer", "offer", "story", "closing"]
+    # Anywhere else such a line is not a photograph.
+    assert len(planning.parse("x", "HERO PHOTO: A trail\nPHONE: 0612\nSTORY PHOTO: A mechanic").pictures) == 2
+
+
+def test_a_detail_the_planner_repeats_is_drawn_once():
+    # The solar installer's plan of 2026-10-25, word for word: one family in five pictures.
+    family = {
+        0: "A sunlit roof with solar panels installed, a family of four smiling in the yard, morning light",
+        1: "A roof with solar panels installed, a family of four smiling in the yard, morning light",
+        2: "A home battery unit on a garage wall, with a family of four smiling in the yard, morning light",
+        4: "A family of four smiling in the yard, a solar panel on the roof, morning light",
+    }
+    assert planning.without_repeats(family) == {
+        0: "A sunlit roof with solar panels installed, a family of four smiling in the yard, morning light",
+        1: "A roof with solar panels installed",
+        2: "A home battery unit on a garage wall",
+        4: "A family of four smiling in the yard, a solar panel on the roof",  # a subject is never taken out
+    }
+    # Said twice is not a habit.
+    two = {0: "A trail at dawn, mist in the trees", 1: "A bike on a rock, mist in the trees"}
+    assert planning.without_repeats(two) == two
 
 
 def test_a_card_whose_picture_cannot_be_used_gets_one_from_its_own_name():
